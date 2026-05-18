@@ -1,10 +1,48 @@
 <script setup lang="ts">
-import { computed } from "vue";
-import type { RankedPlan } from "../types";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import type { PoiItem, RankedPlan } from "../types";
 
 const props = defineProps<{
   plan: RankedPlan;
 }>();
+
+type AMapNamespace = {
+  Map: new (container: HTMLElement, options: Record<string, unknown>) => AMapMap;
+  Marker: new (options: Record<string, unknown>) => AMapMarker;
+  Polyline: new (options: Record<string, unknown>) => AMapPolyline;
+  Pixel: new (x: number, y: number) => unknown;
+  LngLat: new (lng: number, lat: number) => unknown;
+};
+
+type AMapMap = {
+  add: (overlay: AMapMarker | AMapPolyline | Array<AMapMarker | AMapPolyline>) => void;
+  remove: (overlay: AMapMarker | AMapPolyline | Array<AMapMarker | AMapPolyline>) => void;
+  setFitView: (overlays?: Array<AMapMarker | AMapPolyline>, immediately?: boolean, avoid?: number[], maxZoom?: number) => void;
+  destroy: () => void;
+};
+
+type AMapMarker = unknown;
+type AMapPolyline = unknown;
+
+declare global {
+  interface Window {
+    AMap?: AMapNamespace;
+    _AMapSecurityConfig?: {
+      securityJsCode?: string;
+    };
+    __lifeRouteAmapLoader?: Promise<AMapNamespace>;
+  }
+}
+
+const mapContainer = ref<HTMLDivElement | null>(null);
+const mapError = ref("");
+const mapLoaded = ref(false);
+const mapEnabled = computed(() => Boolean(import.meta.env.VITE_AMAP_KEY));
+const amapKey = String(import.meta.env.VITE_AMAP_KEY ?? "");
+const amapSecurityCode = String(import.meta.env.VITE_AMAP_SECURITY_JS_CODE ?? "");
+
+let mapInstance: AMapMap | null = null;
+let activeOverlays: Array<AMapMarker | AMapPolyline> = [];
 
 const routeModes = computed(() => {
   const modes =
@@ -14,6 +52,166 @@ const routeModes = computed(() => {
   return [...new Set(modes)];
 });
 
+const mapPoints = computed(() => {
+  const timeline = props.plan.timeline ?? [];
+  return (props.plan.items ?? [])
+    .map((item, index) => {
+      const lat = Number(item.lat);
+      const lon = Number(item.lon);
+      if (!Number.isFinite(lat) || !Number.isFinite(lon) || lat === 0 || lon === 0) {
+        return null;
+      }
+      return {
+        item,
+        order: index + 1,
+        lnglat: [lon, lat] as [number, number],
+        time: timeline[index] ? `${timeline[index].start_time}-${timeline[index].end_time ?? "待定"}` : "",
+      };
+    })
+    .filter(Boolean) as Array<{
+      item: PoiItem;
+      order: number;
+      lnglat: [number, number];
+      time: string;
+    }>;
+});
+
+watch(
+  () => props.plan.id,
+  async () => {
+    await renderMap();
+  }
+);
+
+onMounted(async () => {
+  await renderMap();
+});
+
+onBeforeUnmount(() => {
+  clearMap();
+  mapInstance?.destroy();
+  mapInstance = null;
+});
+
+async function renderMap() {
+  mapError.value = "";
+  if (!mapEnabled.value || !mapContainer.value || !mapPoints.value.length) {
+    return;
+  }
+
+  await nextTick();
+  try {
+    const AMap = await loadAmap();
+    if (!mapContainer.value) {
+      return;
+    }
+    if (!mapInstance) {
+      mapInstance = new AMap.Map(mapContainer.value, {
+        zoom: 12,
+        viewMode: "2D",
+        resizeEnable: true,
+        mapStyle: "amap://styles/normal",
+      });
+    }
+    drawPlan(AMap);
+    mapLoaded.value = true;
+  } catch (error) {
+    mapError.value = error instanceof Error ? error.message : "高德地图加载失败";
+    mapLoaded.value = false;
+  }
+}
+
+function drawPlan(AMap: AMapNamespace) {
+  if (!mapInstance) {
+    return;
+  }
+  clearMap();
+
+  const markers = mapPoints.value.map((point) => {
+    const marker = new AMap.Marker({
+      position: new AMap.LngLat(point.lnglat[0], point.lnglat[1]),
+      title: point.item.name,
+      offset: new AMap.Pixel(-13, -34),
+      content: markerHtml(point.order, point.item.name),
+    });
+    return marker;
+  });
+
+  const polyline =
+    mapPoints.value.length > 1
+      ? new AMap.Polyline({
+          path: mapPoints.value.map((point) => point.lnglat),
+          strokeColor: "#ff7a00",
+          strokeWeight: 5,
+          strokeOpacity: 0.85,
+          lineJoin: "round",
+          lineCap: "round",
+        })
+      : null;
+
+  activeOverlays = polyline ? [...markers, polyline] : markers;
+  mapInstance.add(activeOverlays);
+  mapInstance.setFitView(activeOverlays, false, [48, 48, 48, 48], 15);
+}
+
+function clearMap() {
+  if (mapInstance && activeOverlays.length) {
+    mapInstance.remove(activeOverlays);
+  }
+  activeOverlays = [];
+}
+
+function loadAmap(): Promise<AMapNamespace> {
+  if (window.AMap) {
+    return Promise.resolve(window.AMap);
+  }
+  if (window.__lifeRouteAmapLoader) {
+    return window.__lifeRouteAmapLoader;
+  }
+  if (!amapKey) {
+    return Promise.reject(new Error("缺少 VITE_AMAP_KEY，无法加载高德地图。"));
+  }
+  if (amapSecurityCode) {
+    window._AMapSecurityConfig = {
+      securityJsCode: amapSecurityCode,
+    };
+  }
+
+  window.__lifeRouteAmapLoader = new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = `https://webapi.amap.com/maps?v=2.0&key=${encodeURIComponent(amapKey)}`;
+    script.async = true;
+    script.onload = () => {
+      if (window.AMap) {
+        resolve(window.AMap);
+      } else {
+        reject(new Error("高德地图脚本已加载，但 AMap 对象不存在。"));
+      }
+    };
+    script.onerror = () => reject(new Error("高德地图脚本加载失败，请检查 key、域名白名单或网络。"));
+    document.head.appendChild(script);
+  });
+  return window.__lifeRouteAmapLoader;
+}
+
+function markerHtml(order: number, name: string) {
+  const safeName = escapeHtml(name);
+  return `
+    <div class="amap-stop-marker">
+      <span>${order}</span>
+      <strong>${safeName}</strong>
+    </div>
+  `;
+}
+
+function escapeHtml(value: string) {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
+}
+
 function formatTransport(mode?: string) {
   const labels: Record<string, string> = {
     start: "起点",
@@ -21,7 +219,7 @@ function formatTransport(mode?: string) {
     taxi: "打车",
     transit_or_taxi: "地铁/打车",
     cross_district_taxi: "跨区打车",
-    forced_timeout: "超时模拟"
+    forced_timeout: "超时模拟",
   };
   return labels[mode ?? ""] ?? mode ?? "待定";
 }
@@ -30,11 +228,22 @@ function formatTransport(mode?: string) {
 <template>
   <section class="map-panel">
     <div class="map-surface">
-      <div class="map-grid" />
-      <div class="map-content">
-        <p class="map-title">高德地图预留区域</p>
-        <p class="map-subtitle">后续接入 AMap JS API 后展示路线、POI 点位和通勤时间。</p>
+      <div v-if="mapEnabled && mapPoints.length" ref="mapContainer" class="amap-container" />
+
+      <div v-else class="map-fallback">
+        <div class="map-grid" />
+        <div class="map-content">
+          <p class="map-title">高德地图未启用</p>
+          <p class="map-subtitle">
+            配置 <code>VITE_AMAP_KEY</code> 后会显示真实地图、POI 点位和路线连线。当前仍可查看下方时间线。
+          </p>
+        </div>
       </div>
+
+      <div v-if="mapEnabled && !mapLoaded && !mapError && mapPoints.length" class="map-loading">
+        地图加载中...
+      </div>
+      <div v-if="mapError" class="map-error">{{ mapError }}</div>
     </div>
 
     <div class="route-summary">
@@ -51,6 +260,16 @@ function formatTransport(mode?: string) {
         <strong>{{ routeModes.length ? routeModes.map(formatTransport).join(" / ") : "无需换乘" }}</strong>
       </div>
     </div>
+
+    <ol v-if="mapPoints.length" class="stop-list">
+      <li v-for="point in mapPoints" :key="point.item.id">
+        <span>{{ point.order }}</span>
+        <div>
+          <strong>{{ point.item.name }}</strong>
+          <p>{{ point.time || "时间待定" }} · {{ point.item.address }}</p>
+        </div>
+      </li>
+    </ol>
 
     <ol v-if="plan.timeline?.length" class="timeline-list">
       <li v-for="item in plan.timeline" :key="`${item.order}-${item.title}`">
@@ -77,11 +296,21 @@ function formatTransport(mode?: string) {
 
 .map-surface {
   position: relative;
-  min-height: 260px;
+  min-height: 300px;
   overflow: hidden;
   border: 1px solid #d8dee8;
   border-radius: 8px;
   background: #f6f8fb;
+}
+
+.amap-container,
+.map-fallback {
+  min-height: 300px;
+}
+
+.amap-container {
+  width: 100%;
+  height: 300px;
 }
 
 .map-grid {
@@ -96,7 +325,7 @@ function formatTransport(mode?: string) {
 .map-content {
   position: relative;
   display: grid;
-  min-height: 260px;
+  min-height: 300px;
   place-items: center;
   padding: 24px;
   text-align: center;
@@ -116,12 +345,32 @@ function formatTransport(mode?: string) {
   line-height: 1.6;
 }
 
-.timeline-list {
-  display: grid;
-  gap: 10px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
+.map-subtitle code {
+  border-radius: 5px;
+  background: #fff4c2;
+  color: #7a5400;
+  padding: 2px 5px;
+}
+
+.map-loading,
+.map-error {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  border-radius: 999px;
+  padding: 7px 10px;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.map-loading {
+  background: #fff4c2;
+  color: #7a5400;
+}
+
+.map-error {
+  background: #fee2e2;
+  color: #b91c1c;
 }
 
 .route-summary {
@@ -150,6 +399,23 @@ function formatTransport(mode?: string) {
   font-size: 14px;
 }
 
+.stop-list,
+.timeline-list {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.stop-list {
+  border: 1px solid #ececec;
+  border-radius: 8px;
+  background: #fffdf4;
+  padding: 10px;
+}
+
+.stop-list li,
 .timeline-list li {
   display: grid;
   grid-template-columns: 28px 1fr;
@@ -157,26 +423,64 @@ function formatTransport(mode?: string) {
   align-items: start;
 }
 
+.stop-list span,
 .timeline-list span {
   display: grid;
   width: 28px;
   height: 28px;
   place-items: center;
   border-radius: 50%;
-  background: #1f6feb;
+  background: #ff7a00;
   color: white;
   font-size: 13px;
   font-weight: 700;
 }
 
+.timeline-list span {
+  background: #1f6feb;
+}
+
+.stop-list strong,
 .timeline-list strong {
   color: #172033;
 }
 
+.stop-list p,
 .timeline-list p {
   margin: 4px 0 0;
   color: #687386;
   font-size: 13px;
+}
+
+:global(.amap-stop-marker) {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 180px;
+  border: 2px solid #ffffff;
+  border-radius: 999px;
+  background: #ff7a00;
+  box-shadow: 0 6px 16px rgb(0 0 0 / 20%);
+  color: #ffffff;
+  padding: 5px 9px 5px 5px;
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+:global(.amap-stop-marker span) {
+  display: grid;
+  width: 20px;
+  height: 20px;
+  place-items: center;
+  border-radius: 50%;
+  background: #ffffff;
+  color: #ff7a00;
+}
+
+:global(.amap-stop-marker strong) {
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 @media (max-width: 920px) {

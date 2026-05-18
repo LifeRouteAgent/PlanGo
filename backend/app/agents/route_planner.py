@@ -152,6 +152,10 @@ def _build_candidate_item_sets(
     if score_based:
         variants.append(score_based)
 
+    offset_score_based = _select_offset_score_based(sorted_candidates, desired_count)
+    if offset_score_based:
+        variants.append(offset_score_based)
+
     return _dedupe_item_sets(variants)[:3]
 
 
@@ -300,6 +304,22 @@ def _select_compact(candidates: list[dict[str, Any]], desired_count: int) -> lis
         ),
     )
     return _ensure_restaurant([anchor, *rest[: max(0, desired_count - 1)]], candidates)
+
+
+def _select_offset_score_based(candidates: list[dict[str, Any]], desired_count: int) -> list[dict[str, Any]]:
+    """生成第三个错位高分备选方案。
+
+    前三个策略在候选较集中时容易得到相同组合。这个策略会跳过最高分锚点，
+    从第 2-4 个高分候选里选择不同起点，再补一个附近餐厅，尽量给用户真正不同的第三方案。
+    """
+
+    if len(candidates) <= desired_count:
+        return []
+    start = min(1, len(candidates) - 1)
+    selected = candidates[start:start + desired_count]
+    if len(selected) < desired_count:
+        selected = [*selected, *candidates[: desired_count - len(selected)]]
+    return _ensure_restaurant(selected, candidates)
 
 
 def _ensure_restaurant(

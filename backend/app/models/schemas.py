@@ -25,6 +25,26 @@ class TripPlanResponse(BaseModel):
     logs: list[str]
 
 
+class ExecutePlanRequest(BaseModel):
+    plan: dict[str, Any]
+
+
+class ExportPlanRequest(BaseModel):
+    plan: dict[str, Any]
+
+
+class AdjustPlanRequest(BaseModel):
+    """方案局部调整请求。
+
+    前端用于“某一站不满意，换一个类似地点”的产品化调整。
+    不要求重新跑完整 DAG，后端会按当前站点类别从数据库找替代 POI。
+    """
+
+    plan: dict[str, Any]
+    poi_id: str
+    prompt: str = Field(default="换一个更合适的")
+
+
 class DataSourceStatusResponse(BaseModel):
     enabled: bool
     source: str

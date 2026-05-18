@@ -26,6 +26,8 @@ export interface PoiItem {
   budget_fit?: "good" | "tight" | "over_budget" | "unknown" | string;
   scene_fit?: number;
   distance_sensitive?: boolean;
+  recommendation_reason?: string;
+  option_prompts?: string[];
   image_urls?: string[];
   photo_urls?: string[];
   photos?: Array<string | { url?: string; title?: string }>;
@@ -57,9 +59,20 @@ export interface RankedPlan {
   route_segments?: RouteSegment[];
   estimated_budget?: number;
   plan_score?: number;
+  recommendation_reason?: string;
+  pros?: string[];
+  cons?: string[];
+  plan_actions?: PlanAction[];
   score_breakdown?: ScoreBreakdown;
   verified?: boolean;
   issues?: PlanIssue[];
+}
+
+export interface PlanAction {
+  id: string;
+  label: string;
+  type: "execute" | "export" | "refine" | string;
+  prompt?: string;
 }
 
 export interface RouteSegment {
@@ -107,6 +120,38 @@ export interface TripPlanResponse {
   ranked_plans: RankedPlan[];
   errors: PlanIssue[];
   logs: string[];
+}
+
+export interface TripPlanStreamEvent {
+  event: "status" | "metadata" | "response_chunk" | "final" | "done" | string;
+  data: Record<string, unknown>;
+}
+
+export interface AgentThinkingEvent {
+  agent: string;
+  title?: string;
+  message: string;
+  summary?: Record<string, unknown>;
+  logs?: string[];
+}
+
+export interface AdjustPlanResponse {
+  success: boolean;
+  plan: RankedPlan;
+  old_poi?: PoiItem | Record<string, unknown>;
+  new_poi?: PoiItem | null;
+  message: string;
+}
+
+export interface ExecutionStep {
+  id: string;
+  type: string;
+  title: string;
+  description?: string;
+  status: "pending" | "running" | "done" | "failed" | string;
+  result?: string;
+  poi_id?: string;
+  poi_name?: string;
 }
 
 export interface DataSourceStatus {

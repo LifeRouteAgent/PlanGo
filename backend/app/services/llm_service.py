@@ -7,6 +7,7 @@ from typing import Any
 import httpx
 
 from app.config import settings
+from app.services.tool_harness import ToolHarness
 
 
 def is_llm_enabled() -> bool:
@@ -53,13 +54,22 @@ def call_chat_completion(
         "Content-Type": "application/json",
     }
 
-    try:
+    def _request() -> str | None:
+        """实际 HTTP 调用放进闭包，交给 ToolHarness 做 timeout/retry/fallback。"""
+
         response = httpx.post(url, json=payload, headers=headers, timeout=timeout_seconds)
         response.raise_for_status()
         data = response.json()
         return str(data["choices"][0]["message"]["content"])
-    except (httpx.HTTPError, KeyError, IndexError, TypeError, ValueError):
-        return None
+
+    harness = ToolHarness(
+        name="llm.mimo.chat_completion",
+        timeout_seconds=timeout_seconds + 2,
+        max_retries=1,
+        fallback=lambda: None,
+    )
+    result = harness.run(_request)
+    return str(result.data) if result.success and result.data else None
 
 
 def extract_json_object(text: str | None) -> dict[str, Any] | None:

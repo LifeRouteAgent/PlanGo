@@ -7,6 +7,7 @@ import pymysql
 from pymysql.cursors import DictCursor
 
 from app.config import settings
+from app.services.tool_harness import ToolHarness
 from app.state.plan_state import PoiRecord
 from app.tools.poi_schema import (
     POI_ACTIVITY,
@@ -111,6 +112,21 @@ class PoiRepository:
         未知类别会返回空列表，不抛异常，保证 Planner 可逐步扩展新类别。
         """
 
+        category_list = list(categories)
+        harness = ToolHarness(
+            name="database.poi.fetch_by_categories",
+            timeout_seconds=8,
+            max_retries=1,
+            fallback=lambda: {category: [] for category in category_list},
+        )
+        result = harness.run(self._fetch_by_categories_once, category_list)
+        return result.data if result.success and isinstance(result.data, dict) else {
+            category: [] for category in category_list
+        }
+
+    def _fetch_by_categories_once(self, categories: Iterable[str]) -> dict[str, list[PoiRecord]]:
+        """执行一次真实数据库读取，外层由 ToolHarness 负责 timeout/retry/fallback。"""
+
         result: dict[str, list[PoiRecord]] = {}
         with self._connect() as connection:
             with connection.cursor() as cursor:
@@ -131,6 +147,18 @@ class PoiRepository:
         该方法只用于健康检查和前端展示，不参与推荐流程，避免一次规划请求额外做
         聚合统计影响响应时间。
         """
+
+        harness = ToolHarness(
+            name="database.poi.table_counts",
+            timeout_seconds=5,
+            max_retries=1,
+            fallback=lambda: {},
+        )
+        result = harness.run(self._table_counts_once)
+        return result.data if result.success and isinstance(result.data, dict) else {}
+
+    def _table_counts_once(self) -> dict[str, int]:
+        """执行一次真实表行数统计。"""
 
         table_names = {
             POI_RESTAURANT: "poi_restaurant",
