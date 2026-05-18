@@ -18,4 +18,10 @@ def test_trip_plan_api_runs_langgraph_dag() -> None:
     body = response.json()
     assert body["execution_status"] == "simulated"
     assert body["selected_plan"]["id"] == "plan_mock_1"
-    assert "周末本地生活轻量方案" in body["response_text"]
+    assert body["selected_plan"]["planning_template"] == "friends_gathering"
+    assert body["selected_plan"]["plan_score"] > 0
+    assert "score_breakdown" in body["selected_plan"]
+    assert "朋友聚会本地生活方案" in body["response_text"]
+    assert "方案评分：" in body["response_text"]
+    assert "交通：" in body["response_text"]
+    assert "时间线：" in body["response_text"]

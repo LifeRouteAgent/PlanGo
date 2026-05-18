@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pytest
 
+from app.agents.issue_utils import issue_codes
 from app.dag.langgraph_dag_config import life_route_graph
 from app.state.plan_state import create_initial_state
 
@@ -33,7 +34,7 @@ def test_verifier_feedback_loop_recovers_after_one_replan(
 
     result = life_route_graph.invoke(state)
 
-    assert expected_error not in result["errors"]
+    assert expected_error not in issue_codes(result["errors"])
     assert result["execution_status"] == "simulated"
     assert result["selected_plan"]["verified"] is True
     assert result["replanning_count"] == 2

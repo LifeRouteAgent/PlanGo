@@ -5,9 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1",
-    "build": "vue-tsc -b && vite build",
+    "build": "vue-tsc --noEmit && vite build",
     "preview": "vite preview --host 127.0.0.1",
-    "typecheck": "vue-tsc -b"
+    "typecheck": "vue-tsc --noEmit"
   },
   "dependencies": {
     "@vitejs/plugin-vue": "latest",

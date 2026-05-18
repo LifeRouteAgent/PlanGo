@@ -125,6 +125,31 @@ class PoiRepository:
                     ]
         return result
 
+    def table_counts(self) -> dict[str, int]:
+        """读取七张 POI 表的当前行数。
+
+        该方法只用于健康检查和前端展示，不参与推荐流程，避免一次规划请求额外做
+        聚合统计影响响应时间。
+        """
+
+        table_names = {
+            POI_RESTAURANT: "poi_restaurant",
+            POI_ACTIVITY: "poi_activities",
+            POI_ATTRACTION: "poi_attractions",
+            POI_SHOPPING: "poi_shoppings",
+            POI_FITNESS: "poi_fitness",
+            POI_ENTERTAINMENT: "poi_entertainment",
+            POI_BEAUTY: "poi_beauty",
+        }
+        counts: dict[str, int] = {}
+        with self._connect() as connection:
+            with connection.cursor() as cursor:
+                for category, table_name in table_names.items():
+                    cursor.execute(f"SELECT COUNT(*) AS count_value FROM {table_name}")
+                    row = cursor.fetchone()
+                    counts[category] = int(row["count_value"])
+        return counts
+
     def _connect(self):
         """创建 MySQL 连接。
 

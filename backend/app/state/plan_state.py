@@ -49,9 +49,15 @@ class PlanState(TypedDict):
     selected_plan: dict[str, Any]
     execution_status: str
     logs: Annotated[list[str], append_lists]
-    errors: Annotated[list[str], replace_list]
+    errors: Annotated[list[dict[str, Any]], replace_list]
     response_text: str
     dag_plan: dict[str, Any]
+    intent_type: str
+    target_categories: list[str]
+    answer_mode: str
+    need_clarification: bool
+    missing_constraints: Annotated[list[str], replace_list]
+    clarify_question: str
     replanning_count: int
     max_replanning_count: int
     force_empty_candidates: bool
@@ -78,9 +84,15 @@ class PlanStatePatch(TypedDict, total=False):
     selected_plan: dict[str, Any]
     execution_status: str
     logs: list[str]
-    errors: list[str]
+    errors: list[dict[str, Any]]
     response_text: str
     dag_plan: dict[str, Any]
+    intent_type: str
+    target_categories: list[str]
+    answer_mode: str
+    need_clarification: bool
+    missing_constraints: list[str]
+    clarify_question: str
     replanning_count: int
     max_replanning_count: int
     force_empty_candidates: bool
@@ -109,11 +121,21 @@ class PoiRecord(TypedDict):
 
 
 class RecommendedPoiRecord(PoiRecord):
-    """Skill 层对候选 POI 打分后的输出结构。"""
+    """Skill 层对候选 POI 打分后的输出结构。
+
+    这里不只保存推荐分数，还保存本地生活规划需要的可执行性字段。
+    后续 Route Planner、Verifier 和 Ranker 都基于这些字段判断方案是否能落地。
+    """
 
     score: float
     reason: str
     risk_flags: list[str]
+    estimated_duration_minutes: int
+    reservation_required: bool
+    crowd_risk: str
+    budget_fit: str
+    scene_fit: float
+    distance_sensitive: bool
 
 
 def create_initial_state(
@@ -140,6 +162,12 @@ def create_initial_state(
         "errors": [],
         "response_text": "",
         "dag_plan": {},
+        "intent_type": "full_trip_plan",
+        "target_categories": [],
+        "answer_mode": "trip_plan",
+        "need_clarification": False,
+        "missing_constraints": [],
+        "clarify_question": "",
         "replanning_count": 0,
         "max_replanning_count": max_replanning_count,
         # 以下 force_* 字段只用于测试和演示异常分支，不代表真实业务输入。

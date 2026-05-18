@@ -14,7 +14,20 @@ class TripPlanRequest(BaseModel):
 class TripPlanResponse(BaseModel):
     response_text: str
     execution_status: str
+    intent_type: str = ""
+    answer_mode: str = ""
+    need_clarification: bool = False
+    missing_constraints: list[str] = Field(default_factory=list)
+    clarify_question: str = ""
     selected_plan: dict[str, Any]
     ranked_plans: list[dict[str, Any]]
-    errors: list[str]
+    errors: list[dict[str, Any]]
     logs: list[str]
+
+
+class DataSourceStatusResponse(BaseModel):
+    enabled: bool
+    source: str
+    database_name: str
+    table_counts: dict[str, int] = Field(default_factory=dict)
+    error: str | None = None

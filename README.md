@@ -11,6 +11,7 @@ LifeRouteAgent 是一个面向本地生活出行决策的多 Agent 路线规划�
 - 多 Agent 编排：通过 LangGraph DAG 串联解析、约束构建、候选召回、并行推荐、路线规划、校验、排序和执行。
 - 本地生活分表存储：不同业务域独立建表，方便后续让不同 Agent 使用不同召回策略。
 - 数据库/Mock 双模式：`LIFEROUTE_USE_DATABASE=1` 时读取 MySQL；否则使用内置 Mock 数据。
+- 路线耗时修正：默认使用 Haversine 估算；配置 `AMAP_API_KEY` 后优先调用高德步行/驾车路线接口，失败自动回退估算结果。
 - 可扩展履约入口：保留可用性检查、用户确认和执行 Agent，后续可接入订座、购票、下单、退款等真实接口。
 
 ## Agent 架构
@@ -172,7 +173,7 @@ Copy-Item backend\.env.example backend\.env
 MIMO_API_KEY=                 # MiMo LLM Key，可为空，按当前实现降级使用规则/Mock
 MIMO_BASE_URL=https://api.xiaomimimo.com/v1
 MIMO_MODEL=mimo-v2.5-pro
-AMAP_API_KEY=                 # 高德 API Key，数据采集脚本使用
+AMAP_API_KEY=                 # 高德 API Key，Route Planner 会用它修正步行/驾车路线时间
 APP_ENV=local
 LIFEROUTE_USE_DATABASE=0      # 0 使用 Mock；1 使用 MySQL 自建 POI 库
 DATABASE_HOST=127.0.0.1
@@ -181,6 +182,13 @@ DATABASE_USER=root
 DATABASE_PASSWORD=
 DATABASE_NAME=life_route_agent
 ```
+
+路线规划说明：
+
+- 未配置 `AMAP_API_KEY`：Route Planner 使用 Haversine 直线距离估算交通方式和时间。
+- 已配置 `AMAP_API_KEY`：优先调用高德步行/驾车路线接口修正相邻 POI 的真实距离和耗时。
+- 高德接口失败、超时或返回异常：自动回退 Haversine，不阻断 DAG。
+- 当前公交/地铁先用 `transit_or_taxi` 近似；后续可在 `backend/app/services/amap_route_service.py` 扩展公交换乘接口。
 
 ## 初始化数据库
 
