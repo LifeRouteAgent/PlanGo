@@ -192,6 +192,18 @@ DATABASE_NAME=life_route_agent
 
 ## 初始化数据库
 
+使用 Docker 一键启动 MySQL 并导入 `database/sql`：
+
+```bash
+./scripts/init_mysql_docker.sh
+```
+
+可按需覆盖默认配置：
+
+```bash
+DATABASE_PORT=3307 DATABASE_PASSWORD=liferoute ./scripts/init_mysql_docker.sh
+```
+
 创建数据库：
 
 ```powershell
