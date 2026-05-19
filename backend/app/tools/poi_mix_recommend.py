@@ -80,7 +80,9 @@ def _scene_fit(item: dict, scenario: str) -> float:
         return 0.9 if scenario in {"family", "friends"} else 0.75
     if scenario == "family" and any(keyword in text for keyword in ("公园", "亲子", "儿童")):
         return 0.9
-    if scenario == "couple" and any(keyword in text for keyword in ("citywalk", "城市漫步", "公园")):
+    if scenario == "couple" and any(
+        keyword in text for keyword in ("citywalk", "城市漫步", "公园")
+    ):
         return 0.85
     return 0.7
 

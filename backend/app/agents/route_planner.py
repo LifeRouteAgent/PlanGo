@@ -8,7 +8,6 @@ from app.agents.issue_utils import make_issue
 from app.services.amap_route_service import AmapRouteService
 from app.state.plan_state import PlanState, PlanStatePatch
 
-
 EARTH_RADIUS_KM = 6371.0088
 
 
@@ -56,19 +55,19 @@ def route_time_planner_node(state: PlanState) -> PlanStatePatch:
                     "forced_timeout": True,
                 }
                 for segment in route_segments
-            ] or [
-                {
-                    "from": "",
-                    "to": "",
-                    "distance_km": 0,
-                    "transport_mode": "forced_timeout",
-                    "duration_minutes": max_route_minutes + 20,
-                    "forced_timeout": True,
-                }
-            ]
+            ] or [{
+                "from": "",
+                "to": "",
+                "distance_km": 0,
+                "transport_mode": "forced_timeout",
+                "duration_minutes": max_route_minutes + 20,
+                "forced_timeout": True,
+            }]
 
         stay_minutes = _fit_stay_minutes(items, route_minutes, duration_limit)
-        total_duration = _total_duration_for_state(state, stay_minutes, route_minutes, duration_limit)
+        total_duration = _total_duration_for_state(
+            state, stay_minutes, route_minutes, duration_limit
+        )
         timeline = _build_timeline(items, route_segments, start_time, stay_minutes)
         plan = {
             "id": f"plan_route_{index}",
@@ -82,7 +81,9 @@ def route_time_planner_node(state: PlanState) -> PlanStatePatch:
             "items": items,
             "timeline": timeline,
             "route_segments": route_segments,
-            "total_distance_km": round(sum(segment["distance_km"] for segment in route_segments), 2),
+            "total_distance_km": round(
+                sum(segment["distance_km"] for segment in route_segments), 2
+            ),
             "total_duration_minutes": total_duration,
             "route_minutes": route_minutes,
             "estimated_budget": _estimate_budget(items),
@@ -91,15 +92,13 @@ def route_time_planner_node(state: PlanState) -> PlanStatePatch:
         if index == 1:
             plan["id"] = "plan_mock_1"
         candidate_plans.append(plan)
-        routes.append(
-            {
-                "mode": _route_mode(route_segments),
-                "movement_policy": dag_plan.get("movement_policy", "balanced_local"),
-                "total_distance_km": plan["total_distance_km"],
-                "total_minutes": route_minutes,
-                "segments": route_segments,
-            }
-        )
+        routes.append({
+            "mode": _route_mode(route_segments),
+            "movement_policy": dag_plan.get("movement_policy", "balanced_local"),
+            "total_distance_km": plan["total_distance_km"],
+            "total_minutes": route_minutes,
+            "segments": route_segments,
+        })
 
     candidate_plans, routes = _prefer_feasible_plans(
         candidate_plans,
@@ -109,17 +108,13 @@ def route_time_planner_node(state: PlanState) -> PlanStatePatch:
         force_keep_all=bool(
             state.get("force_route_timeout") and state.get("replanning_count", 0) <= 1
         )
-        or bool(
-            state.get("force_duration_exceeded") and state.get("replanning_count", 0) <= 1
-        ),
+        or bool(state.get("force_duration_exceeded") and state.get("replanning_count", 0) <= 1),
     )
 
     return {
         "candidate_plans": candidate_plans,
         "routes": routes,
-        "logs": [
-            f"Route & Time Planner: generated {len(candidate_plans)} route timelines"
-        ],
+        "logs": [f"Route & Time Planner: generated {len(candidate_plans)} route timelines"],
     }
 
 
@@ -188,7 +183,9 @@ def _select_slot_based(
             continue
         if slot.startswith("optional") and len(selected) >= desired_count:
             continue
-        matched = _first_matching_slot(candidates, slot, used_ids, selected[-1] if selected else None)
+        matched = _first_matching_slot(
+            candidates, slot, used_ids, selected[-1] if selected else None
+        )
         if matched:
             selected.append(matched)
             used_ids.add(str(matched["id"]))
@@ -220,10 +217,14 @@ def _select_optimized_first_pair(
         return []
 
     first_candidates = [
-        item for item in candidates if _category_matches_slot(str(item.get("category", "")), core_slots[0])
+        item
+        for item in candidates
+        if _category_matches_slot(str(item.get("category", "")), core_slots[0])
     ]
     second_candidates = [
-        item for item in candidates if _category_matches_slot(str(item.get("category", "")), core_slots[1])
+        item
+        for item in candidates
+        if _category_matches_slot(str(item.get("category", "")), core_slots[1])
     ]
     pairs: list[tuple[float, float, dict[str, Any], dict[str, Any]]] = []
     for first in first_candidates:
@@ -306,7 +307,9 @@ def _select_compact(candidates: list[dict[str, Any]], desired_count: int) -> lis
     return _ensure_restaurant([anchor, *rest[: max(0, desired_count - 1)]], candidates)
 
 
-def _select_offset_score_based(candidates: list[dict[str, Any]], desired_count: int) -> list[dict[str, Any]]:
+def _select_offset_score_based(
+    candidates: list[dict[str, Any]], desired_count: int
+) -> list[dict[str, Any]]:
     """生成第三个错位高分备选方案。
 
     前三个策略在候选较集中时容易得到相同组合。这个策略会跳过最高分锚点，
@@ -316,7 +319,7 @@ def _select_offset_score_based(candidates: list[dict[str, Any]], desired_count: 
     if len(candidates) <= desired_count:
         return []
     start = min(1, len(candidates) - 1)
-    selected = candidates[start:start + desired_count]
+    selected = candidates[start : start + desired_count]
     if len(selected) < desired_count:
         selected = [*selected, *candidates[: desired_count - len(selected)]]
     return _ensure_restaurant(selected, candidates)
@@ -422,7 +425,9 @@ def _estimate_transport_segment(
     - 15km+：跨区移动，除非用户明确接受，否则后续 Verifier/Ranker 会降权。
     """
 
-    haversine_distance_km = _haversine_km(previous["lat"], previous["lon"], current["lat"], current["lon"])
+    haversine_distance_km = _haversine_km(
+        previous["lat"], previous["lon"], current["lat"], current["lon"]
+    )
     if haversine_distance_km <= 1:
         mode = "walk"
         duration = max(8, math.ceil(haversine_distance_km / 4.5 * 60) + 3)
@@ -438,11 +443,15 @@ def _estimate_transport_segment(
 
     source = "haversine_estimated"
     distance_km = haversine_distance_km
-    amap_estimate = route_service.estimate_segment(
-        previous,
-        current,
-        fallback_distance_km=haversine_distance_km,
-    ) if route_service else None
+    amap_estimate = (
+        route_service.estimate_segment(
+            previous,
+            current,
+            fallback_distance_km=haversine_distance_km,
+        )
+        if route_service
+        else None
+    )
     if amap_estimate:
         distance_km = amap_estimate.distance_km
         duration = amap_estimate.duration_minutes
@@ -571,22 +580,20 @@ def _build_timeline(
         stay_minutes = stay_minutes_by_item[index]
         start = current_time
         end = current_time + timedelta(minutes=stay_minutes)
-        timeline.append(
-            {
-                "order": index + 1,
-                "slot_type": _slot_type_for_category(str(item.get("category", ""))),
-                "poi_id": item["id"],
-                "title": item["name"],
-                "category": item["category"],
-                "address": item["address"],
-                "start_time": start.strftime("%H:%M"),
-                "end_time": end.strftime("%H:%M"),
-                "stay_minutes": stay_minutes,
-                "travel_from_previous_minutes": travel_minutes,
-                "transport_mode": transport_mode,
-                "distance_from_previous_km": distance_km,
-            }
-        )
+        timeline.append({
+            "order": index + 1,
+            "slot_type": _slot_type_for_category(str(item.get("category", ""))),
+            "poi_id": item["id"],
+            "title": item["name"],
+            "category": item["category"],
+            "address": item["address"],
+            "start_time": start.strftime("%H:%M"),
+            "end_time": end.strftime("%H:%M"),
+            "stay_minutes": stay_minutes,
+            "travel_from_previous_minutes": travel_minutes,
+            "transport_mode": transport_mode,
+            "distance_from_previous_km": distance_km,
+        })
         current_time = end
     return timeline
 

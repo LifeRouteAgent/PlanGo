@@ -39,9 +39,7 @@ def poi_collector_node(state: PlanState) -> PlanStatePatch:
             total = sum(len(items) for items in candidate_pois.values())
             return {
                 "candidate_pois": candidate_pois,
-                "logs": [
-                    f"POI Collector: loaded {total} candidates from MySQL database"
-                ],
+                "logs": [f"POI Collector: loaded {total} candidates from MySQL database"],
             }
         except MySQLError as exc:
             # 数据库不可用时降级到 mock，保证 DAG 本身仍可运行；错误细节进入 logs 供排查。

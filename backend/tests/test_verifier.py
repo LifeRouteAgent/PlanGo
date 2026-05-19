@@ -10,24 +10,20 @@ def test_verifier_outputs_structured_blocking_issue() -> None:
 
     state = create_initial_state("周末和朋友吃饭看电影 4 小时")
     state["constraints"] = {"duration_hours": 4, "max_route_minutes": 45, "budget": 600}
-    state["candidate_plans"] = [
-        {
-            "id": "bad_route",
-            "items": [_poi("movie", "poi_entertainment"), _poi("food", "poi_restaurant")],
-            "route_minutes": 80,
-            "total_duration_minutes": 230,
-            "estimated_budget": 300,
-            "route_segments": [
-                {
-                    "from": "影院",
-                    "to": "餐厅",
-                    "distance_km": 20,
-                    "transport_mode": "cross_district_taxi",
-                    "duration_minutes": 80,
-                }
-            ],
-        }
-    ]
+    state["candidate_plans"] = [{
+        "id": "bad_route",
+        "items": [_poi("movie", "poi_entertainment"), _poi("food", "poi_restaurant")],
+        "route_minutes": 80,
+        "total_duration_minutes": 230,
+        "estimated_budget": 300,
+        "route_segments": [{
+            "from": "影院",
+            "to": "餐厅",
+            "distance_km": 20,
+            "transport_mode": "cross_district_taxi",
+            "duration_minutes": 80,
+        }],
+    }]
 
     patch = verifier_node(state)
     issue = patch["errors"][0]
@@ -44,32 +40,28 @@ def test_verifier_warning_does_not_block_verified_plan() -> None:
 
     state = create_initial_state("周末和朋友吃饭看电影 4 小时")
     state["constraints"] = {"duration_hours": 4, "max_route_minutes": 45, "budget": 600}
-    state["candidate_plans"] = [
-        {
-            "id": "warning_plan",
-            "items": [
-                {
-                    **_poi("movie", "poi_entertainment"),
-                    "reservation_required": True,
-                    "crowd_risk": "high",
-                    "risk_flags": ["queue_risk"],
-                },
-                _poi("food", "poi_restaurant"),
-            ],
-            "route_minutes": 20,
-            "total_duration_minutes": 220,
-            "estimated_budget": 300,
-            "route_segments": [
-                {
-                    "from": "影院",
-                    "to": "餐厅",
-                    "distance_km": 3,
-                    "transport_mode": "taxi",
-                    "duration_minutes": 20,
-                }
-            ],
-        }
-    ]
+    state["candidate_plans"] = [{
+        "id": "warning_plan",
+        "items": [
+            {
+                **_poi("movie", "poi_entertainment"),
+                "reservation_required": True,
+                "crowd_risk": "high",
+                "risk_flags": ["queue_risk"],
+            },
+            _poi("food", "poi_restaurant"),
+        ],
+        "route_minutes": 20,
+        "total_duration_minutes": 220,
+        "estimated_budget": 300,
+        "route_segments": [{
+            "from": "影院",
+            "to": "餐厅",
+            "distance_km": 3,
+            "transport_mode": "taxi",
+            "duration_minutes": 20,
+        }],
+    }]
 
     patch = verifier_node(state)
     merged = {**state, **patch}

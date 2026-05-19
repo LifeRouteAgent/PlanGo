@@ -171,8 +171,16 @@ def create_initial_state(
         "replanning_count": 0,
         "max_replanning_count": max_replanning_count,
         # 以下 force_* 字段只用于测试和演示异常分支，不代表真实业务输入。
-        "force_empty_candidates": bool(user_profile.get("force_empty_candidates")) if user_profile else False,
-        "force_restaurant_unavailable": bool(user_profile.get("force_restaurant_unavailable")) if user_profile else False,
-        "force_route_timeout": bool(user_profile.get("force_route_timeout")) if user_profile else False,
-        "force_duration_exceeded": bool(user_profile.get("force_duration_exceeded")) if user_profile else False,
+        "force_empty_candidates": (
+            bool(user_profile.get("force_empty_candidates")) if user_profile else False
+        ),
+        "force_restaurant_unavailable": (
+            bool(user_profile.get("force_restaurant_unavailable")) if user_profile else False
+        ),
+        "force_route_timeout": (
+            bool(user_profile.get("force_route_timeout")) if user_profile else False
+        ),
+        "force_duration_exceeded": (
+            bool(user_profile.get("force_duration_exceeded")) if user_profile else False
+        ),
     }

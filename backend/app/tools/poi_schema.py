@@ -4,7 +4,6 @@ from typing import Any
 
 from app.state.plan_state import PoiRecord, RecommendedPoiRecord
 
-
 # 七张 POI 逻辑表名。Collector 层和 DAG 配置都使用这组常量，避免字符串散落。
 POI_ATTRACTION = "poi_attraction"
 POI_SHOPPING = "poi_shopping"

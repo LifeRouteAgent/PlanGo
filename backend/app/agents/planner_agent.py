@@ -100,14 +100,12 @@ def _categories_for_preferences(preferences: list[str]) -> list[str]:
 
     categories = {POI_ATTRACTION, POI_ACTIVITY, POI_RESTAURANT}
     if any(item in preferences for item in ("休闲娱乐", "健身", "美容养生", "购物")):
-        categories.update(
-            {
-                POI_SHOPPING,
-                POI_FITNESS,
-                POI_ENTERTAINMENT,
-                POI_BEAUTY,
-            }
-        )
+        categories.update({
+            POI_SHOPPING,
+            POI_FITNESS,
+            POI_ENTERTAINMENT,
+            POI_BEAUTY,
+        })
     return sorted(categories)
 
 
@@ -134,7 +132,9 @@ def _select_planning_template(
         return "family_half_day"
     if scenario == "couple":
         return "couple_date"
-    if POI_BEAUTY in category_set or any(word in preference_text for word in ("美容养生", "按摩", "养生")):
+    if POI_BEAUTY in category_set or any(
+        word in preference_text for word in ("美容养生", "按摩", "养生")
+    ):
         return "relaxation"
     if POI_SHOPPING in category_set and not ({POI_ACTIVITY, POI_ENTERTAINMENT} & category_set):
         return "shopping_leisure"
@@ -144,7 +144,9 @@ def _select_planning_template(
         return "meal_only"
     if scenario == "friends":
         return "friends_gathering"
-    if POI_RESTAURANT in category_set and ({POI_ACTIVITY, POI_ENTERTAINMENT, POI_ATTRACTION} & category_set):
+    if POI_RESTAURANT in category_set and (
+        {POI_ACTIVITY, POI_ENTERTAINMENT, POI_ATTRACTION} & category_set
+    ):
         return "meal_plus_activity"
     return "meal_plus_activity"
 
@@ -198,7 +200,11 @@ def _movement_policy_for_state(
     scenario = state.get("constraints", {}).get("scenario", "unknown")
     if "别太远" in query or "附近" in query or time_budget <= 180:
         return "compact_walk_or_taxi"
-    if scenario == "family" or planning_template in {"family_half_day", "relaxation", "shopping_leisure"}:
+    if scenario == "family" or planning_template in {
+        "family_half_day",
+        "relaxation",
+        "shopping_leisure",
+    }:
         return "low_movement"
     return "balanced_local"
 

@@ -12,11 +12,26 @@ from app.tools.poi_schema import (
     POI_SHOPPING,
 )
 
-
 CATEGORY_KEYWORDS: tuple[tuple[str, tuple[str, ...]], ...] = (
     (POI_RESTAURANT, ("餐厅", "吃饭", "美食", "火锅", "咖啡", "饭店", "轻食")),
     (POI_ACTIVITY, ("活动", "体验", "展览", "票券", "博物馆", "手作")),
-    (POI_ENTERTAINMENT, ("电影", "影院", "KTV", "ktv", "娱乐", "桌游", "棋牌", "麻将", "打牌", "唱歌", "K歌", "k歌")),
+    (
+        POI_ENTERTAINMENT,
+        (
+            "电影",
+            "影院",
+            "KTV",
+            "ktv",
+            "娱乐",
+            "桌游",
+            "棋牌",
+            "麻将",
+            "打牌",
+            "唱歌",
+            "K歌",
+            "k歌",
+        ),
+    ),
     (POI_FITNESS, ("健身", "运动", "瑜伽", "普拉提")),
     (POI_BEAUTY, ("按摩", "足疗", "美容", "养生", "洗浴")),
     (POI_SHOPPING, ("购物", "商场", "逛街", "生活广场")),
@@ -99,7 +114,18 @@ def _detect_intent_type(query: str) -> str:
         return "simple_qa"
 
     categories = _detect_target_categories(query)
-    planning_keywords = ("规划", "行程", "路线", "安排", "周末", "一天", "半天", "上午", "下午", "晚上")
+    planning_keywords = (
+        "规划",
+        "行程",
+        "路线",
+        "安排",
+        "周末",
+        "一天",
+        "半天",
+        "上午",
+        "下午",
+        "晚上",
+    )
     recommend_keywords = ("推荐", "找", "查", "附近", "有哪些")
 
     if any(keyword in query for keyword in planning_keywords) and len(categories) >= 2:
@@ -135,6 +161,9 @@ def _guard_llm_intent(llm_intent_type: str, rule_intent_type: str) -> str:
     actionable_intents = {"category_recommend", "poi_search", "full_trip_plan"}
     if rule_intent_type in actionable_intents and llm_intent_type in {"simple_qa", "capability"}:
         return rule_intent_type
-    if rule_intent_type == "full_trip_plan" and llm_intent_type in {"category_recommend", "poi_search"}:
+    if rule_intent_type == "full_trip_plan" and llm_intent_type in {
+        "category_recommend",
+        "poi_search",
+    }:
         return "full_trip_plan"
     return llm_intent_type

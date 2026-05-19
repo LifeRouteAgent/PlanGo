@@ -56,9 +56,7 @@ def verifier_node(state: PlanState) -> PlanStatePatch:
     return {
         "verified_plans": verified,
         "errors": all_issues,
-        "logs": [
-            f"Verifier: verified={len(verified)}, issues={format_issue_codes(all_issues)}"
-        ],
+        "logs": [f"Verifier: verified={len(verified)}, issues={format_issue_codes(all_issues)}"],
     }
 
 
@@ -193,7 +191,11 @@ def _item_risk_issues(plan: dict[str, Any]) -> list[dict[str, Any]]:
                 make_issue(
                     "poi_closed",
                     source="verifier",
-                    details={"plan_id": plan.get("id"), "poi_id": item.get("id"), "poi_name": item.get("name")},
+                    details={
+                        "plan_id": plan.get("id"),
+                        "poi_id": item.get("id"),
+                        "poi_name": item.get("name"),
+                    },
                 )
             )
         if item.get("crowd_risk") == "high" or "queue_risk" in item.get("risk_flags", []):
@@ -201,7 +203,11 @@ def _item_risk_issues(plan: dict[str, Any]) -> list[dict[str, Any]]:
                 make_issue(
                     "queue_risk",
                     source="verifier",
-                    details={"plan_id": plan.get("id"), "poi_id": item.get("id"), "poi_name": item.get("name")},
+                    details={
+                        "plan_id": plan.get("id"),
+                        "poi_id": item.get("id"),
+                        "poi_name": item.get("name"),
+                    },
                 )
             )
         if item.get("reservation_required") or "reservation_required" in item.get("risk_flags", []):
@@ -209,7 +215,11 @@ def _item_risk_issues(plan: dict[str, Any]) -> list[dict[str, Any]]:
                 make_issue(
                     "reservation_required",
                     source="verifier",
-                    details={"plan_id": plan.get("id"), "poi_id": item.get("id"), "poi_name": item.get("name")},
+                    details={
+                        "plan_id": plan.get("id"),
+                        "poi_id": item.get("id"),
+                        "poi_name": item.get("name"),
+                    },
                 )
             )
         if "open_time_unknown" in item.get("risk_flags", []):
@@ -217,7 +227,11 @@ def _item_risk_issues(plan: dict[str, Any]) -> list[dict[str, Any]]:
                 make_issue(
                     "open_time_unknown",
                     source="verifier",
-                    details={"plan_id": plan.get("id"), "poi_id": item.get("id"), "poi_name": item.get("name")},
+                    details={
+                        "plan_id": plan.get("id"),
+                        "poi_id": item.get("id"),
+                        "poi_name": item.get("name"),
+                    },
                 )
             )
         if "weak_preference_match" in item.get("risk_flags", []):
@@ -225,7 +239,11 @@ def _item_risk_issues(plan: dict[str, Any]) -> list[dict[str, Any]]:
                 make_issue(
                     "weak_preference_match",
                     source="verifier",
-                    details={"plan_id": plan.get("id"), "poi_id": item.get("id"), "poi_name": item.get("name")},
+                    details={
+                        "plan_id": plan.get("id"),
+                        "poi_id": item.get("id"),
+                        "poi_name": item.get("name"),
+                    },
                 )
             )
     return issues

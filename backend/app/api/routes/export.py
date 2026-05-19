@@ -7,7 +7,6 @@ from fastapi.responses import Response
 
 from app.models.schemas import ExportPlanRequest
 
-
 router = APIRouter(prefix="/export", tags=["export"])
 
 
@@ -44,7 +43,10 @@ def _plan_to_pdf_lines(plan: dict[str, Any]) -> list[str]:
         f"Title: {_ascii_pdf_text(plan.get('title', 'Untitled Plan'))}",
         f"Score: {plan.get('plan_score', 'N/A')}",
         f"Duration: {plan.get('total_duration_minutes', 'N/A')} minutes",
-        f"Route: {plan.get('route_minutes', 'N/A')} minutes / {plan.get('total_distance_km', 'N/A')} km",
+        (
+            f"Route: {plan.get('route_minutes', 'N/A')} minutes /"
+            f" {plan.get('total_distance_km', 'N/A')} km"
+        ),
         f"Budget: {plan.get('estimated_budget', 'N/A')}",
         "",
         "Reason:",
@@ -87,9 +89,16 @@ def _build_minimal_pdf(lines: list[str]) -> bytes:
     objects = [
         b"<< /Type /Catalog /Pages 2 0 R >>",
         b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
-        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>",
+        (
+            b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 4 0 R"
+            b" >> >> /Contents 5 0 R >>"
+        ),
         b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
-        b"<< /Length " + str(len(stream)).encode("ascii") + b" >>\nstream\n" + stream + b"\nendstream",
+        b"<< /Length "
+        + str(len(stream)).encode("ascii")
+        + b" >>\nstream\n"
+        + stream
+        + b"\nendstream",
     ]
 
     pdf = bytearray(b"%PDF-1.4\n%\xe2\xe3\xcf\xd3\n")

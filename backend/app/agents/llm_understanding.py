@@ -13,7 +13,6 @@ from app.tools.poi_schema import (
     POI_SHOPPING,
 )
 
-
 ALLOWED_INTENTS = {
     "capability",
     "simple_qa",
@@ -54,7 +53,9 @@ def get_llm_understanding(state: dict[str, Any]) -> dict[str, Any] | None:
     return understanding if isinstance(understanding, dict) else None
 
 
-def build_llm_understanding(query: str, user_profile: dict[str, Any] | None = None) -> dict[str, Any] | None:
+def build_llm_understanding(
+    query: str, user_profile: dict[str, Any] | None = None
+) -> dict[str, Any] | None:
     """用大模型完成意图识别、约束抽取、追问判断和规划模板选择。
 
     该函数只负责“理解用户输入”，不访问数据库，也不生成不存在的 POI。
@@ -78,7 +79,9 @@ def build_llm_understanding(query: str, user_profile: dict[str, Any] | None = No
     ]
     # 结构化理解 prompt 较长，MiMo 还可能返回 reasoning_content。
     # 这里给足输出预算，避免 JSON 被截断后触发规则兜底。
-    raw = call_chat_completion(messages, temperature=0.0, timeout_seconds=60, max_completion_tokens=2048)
+    raw = call_chat_completion(
+        messages, temperature=0.0, timeout_seconds=60, max_completion_tokens=2048
+    )
     parsed = extract_json_object(raw)
     return _normalize_understanding(parsed) if parsed else None
 
@@ -155,9 +158,7 @@ def _normalize_understanding(data: dict[str, Any]) -> dict[str, Any] | None:
         return None
 
     categories = [
-        str(item)
-        for item in data.get("target_categories", [])
-        if str(item) in ALLOWED_CATEGORIES
+        str(item) for item in data.get("target_categories", []) if str(item) in ALLOWED_CATEGORIES
     ]
     preferences = _clean_string_list(data.get("preferences"))
     if not _has_readable_preference(preferences):
@@ -167,9 +168,7 @@ def _normalize_understanding(data: dict[str, Any]) -> dict[str, Any] | None:
         template = ""
 
     missing = [
-        str(item)
-        for item in data.get("missing_constraints", [])
-        if str(item) in ALLOWED_MISSING
+        str(item) for item in data.get("missing_constraints", []) if str(item) in ALLOWED_MISSING
     ]
 
     normalized: dict[str, Any] = {
@@ -243,7 +242,7 @@ def _clean_int(value: Any) -> int | None:
         if value is None or value == "":
             return None
         return int(float(value))
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return None
 
 
@@ -254,5 +253,5 @@ def _clean_number(value: Any) -> float | None:
         if value is None or value == "":
             return None
         return float(value)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return None

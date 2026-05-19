@@ -32,7 +32,9 @@ def poi_restaurant_recommend_node(state: PlanState) -> PlanStatePatch:
             estimated_duration_minutes=_estimated_meal_duration(scenario),
             reservation_required=_reservation_required(item, state["user_query"]),
             crowd_risk=_crowd_risk(item, state["user_query"]),
-            budget_fit=price_level_budget_fit(str(item.get("price_level", "unknown")), per_person_budget),
+            budget_fit=price_level_budget_fit(
+                str(item.get("price_level", "unknown")), per_person_budget
+            ),
             scene_fit=_scene_fit(scenario),
             distance_sensitive=True,
             risk_flags=_risk_flags(item, per_person_budget, state["user_query"]),
@@ -65,7 +67,13 @@ def _score_boost(
 
     budget_fit = price_level_budget_fit(str(item.get("price_level", "unknown")), per_person_budget)
     crowd_risk = _crowd_risk(item, query)
-    return round(0.25 + score_budget_fit(budget_fit) + score_crowd_risk(crowd_risk) + _scene_fit(scenario) * 0.1, 2)
+    return round(
+        0.25
+        + score_budget_fit(budget_fit)
+        + score_crowd_risk(crowd_risk)
+        + _scene_fit(scenario) * 0.1,
+        2,
+    )
 
 
 def _estimated_meal_duration(scenario: str) -> int:

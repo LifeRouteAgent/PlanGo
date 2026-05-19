@@ -63,7 +63,7 @@ class AmapRouteService:
             if fallback_distance_km <= 1:
                 return self._walking(origin, destination)
             return self._driving(origin, destination)
-        except (httpx.HTTPError, KeyError, TypeError, ValueError):
+        except httpx.HTTPError, KeyError, TypeError, ValueError:
             return None
 
     def _walking(self, origin: str, destination: str) -> AmapRouteEstimate | None:

@@ -12,11 +12,16 @@ from fastapi.responses import StreamingResponse
 
 from app.config import settings
 from app.dag.langgraph_dag_config import life_route_graph
-from app.models.schemas import AdjustPlanRequest, DataSourceStatusResponse, ExecutePlanRequest, TripPlanRequest, TripPlanResponse
+from app.models.schemas import (
+    AdjustPlanRequest,
+    DataSourceStatusResponse,
+    ExecutePlanRequest,
+    TripPlanRequest,
+    TripPlanResponse,
+)
 from app.services.poi_repository import PoiRepository
 from app.services.tool_harness import ToolHarness
 from app.state.plan_state import create_initial_state
-
 
 router = APIRouter(prefix="/trip", tags=["trip"])
 
@@ -61,31 +66,25 @@ def stream_plan_trip(request: TripPlanRequest) -> StreamingResponse:
                     for node_name, patch in update.items():
                         current_state = _merge_stream_patch(current_state, patch)
                         latest_log = patch.get("logs", [])[-1] if patch.get("logs") else ""
-                        event_queue.put(
-                            (
-                                "agent_thinking",
-                                _build_agent_thinking_payload(node_name, patch, current_state),
-                            )
-                        )
-                        event_queue.put(
-                            (
-                                "agent_complete",
-                                {
-                                    "agent": node_name,
-                                    "message": latest_log or f"{node_name} completed",
-                                    "summary": _summarize_patch(patch),
-                                },
-                            )
-                        )
-                        event_queue.put(
-                            (
-                                "node_update",
-                                {
-                                    "node": node_name,
-                                    "message": latest_log or f"{node_name} completed",
-                                },
-                            )
-                        )
+                        event_queue.put((
+                            "agent_thinking",
+                            _build_agent_thinking_payload(node_name, patch, current_state),
+                        ))
+                        event_queue.put((
+                            "agent_complete",
+                            {
+                                "agent": node_name,
+                                "message": latest_log or f"{node_name} completed",
+                                "summary": _summarize_patch(patch),
+                            },
+                        ))
+                        event_queue.put((
+                            "node_update",
+                            {
+                                "node": node_name,
+                                "message": latest_log or f"{node_name} completed",
+                            },
+                        ))
                         if node_name == "response_generator" and patch.get("response_text"):
                             for chunk in _chunk_text(str(patch["response_text"])):
                                 event_queue.put(("response_chunk", {"delta": chunk}))
@@ -169,14 +168,12 @@ def stream_execute_plan(request: ExecutePlanRequest) -> StreamingResponse:
             name="execution.mock.build_steps",
             timeout_seconds=3,
             max_retries=1,
-            fallback=lambda: [
-                {
-                    "id": "execution_fallback",
-                    "type": "plan_ready",
-                    "title": "确认方案可执行",
-                    "description": "执行步骤生成失败，已降级为方案确认。",
-                }
-            ],
+            fallback=lambda: [{
+                "id": "execution_fallback",
+                "type": "plan_ready",
+                "title": "确认方案可执行",
+                "description": "执行步骤生成失败，已降级为方案确认。",
+            }],
         )
         harness_result = harness.run(_build_mock_execution_steps, request.plan)
         steps = harness_result.data if harness_result.success else []
@@ -291,7 +288,7 @@ def _chunk_text(text: str, chunk_size: int = 18) -> Iterator[str]:
     if not text:
         return
     for index in range(0, len(text), chunk_size):
-        yield text[index:index + chunk_size]
+        yield text[index : index + chunk_size]
 
 
 def _build_agent_thinking_payload(
@@ -341,7 +338,9 @@ def _agent_message(node_name: str, patch: dict[str, Any], current_state: dict[st
     """生成 Thinking 面板的一句话解释。"""
 
     if node_name == "intent_router":
-        return f"判断为 {patch.get('intent_type', current_state.get('intent_type', '未知'))}，决定是否进入规划。"
+        return (
+            f"判断为 {patch.get('intent_type', current_state.get('intent_type', '未知'))}，决定是否进入规划。"
+        )
     if node_name == "poi_collector":
         counts = {
             key: len(value)
@@ -360,7 +359,9 @@ def _agent_message(node_name: str, patch: dict[str, Any], current_state: dict[st
         return f"生成 {len(patch.get('candidate_plans', []))} 个带时间线的候选方案。"
     if node_name == "verifier":
         errors = patch.get("errors", [])
-        return "校验通过，进入排序。" if not errors else f"发现 {len(errors)} 个问题，准备回退或降级。"
+        return (
+            "校验通过，进入排序。" if not errors else f"发现 {len(errors)} 个问题，准备回退或降级。"
+        )
     if node_name == "ranker":
         return f"综合偏好、距离、时间、预算排序出 {len(patch.get('ranked_plans', []))} 个方案。"
     if node_name == "response_generator":
@@ -373,18 +374,24 @@ def _summarize_patch(patch: dict[str, Any]) -> dict[str, Any]:
     """把节点输出压缩成小摘要，供前端展示和排障。"""
 
     return {
-        "candidate_categories": list(patch.get("candidate_pois", {}).keys())
-        if isinstance(patch.get("candidate_pois"), dict)
-        else [],
-        "recommended_categories": list(patch.get("recommended_pois", {}).keys())
-        if isinstance(patch.get("recommended_pois"), dict)
-        else [],
-        "candidate_plan_count": len(patch.get("candidate_plans", []))
-        if isinstance(patch.get("candidate_plans"), list)
-        else 0,
-        "ranked_plan_count": len(patch.get("ranked_plans", []))
-        if isinstance(patch.get("ranked_plans"), list)
-        else 0,
+        "candidate_categories": (
+            list(patch.get("candidate_pois", {}).keys())
+            if isinstance(patch.get("candidate_pois"), dict)
+            else []
+        ),
+        "recommended_categories": (
+            list(patch.get("recommended_pois", {}).keys())
+            if isinstance(patch.get("recommended_pois"), dict)
+            else []
+        ),
+        "candidate_plan_count": (
+            len(patch.get("candidate_plans", []))
+            if isinstance(patch.get("candidate_plans"), list)
+            else 0
+        ),
+        "ranked_plan_count": (
+            len(patch.get("ranked_plans", [])) if isinstance(patch.get("ranked_plans"), list) else 0
+        ),
         "error_count": len(patch.get("errors", [])) if isinstance(patch.get("errors"), list) else 0,
     }
 
@@ -399,55 +406,52 @@ def _build_mock_execution_steps(plan: dict[str, Any]) -> list[dict[str, Any]]:
 
     steps: list[dict[str, Any]] = []
     items = plan.get("items", []) if isinstance(plan.get("items"), list) else []
-    segments = plan.get("route_segments", []) if isinstance(plan.get("route_segments"), list) else []
+    segments = (
+        plan.get("route_segments", []) if isinstance(plan.get("route_segments"), list) else []
+    )
 
     for item in items:
         category = str(item.get("category", ""))
         if category == "poi_restaurant":
-            steps.append(
-                {
-                    "id": f"reserve_{item.get('id')}",
-                    "type": "restaurant_reservation",
-                    "title": f"预约餐厅：{item.get('name')}",
-                    "description": "模拟提交人数、时间和备注，等待商家确认。",
-                    "poi_id": item.get("id"),
-                    "poi_name": item.get("name"),
-                }
-            )
+            steps.append({
+                "id": f"reserve_{item.get('id')}",
+                "type": "restaurant_reservation",
+                "title": f"预约餐厅：{item.get('name')}",
+                "description": "模拟提交人数、时间和备注，等待商家确认。",
+                "poi_id": item.get("id"),
+                "poi_name": item.get("name"),
+            })
         if category in {"poi_activity", "poi_attraction", "poi_entertainment"}:
-            steps.append(
-                {
-                    "id": f"ticket_{item.get('id')}",
-                    "type": "ticket_purchase",
-                    "title": f"锁定门票/场次：{item.get('name')}",
-                    "description": "模拟查询余票、选择场次并生成待支付订单。",
-                    "poi_id": item.get("id"),
-                    "poi_name": item.get("name"),
-                }
-            )
+            steps.append({
+                "id": f"ticket_{item.get('id')}",
+                "type": "ticket_purchase",
+                "title": f"锁定门票/场次：{item.get('name')}",
+                "description": "模拟查询余票、选择场次并生成待支付订单。",
+                "poi_id": item.get("id"),
+                "poi_name": item.get("name"),
+            })
 
     for index, segment in enumerate(segments, start=1):
-        steps.append(
-            {
-                "id": f"ride_{index}",
-                "type": "ride_hailing",
-                "title": f"叫车：{segment.get('from')} → {segment.get('to')}",
-                "description": f"模拟预估 {segment.get('duration_minutes', 0)} 分钟，约 {segment.get('distance_km', 0)} km。",
-                "from": segment.get("from"),
-                "to": segment.get("to"),
-                "transport_mode": segment.get("transport_mode"),
-            }
-        )
+        steps.append({
+            "id": f"ride_{index}",
+            "type": "ride_hailing",
+            "title": f"叫车：{segment.get('from')} → {segment.get('to')}",
+            "description": (
+                f"模拟预估 {segment.get('duration_minutes', 0)} 分钟，约"
+                f" {segment.get('distance_km', 0)} km。"
+            ),
+            "from": segment.get("from"),
+            "to": segment.get("to"),
+            "transport_mode": segment.get("transport_mode"),
+        })
 
     if not steps:
-        steps.append(
-            {
-                "id": "share_only",
-                "type": "plan_ready",
-                "title": "确认方案可执行",
-                "description": "当前方案没有需要 mock 的预约、购票或打车步骤。",
-            }
-        )
+        steps.append({
+            "id": "share_only",
+            "type": "plan_ready",
+            "title": "确认方案可执行",
+            "description": "当前方案没有需要 mock 的预约、购票或打车步骤。",
+        })
     return steps
 
 
@@ -480,11 +484,11 @@ def _replace_plan_poi(plan: dict[str, Any], poi_id: str, prompt: str) -> dict[st
         return _fallback_adjust_response(plan, poi_id, prompt, "没有找到要替换的地点。")
 
     category = str(old_item.get("category") or "")
-    candidates = PoiRepository(limit_per_category=50).fetch_by_categories([category]).get(category, [])
+    candidates = (
+        PoiRepository(limit_per_category=50).fetch_by_categories([category]).get(category, [])
+    )
     candidate_dicts = [
-        dict(candidate)
-        for candidate in candidates
-        if str(candidate.get("id")) != str(poi_id)
+        dict(candidate) for candidate in candidates if str(candidate.get("id")) != str(poi_id)
     ]
     if not candidate_dicts:
         return _fallback_adjust_response(plan, poi_id, prompt, "当前类别没有可替换候选。")
@@ -515,7 +519,9 @@ def _pick_replacement(
         name = str(candidate.get("name", ""))
         subcategory = str(candidate.get("subcategory", ""))
         joined = f"{name} {subcategory} {tags}"
-        if "室内" in prompt and any(word in joined for word in ["室内", "商场", "影院", "ktv", "KTV", "棋牌", "桌游"]):
+        if "室内" in prompt and any(
+            word in joined for word in ["室内", "商场", "影院", "ktv", "KTV", "棋牌", "桌游"]
+        ):
             value += 1.5
         if "不要火锅" in prompt and "火锅" in joined:
             value -= 5
@@ -544,8 +550,9 @@ def _apply_replacement(
     replacement_item = {
         **replacement,
         "recommendation_reason": f"根据“{prompt}”替换，保留原类别但更贴近当前调整方向。",
-        "option_prompts": replacement.get("option_prompts")
-        or ["再近一点", "换成室内", "换个更省钱的"],
+        "option_prompts": (
+            replacement.get("option_prompts") or ["再近一点", "换成室内", "换个更省钱的"]
+        ),
     }
     adjusted["items"] = [
         replacement_item if str(item.get("id")) == old_id else item
@@ -555,14 +562,12 @@ def _apply_replacement(
     timeline = []
     for entry in adjusted.get("timeline", []) if isinstance(adjusted.get("timeline"), list) else []:
         if str(entry.get("poi_id")) == old_id:
-            timeline.append(
-                {
-                    **entry,
-                    "poi_id": replacement_item.get("id"),
-                    "title": replacement_item.get("name"),
-                    "address": replacement_item.get("address"),
-                }
-            )
+            timeline.append({
+                **entry,
+                "poi_id": replacement_item.get("id"),
+                "title": replacement_item.get("name"),
+                "address": replacement_item.get("address"),
+            })
         else:
             timeline.append(entry)
     adjusted["timeline"] = timeline
@@ -575,10 +580,11 @@ def _rough_distance(a: dict[str, Any], b: dict[str, Any]) -> float:
     """粗略距离，用于局部替换排序；真实路线仍由 Route Planner/高德阶段负责。"""
 
     try:
-        return abs(float(a.get("lat", 0)) - float(b.get("lat", 0))) * 111 + abs(
-            float(a.get("lon", 0)) - float(b.get("lon", 0))
-        ) * 85
-    except (TypeError, ValueError):
+        return (
+            abs(float(a.get("lat", 0)) - float(b.get("lat", 0))) * 111
+            + abs(float(a.get("lon", 0)) - float(b.get("lon", 0))) * 85
+        )
+    except TypeError, ValueError:
         return 99
 
 

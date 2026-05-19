@@ -20,10 +20,10 @@ from app.tools.poi_schema import (
     make_poi_record,
 )
 
-
 # 每个逻辑类别只允许映射到固定 SQL，避免把表名作为用户输入拼接进 SQL。
 CATEGORY_QUERY_MAP: dict[str, str] = {
-    POI_RESTAURANT: """
+    POI_RESTAURANT: (
+        """
         SELECT source_id AS id, name, 'poi_restaurant' AS category,
                COALESCE(NULLIF(biz_category, ''), 'restaurant') AS subcategory,
                lat, lng AS lon, address, rating, cost AS price,
@@ -32,8 +32,10 @@ CATEGORY_QUERY_MAP: dict[str, str] = {
         WHERE name <> '' AND lat IS NOT NULL AND lng IS NOT NULL
         ORDER BY COALESCE(rating, 0) DESC, COALESCE(favorite_num, 0) DESC
         LIMIT %(limit)s
-    """,
-    POI_ACTIVITY: """
+    """
+    ),
+    POI_ACTIVITY: (
+        """
         SELECT CAST(activity_id AS CHAR) AS id, title AS name, 'poi_activity' AS category,
                'activity' AS subcategory, location, address_desc AS address,
                NULL AS rating, price, available_date AS open_time,
@@ -42,8 +44,10 @@ CATEGORY_QUERY_MAP: dict[str, str] = {
         WHERE title <> '' AND location IS NOT NULL AND location <> ''
         ORDER BY updated_time DESC
         LIMIT %(limit)s
-    """,
-    POI_ATTRACTION: """
+    """
+    ),
+    POI_ATTRACTION: (
+        """
         SELECT CAST(id AS CHAR) AS id, name, 'poi_attraction' AS category,
                'attraction' AS subcategory, lat, lng AS lon, address,
                score AS rating, NULL AS price, JSON_EXTRACT(open_time, '$') AS open_time,
@@ -52,8 +56,10 @@ CATEGORY_QUERY_MAP: dict[str, str] = {
         WHERE name <> '' AND lat IS NOT NULL AND lng IS NOT NULL
         ORDER BY COALESCE(score, 0) DESC, COALESCE(hot_score, 0) DESC
         LIMIT %(limit)s
-    """,
-    POI_SHOPPING: """
+    """
+    ),
+    POI_SHOPPING: (
+        """
         SELECT source_id AS id, name, 'poi_shopping' AS category,
                COALESCE(NULLIF(categories, ''), 'shopping') AS subcategory,
                lat, lng AS lon, address, comment_score AS rating, NULL AS price,
@@ -62,8 +68,10 @@ CATEGORY_QUERY_MAP: dict[str, str] = {
         WHERE name <> '' AND lat IS NOT NULL AND lng IS NOT NULL
         ORDER BY COALESCE(comment_score, 0) DESC, COALESCE(comment_num, 0) DESC
         LIMIT %(limit)s
-    """,
-    POI_FITNESS: """
+    """
+    ),
+    POI_FITNESS: (
+        """
         SELECT source_id AS id, name, 'poi_fitness' AS category,
                COALESCE(NULLIF(fitness_tag, ''), 'fitness') AS subcategory,
                lat, lng AS lon, address, rating, cost AS price,
@@ -72,8 +80,10 @@ CATEGORY_QUERY_MAP: dict[str, str] = {
         WHERE name <> '' AND lat IS NOT NULL AND lng IS NOT NULL
         ORDER BY COALESCE(rating, 0) DESC, COALESCE(favorite_num, 0) DESC
         LIMIT %(limit)s
-    """,
-    POI_ENTERTAINMENT: """
+    """
+    ),
+    POI_ENTERTAINMENT: (
+        """
         SELECT source_id AS id, name, 'poi_entertainment' AS category,
                COALESCE(NULLIF(entertainment_type, ''), 'entertainment') AS subcategory,
                lat, lng AS lon, address, rating, cost AS price,
@@ -82,8 +92,10 @@ CATEGORY_QUERY_MAP: dict[str, str] = {
         WHERE name <> '' AND lat IS NOT NULL AND lng IS NOT NULL
         ORDER BY COALESCE(rating, 0) DESC, COALESCE(groupbuy_num, 0) DESC
         LIMIT %(limit)s
-    """,
-    POI_BEAUTY: """
+    """
+    ),
+    POI_BEAUTY: (
+        """
         SELECT source_id AS id, name, 'poi_beauty' AS category,
                COALESCE(NULLIF(beauty_type, ''), 'beauty') AS subcategory,
                lat, lng AS lon, address, rating, cost AS price,
@@ -92,7 +104,8 @@ CATEGORY_QUERY_MAP: dict[str, str] = {
         WHERE name <> '' AND lat IS NOT NULL AND lng IS NOT NULL
         ORDER BY COALESCE(rating, 0) DESC, COALESCE(favorite_num, 0) DESC
         LIMIT %(limit)s
-    """,
+    """
+    ),
 }
 
 
@@ -120,9 +133,11 @@ class PoiRepository:
             fallback=lambda: {category: [] for category in category_list},
         )
         result = harness.run(self._fetch_by_categories_once, category_list)
-        return result.data if result.success and isinstance(result.data, dict) else {
-            category: [] for category in category_list
-        }
+        return (
+            result.data
+            if result.success and isinstance(result.data, dict)
+            else {category: [] for category in category_list}
+        )
 
     def _fetch_by_categories_once(self, categories: Iterable[str]) -> dict[str, list[PoiRecord]]:
         """执行一次真实数据库读取，外层由 ToolHarness 负责 timeout/retry/fallback。"""
@@ -252,5 +267,5 @@ class PoiRepository:
     def _safe_float(self, value: Any, *, default: float = 0.0) -> float:
         try:
             return float(value)
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             return default

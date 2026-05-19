@@ -7,7 +7,6 @@ from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeout
 from dataclasses import dataclass, field
 from typing import Any, TypeVar
 
-
 logger = logging.getLogger("liferoute.tool_harness")
 
 T = TypeVar("T")
@@ -67,7 +66,9 @@ class ToolHarness:
                     latency_ms=latency,
                     attempts=attempt,
                 )
-            except Exception as exc:  # noqa: BLE001 - Harness 必须吞掉所有工具异常并转成结构化结果。
+            except (
+                Exception
+            ) as exc:  # noqa: BLE001 - Harness 必须吞掉所有工具异常并转成结构化结果。
                 last_error = str(exc)
                 latency = int((time.perf_counter() - started) * 1000)
                 self._record(False, latency, attempt, "live", last_error)
@@ -133,4 +134,3 @@ class ToolHarness:
             logger.info("%s success source=%s latency=%sms", self.name, source, latency_ms)
         else:
             logger.warning("%s failed attempt=%s error=%s", self.name, attempt, error)
-

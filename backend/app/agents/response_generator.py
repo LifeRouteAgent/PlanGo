@@ -61,7 +61,9 @@ def response_generator_node(state: PlanState) -> PlanStatePatch:
     ranked_plans = _enrich_ranked_plans_for_presentation(state)
     selected = ranked_plans[0] if ranked_plans else state.get("selected_plan") or {}
     fallback_text = _full_plan_text(selected, ranked_plans)
-    llm_text = _llm_response_text(state, fallback_text, ranked_plans=ranked_plans, selected_plan=selected)
+    llm_text = _llm_response_text(
+        state, fallback_text, ranked_plans=ranked_plans, selected_plan=selected
+    )
     return {
         "response_text": llm_text or fallback_text,
         "ranked_plans": ranked_plans or state.get("ranked_plans", []),
@@ -128,7 +130,9 @@ def _enrich_ranked_plans_for_presentation(state: PlanState) -> list[dict[str, An
     if not ranked_plans:
         return []
 
-    fallback = [_fallback_enrich_plan(plan, index) for index, plan in enumerate(ranked_plans, start=1)]
+    fallback = [
+        _fallback_enrich_plan(plan, index) for index, plan in enumerate(ranked_plans, start=1)
+    ]
     llm_plans = _llm_plan_enrichment(state, fallback)
     if not llm_plans:
         return fallback
@@ -140,11 +144,15 @@ def _enrich_ranked_plans_for_presentation(state: PlanState) -> list[dict[str, An
     }
     merged: list[dict[str, Any]] = []
     for index, plan in enumerate(fallback, start=1):
-        merged.append(_merge_plan_enrichment(plan, llm_by_id.get(str(plan.get("id", index)), {}), index))
+        merged.append(
+            _merge_plan_enrichment(plan, llm_by_id.get(str(plan.get("id", index)), {}), index)
+        )
     return merged
 
 
-def _llm_plan_enrichment(state: PlanState, fallback_plans: list[dict[str, Any]]) -> list[dict[str, Any]] | None:
+def _llm_plan_enrichment(
+    state: PlanState, fallback_plans: list[dict[str, Any]]
+) -> list[dict[str, Any]] | None:
     """用 LLM 生成方案优缺点和 POI 可选调整项。
 
     输入只包含已有方案和已有 POI，输出必须引用相同 id。后续合并时也只按 id 合并文案字段，
@@ -153,29 +161,27 @@ def _llm_plan_enrichment(state: PlanState, fallback_plans: list[dict[str, Any]])
 
     compact_plans = []
     for plan in fallback_plans:
-        compact_plans.append(
-            {
-                "id": plan.get("id"),
-                "title": plan.get("title"),
-                "plan_score": plan.get("plan_score"),
-                "total_duration_minutes": plan.get("total_duration_minutes"),
-                "route_minutes": plan.get("route_minutes"),
-                "estimated_budget": plan.get("estimated_budget"),
-                "items": [
-                    {
-                        "id": item.get("id"),
-                        "name": item.get("name"),
-                        "category": item.get("category"),
-                        "subcategory": item.get("subcategory"),
-                        "rating": item.get("rating"),
-                        "reason": item.get("reason"),
-                        "tags": item.get("tags", [])[:5],
-                    }
-                    for item in plan.get("items", [])
-                ],
-                "issues": plan.get("issues", []),
-            }
-        )
+        compact_plans.append({
+            "id": plan.get("id"),
+            "title": plan.get("title"),
+            "plan_score": plan.get("plan_score"),
+            "total_duration_minutes": plan.get("total_duration_minutes"),
+            "route_minutes": plan.get("route_minutes"),
+            "estimated_budget": plan.get("estimated_budget"),
+            "items": [
+                {
+                    "id": item.get("id"),
+                    "name": item.get("name"),
+                    "category": item.get("category"),
+                    "subcategory": item.get("subcategory"),
+                    "rating": item.get("rating"),
+                    "reason": item.get("reason"),
+                    "tags": item.get("tags", [])[:5],
+                }
+                for item in plan.get("items", [])
+            ],
+            "issues": plan.get("issues", []),
+        })
 
     raw = call_chat_completion(
         [
@@ -199,29 +205,23 @@ def _llm_plan_enrichment(state: PlanState, fallback_plans: list[dict[str, Any]])
                         },
                         "plans": compact_plans,
                         "required_schema": {
-                            "plans": [
-                                {
-                                    "id": "必须等于输入 plan id",
-                                    "recommendation_reason": "一句话说明这个方案适合谁",
-                                    "pros": ["优点1", "优点2"],
-                                    "cons": ["缺点1", "缺点2"],
-                                    "plan_actions": [
-                                        {
-                                            "id": "必须是 execute_plan、share_pdf 或自定义英文 id",
-                                            "label": "按钮文案",
-                                            "type": "execute | export | refine",
-                                            "prompt": "点击后代表的调整意图",
-                                        }
-                                    ],
-                                    "items": [
-                                        {
-                                            "id": "必须等于输入 poi id",
-                                            "recommendation_reason": "每个地点一行简短推荐理由",
-                                            "option_prompts": ["再近一点", "换成室内", "不要火锅"],
-                                        }
-                                    ],
-                                }
-                            ]
+                            "plans": [{
+                                "id": "必须等于输入 plan id",
+                                "recommendation_reason": "一句话说明这个方案适合谁",
+                                "pros": ["优点1", "优点2"],
+                                "cons": ["缺点1", "缺点2"],
+                                "plan_actions": [{
+                                    "id": "必须是 execute_plan、share_pdf 或自定义英文 id",
+                                    "label": "按钮文案",
+                                    "type": "execute | export | refine",
+                                    "prompt": "点击后代表的调整意图",
+                                }],
+                                "items": [{
+                                    "id": "必须等于输入 poi id",
+                                    "recommendation_reason": "每个地点一行简短推荐理由",
+                                    "option_prompts": ["再近一点", "换成室内", "不要火锅"],
+                                }],
+                            }]
                         },
                     },
                     ensure_ascii=False,
@@ -285,11 +285,15 @@ def _fallback_enrich_item(item: dict[str, Any]) -> dict[str, Any]:
     return {
         **item,
         "recommendation_reason": str(reason).split("。")[0][:48],
-        "option_prompts": category_options.get(str(item.get("category")), ["再近一点", "换成室内", "降低预算"]),
+        "option_prompts": category_options.get(
+            str(item.get("category")), ["再近一点", "换成室内", "降低预算"]
+        ),
     }
 
 
-def _merge_plan_enrichment(plan: dict[str, Any], extra: dict[str, Any], index: int) -> dict[str, Any]:
+def _merge_plan_enrichment(
+    plan: dict[str, Any], extra: dict[str, Any], index: int
+) -> dict[str, Any]:
     """把 LLM 文案安全合并回原方案。"""
 
     merged = dict(plan)
@@ -377,14 +381,12 @@ def _merge_plan_actions(plan: dict[str, Any], llm_actions: Any) -> list[dict[str
             prompt = str(action.get("prompt") or label).strip()
             if not action_id or not label or action_id in fixed_ids:
                 continue
-            dynamic.append(
-                {
-                    "id": action_id[:40],
-                    "label": label[:24],
-                    "type": action_type if action_type in {"execute", "export", "refine"} else "refine",
-                    "prompt": prompt[:80],
-                }
-            )
+            dynamic.append({
+                "id": action_id[:40],
+                "label": label[:24],
+                "type": action_type if action_type in {"execute", "export", "refine"} else "refine",
+                "prompt": prompt[:80],
+            })
 
     if len(dynamic) < 2:
         dynamic = _default_plan_actions(plan)[2:]
@@ -402,7 +404,9 @@ def _merge_item_enrichment(item: dict[str, Any], extra: dict[str, Any]) -> dict[
 
     options = extra.get("option_prompts")
     if isinstance(options, list) and options:
-        merged["option_prompts"] = [str(option).strip() for option in options[:4] if str(option).strip()]
+        merged["option_prompts"] = [
+            str(option).strip() for option in options[:4] if str(option).strip()
+        ]
 
     merged.setdefault("recommendation_reason", fallback["recommendation_reason"])
     merged.setdefault("option_prompts", fallback["option_prompts"])
@@ -446,7 +450,8 @@ def _alternatives_summary(ranked_plans: list[dict[str, Any]]) -> str:
         pros = "；".join(plan.get("pros", [])[:2]) or "偏好匹配度较高"
         cons = "；".join(plan.get("cons", [])[:2]) or "需确认营业和排队"
         lines.append(
-            f"{index}. {plan.get('title', '方案')}：{plan.get('recommendation_reason', '')} 优点：{pros}。缺点：{cons}。"
+            f"{index}. {plan.get('title', '方案')}：{plan.get('recommendation_reason', '')}"
+            f" 优点：{pros}。缺点：{cons}。"
         )
     return "\n".join(lines)
 

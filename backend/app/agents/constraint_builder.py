@@ -11,12 +11,16 @@ def constraint_builder_node(state: PlanState) -> PlanStatePatch:
     llm_understanding = get_llm_understanding(state)
     constraints = dict(state.get("constraints", {}))
     constraints.setdefault("city", state.get("user_profile", {}).get("city", "北京"))
-    constraints.setdefault("start_time", _llm_or_default(llm_understanding, "start_time", _parse_start_time(query)))
+    constraints.setdefault(
+        "start_time", _llm_or_default(llm_understanding, "start_time", _parse_start_time(query))
+    )
     constraints.setdefault(
         "duration_hours",
         _llm_or_default(llm_understanding, "duration_hours", _parse_duration_hours(query)),
     )
-    constraints.setdefault("budget", _llm_or_default(llm_understanding, "budget", _parse_budget(query)))
+    constraints.setdefault(
+        "budget", _llm_or_default(llm_understanding, "budget", _parse_budget(query))
+    )
     if llm_understanding and llm_understanding.get("location_area"):
         constraints.setdefault("location_area", llm_understanding["location_area"])
     constraints.setdefault("max_route_minutes", 45)

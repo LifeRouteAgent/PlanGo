@@ -25,10 +25,7 @@ def ranker_node(state: PlanState) -> PlanStatePatch:
     if state.get("intent_type") in {"category_recommend", "poi_search"}:
         return _rank_category_recommendations(state)
 
-    scored_plans = [
-        _attach_plan_score(plan, state)
-        for plan in state.get("verified_plans", [])
-    ]
+    scored_plans = [_attach_plan_score(plan, state) for plan in state.get("verified_plans", [])]
     ranked = sorted(
         scored_plans,
         key=lambda plan: (
@@ -70,7 +67,9 @@ def _rank_category_recommendations(state: PlanState) -> PlanStatePatch:
         "title": "本地生活分类推荐",
         "items": ranked_items[:8],
         "verified": True,
-        "plan_score": round(_average([item.get("recommendation_score", 0) for item in ranked_items[:8]]), 2),
+        "plan_score": round(
+            _average([item.get("recommendation_score", 0) for item in ranked_items[:8]]), 2
+        ),
     }
     return {
         "ranked_plans": [selected] if ranked_items else [],
@@ -83,7 +82,9 @@ def _attach_plan_score(plan: dict[str, Any], state: PlanState) -> dict[str, Any]
     """计算并挂载整体方案评分。"""
 
     constraints = state.get("constraints", {})
-    required_slots = list(plan.get("required_slots") or state.get("dag_plan", {}).get("required_slots") or [])
+    required_slots = list(
+        plan.get("required_slots") or state.get("dag_plan", {}).get("required_slots") or []
+    )
     max_route_minutes = int(constraints.get("max_route_minutes", 45))
     duration_limit = int(float(constraints.get("duration_hours", 6))) * 60
     budget = int(float(constraints.get("budget", 600)))

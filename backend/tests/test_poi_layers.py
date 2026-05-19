@@ -43,13 +43,16 @@ def test_activity_skill_outputs_scored_recommendations() -> None:
     """活动 Skill 应输出推荐分和本地生活可执行性字段。"""
 
     state = create_initial_state("周末体验活动", user_profile={"use_database": False})
-    state["constraints"] = {"duration_hours": 4, "budget": 600, "people_count": 2, "scenario": "friends"}
-    state["candidate_pois"] = poi_collector_node(
-        {
-            **state,
-            "dag_plan": {"collector_categories": [POI_ACTIVITY]},
-        }
-    )["candidate_pois"]
+    state["constraints"] = {
+        "duration_hours": 4,
+        "budget": 600,
+        "people_count": 2,
+        "scenario": "friends",
+    }
+    state["candidate_pois"] = poi_collector_node({
+        **state,
+        "dag_plan": {"collector_categories": [POI_ACTIVITY]},
+    })["candidate_pois"]
 
     patch = poi_activity_recommend_node(state)
     item = patch["recommended_pois"]["activity"][0]
@@ -69,14 +72,19 @@ def test_activity_skill_outputs_scored_recommendations() -> None:
 def test_restaurant_skill_considers_budget_and_queue_risk() -> None:
     """餐厅 Skill 应根据预算、场景和周末高评分场景输出排队/预约信号。"""
 
-    state = create_initial_state("周末和朋友吃饭，预算 200 元", user_profile={"use_database": False})
-    state["constraints"] = {"duration_hours": 3, "budget": 200, "people_count": 2, "scenario": "friends"}
-    state["candidate_pois"] = poi_collector_node(
-        {
-            **state,
-            "dag_plan": {"collector_categories": [POI_RESTAURANT]},
-        }
-    )["candidate_pois"]
+    state = create_initial_state(
+        "周末和朋友吃饭，预算 200 元", user_profile={"use_database": False}
+    )
+    state["constraints"] = {
+        "duration_hours": 3,
+        "budget": 200,
+        "people_count": 2,
+        "scenario": "friends",
+    }
+    state["candidate_pois"] = poi_collector_node({
+        **state,
+        "dag_plan": {"collector_categories": [POI_RESTAURANT]},
+    })["candidate_pois"]
 
     patch = poi_restaurant_recommend_node(state)
     item = patch["recommended_pois"]["restaurant"][0]
@@ -93,13 +101,16 @@ def test_lifestyle_skill_marks_reservation_and_weak_fitness_preference() -> None
     """生活方式 Skill 应区分娱乐/美容/健身，并标出弱偏好健身风险。"""
 
     state = create_initial_state("周末和朋友吃饭看电影", user_profile={"use_database": False})
-    state["constraints"] = {"duration_hours": 4, "budget": 600, "people_count": 2, "scenario": "friends"}
-    state["candidate_pois"] = poi_collector_node(
-        {
-            **state,
-            "dag_plan": {"collector_categories": [POI_ENTERTAINMENT, POI_BEAUTY, POI_FITNESS]},
-        }
-    )["candidate_pois"]
+    state["constraints"] = {
+        "duration_hours": 4,
+        "budget": 600,
+        "people_count": 2,
+        "scenario": "friends",
+    }
+    state["candidate_pois"] = poi_collector_node({
+        **state,
+        "dag_plan": {"collector_categories": [POI_ENTERTAINMENT, POI_BEAUTY, POI_FITNESS]},
+    })["candidate_pois"]
 
     patch = poi_lifestyle_recommend_node(state)
     items = patch["recommended_pois"]["lifestyle"]

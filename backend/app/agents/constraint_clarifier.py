@@ -63,11 +63,17 @@ def constraint_clarifier_node(state: PlanState) -> PlanStatePatch:
         "need_clarification": need_clarification,
         "missing_constraints": missing,
         "clarify_question": question if need_clarification else "",
-        "answer_mode": "clarification" if need_clarification else state.get("answer_mode", "trip_plan"),
+        "answer_mode": (
+            "clarification" if need_clarification else state.get("answer_mode", "trip_plan")
+        ),
         "logs": [
             f"Constraint Clarifier: used {source}, missing "
             + ",".join(missing)
-            + (", generated clarify question" if need_clarification else ", continue by LLM decision")
+            + (
+                ", generated clarify question"
+                if need_clarification
+                else ", continue by LLM decision"
+            )
         ],
     }
 
@@ -111,13 +117,13 @@ def _missing_constraints(
 def _llm_has_core_planning_fields(llm_understanding: dict[str, object]) -> bool:
     """判断模型是否真的抽取到了足够的完整规划核心信息。"""
 
-    has_people_or_scenario = bool(llm_understanding.get("people_count")) or llm_understanding.get("scenario") not in {
-        None,
-        "",
-        "unknown",
-    }
+    has_people_or_scenario = bool(llm_understanding.get("people_count")) or llm_understanding.get(
+        "scenario"
+    ) not in {None, "", "unknown"}
     has_time = bool(llm_understanding.get("start_time") or llm_understanding.get("duration_hours"))
-    has_preference = bool(llm_understanding.get("preferences") or llm_understanding.get("target_categories"))
+    has_preference = bool(
+        llm_understanding.get("preferences") or llm_understanding.get("target_categories")
+    )
     return bool(has_people_or_scenario and has_time and has_preference)
 
 
@@ -130,7 +136,10 @@ def _has_people_or_scenario(query: str, constraints: dict[str, object]) -> bool:
         return True
     return bool(
         re.search(r"\d+\s*(个?人|位)", query)
-        or any(keyword in query for keyword in ("朋友", "家庭", "亲子", "情侣", "同事", "同学", "老人", "孩子"))
+        or any(
+            keyword in query
+            for keyword in ("朋友", "家庭", "亲子", "情侣", "同事", "同学", "老人", "孩子")
+        )
     )
 
 
@@ -140,7 +149,10 @@ def _has_time_window(query: str) -> bool:
     return bool(
         re.search(r"\d+\s*(小时|个小时|分钟)", query)
         or re.search(r"\d{1,2}[:点]\d{0,2}", query)
-        or any(keyword in query for keyword in ("上午", "下午", "晚上", "今晚", "明天", "周六", "周日", "半天", "一天"))
+        or any(
+            keyword in query
+            for keyword in ("上午", "下午", "晚上", "今晚", "明天", "周六", "周日", "半天", "一天")
+        )
     )
 
 
@@ -193,4 +205,6 @@ def _build_clarify_question(missing: list[str]) -> str:
         parts.append("更偏吃饭、电影、展览、逛街、运动还是放松养生")
 
     joined = "、".join(parts)
-    return f"为了给你生成可执行的本地生活方案，还需要确认：{joined}。也可以顺便告诉我预算和出发区域。"
+    return (
+        f"为了给你生成可执行的本地生活方案，还需要确认：{joined}。也可以顺便告诉我预算和出发区域。"
+    )

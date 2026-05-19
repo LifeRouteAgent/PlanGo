@@ -30,7 +30,9 @@ def poi_activity_recommend_node(state: PlanState) -> PlanStatePatch:
             estimated_duration_minutes=_estimated_activity_duration(item),
             reservation_required=True,
             crowd_risk=_crowd_risk(item),
-            budget_fit=price_level_budget_fit(str(item.get("price_level", "unknown")), per_person_budget),
+            budget_fit=price_level_budget_fit(
+                str(item.get("price_level", "unknown")), per_person_budget
+            ),
             scene_fit=_scene_fit(item, scenario),
             distance_sensitive=True,
             risk_flags=_risk_flags(item, duration_limit, per_person_budget),
@@ -75,7 +77,9 @@ def _score_boost(
     duration = _estimated_activity_duration(item)
     time_fit = 0.15 if duration <= duration_limit * 0.6 else -0.25
     budget_fit = price_level_budget_fit(str(item.get("price_level", "unknown")), per_person_budget)
-    return round(0.2 + time_fit + score_budget_fit(budget_fit) + _scene_fit(item, scenario) * 0.12, 2)
+    return round(
+        0.2 + time_fit + score_budget_fit(budget_fit) + _scene_fit(item, scenario) * 0.12, 2
+    )
 
 
 def _crowd_risk(item: dict) -> str:
@@ -88,9 +92,13 @@ def _scene_fit(item: dict, scenario: str) -> float:
     """根据同行关系判断活动适配度。"""
 
     text = " ".join([str(item.get("subcategory", "")), *item.get("tags", [])])
-    if scenario == "family" and any(keyword in text for keyword in ("亲子", "儿童", "博物馆", "公园")):
+    if scenario == "family" and any(
+        keyword in text for keyword in ("亲子", "儿童", "博物馆", "公园")
+    ):
         return 0.95
-    if scenario == "friends" and any(keyword in text for keyword in ("体验", "手作", "展览", "活动")):
+    if scenario == "friends" and any(
+        keyword in text for keyword in ("体验", "手作", "展览", "活动")
+    ):
         return 0.9
     if scenario == "couple" and any(keyword in text for keyword in ("展览", "手作", "演出")):
         return 0.85
@@ -115,7 +123,10 @@ def _risk_flags(item: dict, duration_limit: int, per_person_budget: float | None
     flags: list[str] = ["reservation_required"]
     if _estimated_activity_duration(item) > duration_limit:
         flags.append("duration_risk")
-    if price_level_budget_fit(str(item.get("price_level", "unknown")), per_person_budget) == "over_budget":
+    if (
+        price_level_budget_fit(str(item.get("price_level", "unknown")), per_person_budget)
+        == "over_budget"
+    ):
         flags.append("budget_risk")
     if item.get("open_status") == "unknown":
         flags.append("open_time_unknown")

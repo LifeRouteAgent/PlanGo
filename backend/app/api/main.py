@@ -5,7 +5,6 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routes import export, trip
 
-
 app = FastAPI(title="LifeRouteAgent API", version="0.1.0")
 app.add_middleware(
     CORSMiddleware,

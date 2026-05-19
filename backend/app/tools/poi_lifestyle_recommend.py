@@ -31,12 +31,16 @@ def poi_lifestyle_recommend_node(state: PlanState) -> PlanStatePatch:
             items.append(
                 recommend_poi(
                     item,
-                    score_boost=_score_boost(item, state["user_query"], scenario, per_person_budget),
+                    score_boost=_score_boost(
+                        item, state["user_query"], scenario, per_person_budget
+                    ),
                     reason=_reason_for_lifestyle(item, scenario),
                     estimated_duration_minutes=_estimated_duration(item),
                     reservation_required=_reservation_required(item),
                     crowd_risk=_crowd_risk(item),
-                    budget_fit=price_level_budget_fit(str(item.get("price_level", "unknown")), per_person_budget),
+                    budget_fit=price_level_budget_fit(
+                        str(item.get("price_level", "unknown")), per_person_budget
+                    ),
                     scene_fit=_scene_fit(item, state["user_query"], scenario),
                     distance_sensitive=True,
                     risk_flags=_risk_flags(item, state["user_query"], per_person_budget),
@@ -90,11 +94,19 @@ def _scene_fit(item: dict, query: str, scenario: str) -> float:
 
     category = item.get("category")
     if category == POI_FITNESS:
-        return 0.9 if any(keyword in query for keyword in ("健身", "运动", "瑜伽", "羽毛球", "爬山")) else 0.45
+        return (
+            0.9
+            if any(keyword in query for keyword in ("健身", "运动", "瑜伽", "羽毛球", "爬山"))
+            else 0.45
+        )
     if category == POI_ENTERTAINMENT:
         return 0.9 if scenario in {"friends", "couple"} else 0.65
     if category == POI_BEAUTY:
-        return 0.9 if any(keyword in query for keyword in ("放松", "按摩", "养生", "足疗", "美容")) else 0.6
+        return (
+            0.9
+            if any(keyword in query for keyword in ("放松", "按摩", "养生", "足疗", "美容"))
+            else 0.6
+        )
     return 0.6
 
 
@@ -134,9 +146,14 @@ def _risk_flags(item: dict, query: str, per_person_budget: float | None) -> list
     flags: list[str] = []
     if _reservation_required(item):
         flags.append("reservation_required")
-    if item.get("category") == POI_FITNESS and not any(keyword in query for keyword in ("健身", "运动", "瑜伽", "羽毛球", "爬山")):
+    if item.get("category") == POI_FITNESS and not any(
+        keyword in query for keyword in ("健身", "运动", "瑜伽", "羽毛球", "爬山")
+    ):
         flags.append("weak_preference_match")
-    if price_level_budget_fit(str(item.get("price_level", "unknown")), per_person_budget) == "over_budget":
+    if (
+        price_level_budget_fit(str(item.get("price_level", "unknown")), per_person_budget)
+        == "over_budget"
+    ):
         flags.append("budget_risk")
     if item.get("open_status") == "unknown":
         flags.append("open_time_unknown")

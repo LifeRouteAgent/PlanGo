@@ -44,7 +44,9 @@ def build_life_route_graph():
     graph.add_node("poi_activity_recommend", poi_activity_recommend_node)
     graph.add_node("poi_restaurant_recommend", poi_restaurant_recommend_node)
     graph.add_node("poi_lifestyle_recommend", poi_lifestyle_recommend_node)
-    graph.add_node("post_skill_router", lambda state: {"logs": ["DAG: joined parallel skill results"]})
+    graph.add_node(
+        "post_skill_router", lambda state: {"logs": ["DAG: joined parallel skill results"]}
+    )
     graph.add_node("route_time_planner", route_time_planner_node)
     graph.add_node("availability_checker", availability_checker_node)
     graph.add_node("verifier", verifier_node)
@@ -89,7 +91,9 @@ def build_life_route_graph():
     )
     graph.add_conditional_edges(
         "post_skill_router",
-        lambda state: "rank" if state.get("intent_type") in {"category_recommend", "poi_search"} else "route",
+        lambda state: (
+            "rank" if state.get("intent_type") in {"category_recommend", "poi_search"} else "route"
+        ),
         {
             "rank": "ranker",
             "route": "route_time_planner",
