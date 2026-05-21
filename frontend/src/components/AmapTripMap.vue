@@ -483,6 +483,46 @@ function formatTransport(mode?: string) {
   text-overflow: ellipsis;
 }
 
+:global(.theme-dark) .map-surface {
+  border-color: #394657;
+  background: #101720;
+}
+
+:global(.theme-dark) .map-grid {
+  background-image:
+    linear-gradient(#273545 1px, transparent 1px),
+    linear-gradient(90deg, #273545 1px, transparent 1px);
+}
+
+:global(.theme-dark) .map-title,
+:global(.theme-dark) .route-summary strong,
+:global(.theme-dark) .stop-list strong,
+:global(.theme-dark) .timeline-list strong {
+  color: #edf1f7;
+}
+
+:global(.theme-dark) .map-subtitle,
+:global(.theme-dark) .route-summary span,
+:global(.theme-dark) .stop-list p,
+:global(.theme-dark) .timeline-list p {
+  color: #b5c0cf;
+}
+
+:global(.theme-dark) .map-subtitle code {
+  background: #453619;
+  color: #ffd48a;
+}
+
+:global(.theme-dark) .route-summary div {
+  border-color: #394657;
+  background: #1b2632;
+}
+
+:global(.theme-dark) .stop-list {
+  border-color: #394657;
+  background: #151f2a;
+}
+
 @media (max-width: 920px) {
   .route-summary {
     grid-template-columns: 1fr;

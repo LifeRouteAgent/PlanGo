@@ -19,6 +19,8 @@ const adjustingPoiId = ref("");
 const executionRunning = ref(false);
 const executionStatus = ref("");
 const executionSteps = ref<ExecutionStep[]>([]);
+const theme = ref<"light" | "dark">(getInitialTheme());
+const isDarkTheme = computed(() => theme.value === "dark");
 
 const quickQueries = [
   "周六下午 2 点到 6 点，4 个朋友，想吃饭看电影，预算 600，别太远",
@@ -44,12 +46,29 @@ const planStatus = computed(() => {
 });
 
 onMounted(async () => {
+  applyTheme(theme.value);
   try {
     dataSource.value = await getDataSourceStatus();
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : "数据源状态请求失败";
   }
 });
+
+function getInitialTheme(): "light" | "dark" {
+  const savedTheme = window.localStorage.getItem("liferoute-theme");
+  if (savedTheme === "light" || savedTheme === "dark") return savedTheme;
+  return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+}
+
+function toggleTheme() {
+  theme.value = isDarkTheme.value ? "light" : "dark";
+  window.localStorage.setItem("liferoute-theme", theme.value);
+  applyTheme(theme.value);
+}
+
+function applyTheme(nextTheme: "light" | "dark") {
+  document.documentElement.dataset.theme = nextTheme;
+}
 
 async function submitPlan() {
   errorMessage.value = "";
@@ -329,7 +348,7 @@ function escapeSvgText(text: string) {
 </script>
 
 <template>
-  <main class="site">
+  <main :class="['site', { 'theme-dark': isDarkTheme }]">
     <header class="topbar">
       <div class="topbar-inner">
         <a class="brand" href="#" aria-label="LifeRoute 首页">
@@ -342,9 +361,26 @@ function escapeSvgText(text: string) {
           <a href="#map">路线地图</a>
           <a href="#execute">执行服务</a>
         </nav>
-        <div class="top-action">
-          <span>本地精选</span>
-          <strong>{{ dataSource?.enabled ? "已连接" : "可体验" }}</strong>
+        <div class="topbar-actions">
+          <div class="top-action">
+            <span>本地精选</span>
+            <strong>{{ dataSource?.enabled ? "已连接" : "可体验" }}</strong>
+          </div>
+          <button
+            class="theme-toggle"
+            type="button"
+            :aria-label="isDarkTheme ? '切换到日间模式' : '切换到黑夜模式'"
+            :title="isDarkTheme ? '日间模式' : '黑夜模式'"
+            @click="toggleTheme"
+          >
+            <svg v-if="isDarkTheme" aria-hidden="true" viewBox="0 0 24 24">
+              <circle cx="12" cy="12" r="4" />
+              <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" />
+            </svg>
+            <svg v-else aria-hidden="true" viewBox="0 0 24 24">
+              <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z" />
+            </svg>
+          </button>
         </div>
       </div>
     </header>
@@ -563,8 +599,13 @@ function escapeSvgText(text: string) {
 .nav-links { display: flex; align-items: center; gap: 28px; font-size: 14px; font-weight: 700; }
 .nav-links a { opacity: 0.72; }
 .nav-links a:hover { opacity: 1; }
+.topbar-actions { display: flex; align-items: center; justify-content: flex-end; gap: 10px; }
 .top-action { display: inline-flex; align-items: center; gap: 8px; min-height: 38px; padding: 0 14px; border: 1px solid #ffe0cb; border-radius: 8px; background: #fff4ec; color: #8f3a16; font-size: 13px; }
 .top-action strong { color: #e9571f; }
+.theme-toggle { display: grid; width: 40px; height: 40px; flex: 0 0 auto; place-items: center; border: 1px solid #ecd9cb; border-radius: 8px; background: #fff; color: #6b3c24; cursor: pointer; }
+.theme-toggle:hover { border-color: #ff8a50; color: #d75017; }
+.theme-toggle:focus-visible { outline: 4px solid rgb(255 138 80 / 18%); outline-offset: 1px; }
+.theme-toggle svg { width: 20px; height: 20px; fill: none; stroke: currentcolor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .hero-section { padding: 48px 0 34px; background: #ffefe2; }
 .hero-shell { display: grid; grid-template-columns: minmax(0, 1fr) 460px; gap: 36px; align-items: center; }
 .hero-copy-block { max-width: 690px; }
@@ -662,6 +703,26 @@ function escapeSvgText(text: string) {
 .execution-panel { margin-top: 18px; }
 .step-completed, .step-done { background: #f0fbf6 !important; }
 .step-running { background: #fff7e9 !important; }
+.theme-dark { background: #0f141b; color: #edf1f7; }
+.theme-dark .topbar { border-bottom-color: rgb(255 255 255 / 10%); background: rgb(15 20 27 / 90%); }
+.theme-dark .brand, .theme-dark .nav-links a { color: #f7eadf; }
+.theme-dark .top-action, .theme-dark .theme-toggle { border-color: #384352; background: #17202b; color: #d7e0eb; }
+.theme-dark .top-action strong, .theme-dark .eyebrow, .theme-dark .planner-card-head span, .theme-dark .section-heading span, .theme-dark .progress-title span, .theme-dark .empty-product-state span, .theme-dark .candidate-item button span, .theme-dark .candidate-item button em, .theme-dark .station-index, .theme-dark .issue-panel li strong, .theme-dark .execution-panel li span { color: #ff9868; }
+.theme-dark .theme-toggle:hover { border-color: #ff9868; color: #ff9868; }
+.theme-dark .hero-section { background: #18212b; }
+.theme-dark .hero-copy, .theme-dark .mini-status, .theme-dark .plan-reason, .theme-dark .response, .theme-dark .soft-note, .theme-dark .empty-product-state p, .theme-dark .candidate-item > p, .theme-dark .pros-cons p, .theme-dark .reason-group p, .theme-dark .place-address, .theme-dark .map-empty, .theme-dark .issue-panel li p, .theme-dark .execution-panel li p, .theme-dark .execution-status { color: #b5c0cf; }
+.theme-dark .trust-row span, .theme-dark .quick-shell button, .theme-dark .plan-action, .theme-dark .station-index { border-color: #3b4655; background: #1b2632; color: #e7d1c1; }
+.theme-dark .planner-card, .theme-dark .progress-strip, .theme-dark .empty-product-state, .theme-dark .plan-main-card, .theme-dark .plan-side-card, .theme-dark .map-card, .theme-dark .issue-panel, .theme-dark .execution-panel, .theme-dark .place-card { border-color: rgb(255 255 255 / 10%); background: #141c26; box-shadow: 0 18px 48px rgb(0 0 0 / 26%); }
+.theme-dark .planner-card-head { border-bottom-color: #303c4a; }
+.theme-dark .planner-card-head strong, .theme-dark .query-box span, .theme-dark .section-heading h2, .theme-dark .plan-summary-grid strong, .theme-dark .candidate-item button, .theme-dark .pros-cons b, .theme-dark .place-heading strong, .theme-dark .one-line-reason, .theme-dark .issue-panel li span, .theme-dark .execution-panel li strong { color: #edf1f7; }
+.theme-dark .query-box textarea, .theme-dark .response { border-color: #3b4655; background: #0f141b; color: #edf1f7; }
+.theme-dark .plan-summary-grid div, .theme-dark .progress-strip li, .theme-dark .candidate-item, .theme-dark .pros-cons div, .theme-dark .travel-line span, .theme-dark .tag-row span, .theme-dark .map-empty, .theme-dark .issue-panel li, .theme-dark .step-running { background: #1b2632 !important; }
+.theme-dark .progress-strip li p, .theme-dark .plan-summary-grid span, .theme-dark .travel-line span, .theme-dark .tag-row span { color: #c1cad7; }
+.theme-dark .candidate-item { border-color: #354252; }
+.theme-dark .candidate-item.selected { border-color: #ff9868; box-shadow: 0 0 0 4px rgb(255 152 104 / 14%); }
+.theme-dark .section-heading strong, .theme-dark .plan-action-export, .theme-dark .option-row button, .theme-dark .step-completed, .theme-dark .step-done { border-color: #2e6457; background: #122a27 !important; color: #81dbc5; }
+.theme-dark .image-strip { background: #101720; }
+.theme-dark .error { border-color: #6a3935; background: #321d20; color: #ffb4a7; }
 @media (max-width: 1080px) { .hero-shell, .plan-layout, .experience-layout { grid-template-columns: 1fr; } .sticky-side { position: static; } .plan-side-card { order: -1; } }
-@media (max-width: 760px) { .topbar-inner, .hero-shell, .quick-shell, .product-shell { padding-right: 16px; padding-left: 16px; } .nav-links, .top-action { display: none; } .hero-section { padding-top: 30px; } .hero-copy-block h1 { font-size: 40px; } .hero-copy { font-size: 16px; } .search-actions, .plan-action-row { align-items: stretch; flex-direction: column; } .primary-button, .plan-action { width: 100%; } .empty-product-state, .place-card { grid-template-columns: 1fr; } .plan-summary-grid { grid-template-columns: 1fr 1fr; } .place-heading { grid-template-columns: 1fr; } .place-heading strong { white-space: normal; } .candidate-item button { grid-template-columns: 1fr; } }
+@media (max-width: 760px) { .topbar-inner, .hero-shell, .quick-shell, .product-shell { padding-right: 16px; padding-left: 16px; } .nav-links, .top-action { display: none; } .topbar-inner { gap: 12px; } .hero-section { padding-top: 30px; } .hero-copy-block h1 { font-size: 40px; } .hero-copy { font-size: 16px; } .search-actions, .plan-action-row { align-items: stretch; flex-direction: column; } .primary-button, .plan-action { width: 100%; } .empty-product-state, .place-card { grid-template-columns: 1fr; } .plan-summary-grid { grid-template-columns: 1fr 1fr; } .place-heading { grid-template-columns: 1fr; } .place-heading strong { white-space: normal; } .candidate-item button { grid-template-columns: 1fr; } }
 </style>
