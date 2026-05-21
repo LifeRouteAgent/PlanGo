@@ -629,7 +629,8 @@ function escapeSvgText(text: string) {
 .primary-button:disabled, .plan-action:disabled, .option-row button:disabled { cursor: not-allowed; opacity: 0.58; box-shadow: none; }
 .mini-status, .stream-status { color: #7d6c62; font-size: 13px; line-height: 1.45; }
 .stream-status { color: #18876e; font-weight: 800; }
-.quick-shell { display: flex; gap: 10px; overflow-x: auto; padding-top: 22px; padding-bottom: 4px; }
+.quick-shell { display: flex; gap: 10px; overflow-x: auto; padding-top: 22px; padding-bottom: 4px; scrollbar-width: none; }
+.quick-shell::-webkit-scrollbar { display: none; }
 .quick-shell button { flex: 0 0 auto; max-width: 330px; padding: 0 14px; overflow: hidden; border: 1px solid #ffd9c2; background: #fff; color: #6f3e27; text-overflow: ellipsis; white-space: nowrap; }
 .product-shell { padding-top: 30px; padding-bottom: 72px; }
 .error { margin: 0 0 18px; padding: 14px 16px; border: 1px solid #ffd1c8; border-radius: 8px; background: #fff1ee; color: #b22c1f; font-weight: 800; }
