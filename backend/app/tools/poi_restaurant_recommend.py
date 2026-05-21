@@ -8,6 +8,7 @@ from app.tools.poi_schema import (
     score_budget_fit,
     score_crowd_risk,
 )
+from app.tools.skill_registry import skill_enabled, skipped_skill_patch
 
 
 def poi_restaurant_recommend_node(state: PlanState) -> PlanStatePatch:
@@ -20,6 +21,9 @@ def poi_restaurant_recommend_node(state: PlanState) -> PlanStatePatch:
     - 家庭/朋友/情侣场景分别给不同场景适配分。
     - 输出预计用餐时长、是否建议预约、拥挤风险和预算适配。
     """
+
+    if not skill_enabled(state, "poi_restaurant_recommend"):
+        return skipped_skill_patch("poi_restaurant_recommend")
 
     constraints = state.get("constraints", {})
     scenario = str(constraints.get("scenario", "unknown"))

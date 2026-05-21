@@ -13,8 +13,8 @@ from app.tools.poi_schema import (
 )
 
 CATEGORY_KEYWORDS: tuple[tuple[str, tuple[str, ...]], ...] = (
-    (POI_RESTAURANT, ("餐厅", "吃饭", "美食", "火锅", "咖啡", "饭店", "轻食")),
-    (POI_ACTIVITY, ("活动", "体验", "展览", "票券", "博物馆", "手作")),
+    (POI_RESTAURANT, ("餐厅", "吃饭", "美食", "火锅", "咖啡", "饭店", "轻食", "下午茶")),
+    (POI_ACTIVITY, ("活动", "体验", "展览", "票券", "博物馆", "手作", "演出")),
     (
         POI_ENTERTAINMENT,
         (
@@ -30,11 +30,12 @@ CATEGORY_KEYWORDS: tuple[tuple[str, tuple[str, ...]], ...] = (
             "唱歌",
             "K歌",
             "k歌",
+            "密室",
         ),
     ),
-    (POI_FITNESS, ("健身", "运动", "瑜伽", "普拉提")),
-    (POI_BEAUTY, ("按摩", "足疗", "美容", "养生", "洗浴")),
-    (POI_SHOPPING, ("购物", "商场", "逛街", "生活广场")),
+    (POI_FITNESS, ("健身", "运动", "瑜伽", "普拉提", "羽毛球", "爬山")),
+    (POI_BEAUTY, ("按摩", "足疗", "美容", "养生", "洗浴", "SPA", "spa")),
+    (POI_SHOPPING, ("购物", "商场", "逛街", "生活广场", "商圈")),
     (POI_ATTRACTION, ("景点", "公园", "citywalk", "城市漫步", "观光")),
 )
 
@@ -42,11 +43,8 @@ CATEGORY_KEYWORDS: tuple[tuple[str, tuple[str, ...]], ...] = (
 def intent_router_node(state: PlanState) -> PlanStatePatch:
     """前置意图路由节点。
 
-    该节点解决“不是每次都要完整行程规划”的问题：
-    - 用户问系统能力时，直接进入能力说明。
-    - 用户只是简单问答时，直接生成轻量回答。
-    - 用户只要求某一类推荐时，只走 Collector + Skill + Ranker。
-    - 用户明确要安排一天/周末/路线/行程时，才走完整规划 DAG。
+    大模型负责理解自然语言；规则兜底负责 demo 稳定性。即使 MiMo API 暂时不可用，
+    用户明确包含规划、推荐或 POI 类别时，也不能被误判成普通闲聊。
     """
 
     query = state["user_query"].strip()
@@ -103,10 +101,7 @@ def intent_router_route(state: PlanState) -> str:
 
 
 def _detect_intent_type(query: str) -> str:
-    """基于规则的轻量意图识别。
-
-    后续如果接入 MiMo 或其他 LLM，只需要替换这里，不影响 DAG 结构。
-    """
+    """基于规则的轻量意图识别，用于 LLM 失败时兜底。"""
 
     if any(keyword in query for keyword in ("你能做什么", "支持什么", "有什么功能", "怎么用")):
         return "capability"
@@ -125,13 +120,13 @@ def _detect_intent_type(query: str) -> str:
         "上午",
         "下午",
         "晚上",
+        "小时",
     )
     recommend_keywords = ("推荐", "找", "查", "附近", "有哪些")
+    action_keywords = ("吃", "玩", "逛", "唱", "打牌", "麻将", "棋牌", "看电影")
 
-    if any(keyword in query for keyword in planning_keywords) and len(categories) >= 2:
-        return "full_trip_plan"
-    if any(keyword in query for keyword in planning_keywords) and any(
-        keyword in query for keyword in ("吃", "玩", "逛", "唱", "打牌", "麻将", "棋牌")
+    if any(keyword in query for keyword in planning_keywords) and (
+        len(categories) >= 2 or any(keyword in query for keyword in action_keywords)
     ):
         return "full_trip_plan"
     if categories and any(keyword in query for keyword in recommend_keywords):
@@ -155,7 +150,6 @@ def _guard_llm_intent(llm_intent_type: str, rule_intent_type: str) -> str:
     """给大模型意图增加确定性护栏。
 
     大模型负责理解自然语言，但不能把明显包含规划、推荐或 POI 类别的请求降级成闲聊。
-    这层护栏只处理“降级错误”，不会把普通问答强行升级成规划。
     """
 
     actionable_intents = {"category_recommend", "poi_search", "full_trip_plan"}

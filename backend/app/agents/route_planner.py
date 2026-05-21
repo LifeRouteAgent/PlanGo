@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+from itertools import product
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -37,6 +38,7 @@ def route_time_planner_node(state: PlanState) -> PlanStatePatch:
     duration_limit = int(float(constraints.get("duration_hours", 6))) * 60
     max_route_minutes = int(constraints.get("max_route_minutes", 45))
     start_time = str(constraints.get("start_time", "14:00"))
+    origin_item = _origin_from_user_profile(state.get("user_profile", {}))
 
     candidate_item_sets = _build_candidate_item_sets(all_candidates, dag_plan)
     candidate_plans: list[dict[str, Any]] = []
@@ -44,7 +46,7 @@ def route_time_planner_node(state: PlanState) -> PlanStatePatch:
     route_service = AmapRouteService()
 
     for index, items in enumerate(candidate_item_sets, start=1):
-        route_segments = _build_route_segments(items, route_service)
+        route_segments = _build_route_segments(items, route_service, origin_item=origin_item)
         route_minutes = sum(segment["duration_minutes"] for segment in route_segments)
         if state.get("force_route_timeout") and state.get("replanning_count", 0) <= 1:
             route_minutes = max_route_minutes + 20
@@ -69,8 +71,10 @@ def route_time_planner_node(state: PlanState) -> PlanStatePatch:
             state, stay_minutes, route_minutes, duration_limit
         )
         timeline = _build_timeline(items, route_segments, start_time, stay_minutes)
+        estimated_budget = _estimate_budget(items)
         plan = {
             "id": f"plan_route_{index}",
+            "plan_id": f"plan_route_{index}",
             # 保持历史主方案 id，避免旧接口和测试依赖突然断裂。
             "legacy_id": "plan_mock_1" if index == 1 else "",
             "title": _title_for_template(dag_plan.get("planning_template", "meal_plus_activity")),
@@ -86,11 +90,20 @@ def route_time_planner_node(state: PlanState) -> PlanStatePatch:
             ),
             "total_duration_minutes": total_duration,
             "route_minutes": route_minutes,
-            "estimated_budget": _estimate_budget(items),
+            "estimated_budget": estimated_budget,
+            "fit_summary": _fit_summary(
+                items=items,
+                route_minutes=route_minutes,
+                total_duration=total_duration,
+                duration_limit=duration_limit,
+                estimated_budget=estimated_budget,
+                budget=int(float(constraints.get("budget", 600))),
+            ),
         }
         # 暂时把第一个方案 id 兼容为 plan_mock_1；后续前端完全切到 route id 后再移除。
         if index == 1:
             plan["id"] = "plan_mock_1"
+            plan["plan_id"] = "plan_mock_1"
         candidate_plans.append(plan)
         routes.append({
             "mode": _route_mode(route_segments),
@@ -114,7 +127,10 @@ def route_time_planner_node(state: PlanState) -> PlanStatePatch:
     return {
         "candidate_plans": candidate_plans,
         "routes": routes,
-        "logs": [f"Route & Time Planner: generated {len(candidate_plans)} route timelines"],
+        "logs": [
+            f"Route & Time Planner: generated {len(candidate_plans)} route timelines",
+            *_route_harness_logs(route_service),
+        ],
     }
 
 
@@ -131,10 +147,11 @@ def _build_candidate_item_sets(
     """
 
     sorted_candidates = sorted(candidates, key=lambda item: item.get("score", 0), reverse=True)
-    required_slots = list(dag_plan.get("required_slots") or [])
+    required_slots = list(dag_plan.get("slot_sequence") or dag_plan.get("required_slots") or [])
     desired_count = _desired_item_count(required_slots)
 
-    variants: list[list[dict[str, Any]]] = []
+    slot_search_sets = _build_slot_combination_sets(sorted_candidates, required_slots)
+    variants: list[list[dict[str, Any]]] = list(slot_search_sets)
     slot_based = _select_slot_based(sorted_candidates, required_slots, desired_count)
     if slot_based:
         variants.append(slot_based)
@@ -151,7 +168,111 @@ def _build_candidate_item_sets(
     if offset_score_based:
         variants.append(offset_score_based)
 
-    return _dedupe_item_sets(variants)[:3]
+    return sorted(
+        _dedupe_item_sets(variants),
+        key=lambda items: _combination_rank_key(items, required_slots),
+    )[:3]
+
+
+def _build_slot_combination_sets(
+    candidates: list[dict[str, Any]],
+    required_slots: list[str],
+) -> list[list[dict[str, Any]]]:
+    """把每个规划槽位映射为候选池，并枚举最多 12 个高质量组合。
+
+    本地生活规划的排序单位是“方案组合”而不是单个 POI。这里先为每个 slot 取 Top N，
+    再对组合按总分、移动距离、重复类别排序，确保比如“麻将 -> KTV”不会混进餐厅或健身。
+    """
+
+    if not required_slots:
+        return []
+
+    slot_pools: list[list[dict[str, Any] | None]] = []
+    for slot in required_slots:
+        pool = _top_candidates_for_slot(candidates, slot, top_n=12)
+        if slot.startswith("optional"):
+            slot_pools.append([None, *pool[:6]])
+        elif pool:
+            slot_pools.append(pool)
+        else:
+            return []
+
+    raw_combinations: list[list[dict[str, Any]]] = []
+    for combo in product(*slot_pools):
+        items = [item for item in combo if item is not None]
+        if not items or _has_duplicate_items(items):
+            continue
+        raw_combinations.append(items)
+
+    ranked = sorted(
+        _dedupe_item_sets(raw_combinations),
+        key=lambda items: _combination_rank_key(items, required_slots),
+    )
+    return ranked[:12]
+
+
+def _top_candidates_for_slot(
+    candidates: list[dict[str, Any]],
+    slot: str,
+    *,
+    top_n: int,
+) -> list[dict[str, Any]]:
+    """为某个 slot 取 Top N 候选，先按槽位适配，再按推荐分排序。"""
+
+    matched = [
+        item
+        for item in candidates
+        if _category_matches_slot(str(item.get("category", "")), slot)
+    ]
+    return sorted(
+        matched,
+        key=lambda item: (
+            -float(item.get("score", 0) or 0),
+            -float(item.get("scene_fit", 0.7) or 0.7),
+            str(item.get("id", "")),
+        ),
+    )[:top_n]
+
+
+def _has_duplicate_items(items: list[dict[str, Any]]) -> bool:
+    """同一个 POI 不能在一个方案中重复出现。"""
+
+    ids = [str(item.get("id")) for item in items]
+    return len(ids) != len(set(ids))
+
+
+def _combination_rank_key(
+    items: list[dict[str, Any]],
+    required_slots: list[str],
+) -> tuple[float, float, int, tuple[str, ...]]:
+    """组合排序：优先偏好和动线，再考虑类别重复和稳定性。"""
+
+    total_score = sum(float(item.get("score", 0) or 0) for item in items)
+    total_distance = _total_haversine_distance(items)
+    duplicate_categories = _duplicate_category_count(items, required_slots)
+    return (
+        -total_score + total_distance * 2.0 + duplicate_categories * 2,
+        total_distance,
+        duplicate_categories,
+        tuple(str(item.get("id")) for item in items),
+    )
+
+
+def _total_haversine_distance(items: list[dict[str, Any]]) -> float:
+    """估算一个组合按当前顺序移动的直线总距离。"""
+
+    return sum(
+        _haversine_km(previous["lat"], previous["lon"], current["lat"], current["lon"])
+        for previous, current in zip(items, items[1:])
+    )
+
+
+def _duplicate_category_count(items: list[dict[str, Any]], required_slots: list[str]) -> int:
+    """统计不必要的同类重复；同一类被多个 slot 明确需要时不惩罚。"""
+
+    categories = [str(item.get("category", "")) for item in items]
+    allowed_repeats = max(0, len(required_slots) - len(set(required_slots)))
+    return max(0, len(categories) - len(set(categories)) - allowed_repeats)
 
 
 def _desired_item_count(required_slots: list[str]) -> int:
@@ -402,10 +523,14 @@ def _prefer_feasible_plans(
 def _build_route_segments(
     items: list[dict[str, Any]],
     route_service: AmapRouteService | None = None,
+    *,
+    origin_item: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     """根据相邻 POI 生成路线段。"""
 
     segments: list[dict[str, Any]] = []
+    if origin_item and items:
+        segments.append(_estimate_transport_segment(origin_item, items[0], route_service))
     for previous, current in zip(items, items[1:]):
         segments.append(_estimate_transport_segment(previous, current, route_service))
     return segments
@@ -460,6 +585,8 @@ def _estimate_transport_segment(
     return {
         "from": previous["name"],
         "to": current["name"],
+        "from_item_id": previous["id"],
+        "to_item_id": current["id"],
         "from_id": previous["id"],
         "to_id": current["id"],
         "distance_km": round(distance_km, 2),
@@ -566,12 +693,14 @@ def _build_timeline(
 
     current_time = _parse_time(start_time)
     timeline: list[dict[str, Any]] = []
+    has_origin_segment = len(route_segments) == len(items)
     for index, item in enumerate(items):
         travel_minutes = 0
         transport_mode = "start"
         distance_km = 0.0
-        if index > 0:
-            segment = route_segments[index - 1]
+        if has_origin_segment or index > 0:
+            segment_index = index if has_origin_segment else index - 1
+            segment = route_segments[segment_index]
             travel_minutes = int(segment["duration_minutes"])
             transport_mode = str(segment["transport_mode"])
             distance_km = float(segment["distance_km"])
@@ -629,6 +758,82 @@ def _estimate_budget(items: list[dict[str, Any]]) -> int:
     """
 
     return sum(_estimate_item_budget(item) for item in items)
+
+
+def _fit_summary(
+    *,
+    items: list[dict[str, Any]],
+    route_minutes: int,
+    total_duration: int,
+    duration_limit: int,
+    estimated_budget: int,
+    budget: int,
+) -> dict[str, Any]:
+    """生成方案可执行性摘要，供前端和 Response Generator 直接展示。"""
+
+    return {
+        "slot_count": len(items),
+        "route_minutes": route_minutes,
+        "duration_fit": "good" if total_duration <= duration_limit else "over_time",
+        "budget_fit": "good" if estimated_budget <= budget else "over_budget",
+        "movement_level": _movement_level(route_minutes),
+        "summary": (
+            f"{len(items)} 个地点，交通约 {route_minutes} 分钟，"
+            f"总时长 {total_duration}/{duration_limit} 分钟，预算 {estimated_budget}/{budget} 元。"
+        ),
+    }
+
+
+def _origin_from_user_profile(user_profile: dict[str, Any]) -> dict[str, Any] | None:
+    """从用户画像中读取起点坐标，支持 start_location/origin/start_poi 三种字段名。
+
+    只有调用方明确提供经纬度时才加入起点路段；否则不编造用户出发位置。
+    """
+
+    raw = (
+        user_profile.get("start_location")
+        or user_profile.get("origin")
+        or user_profile.get("start_poi")
+    )
+    if not isinstance(raw, dict):
+        return None
+    try:
+        lat = float(raw.get("lat"))
+        lon = float(raw.get("lon"))
+    except (TypeError, ValueError):
+        return None
+    return {
+        "id": str(raw.get("id") or "origin"),
+        "name": str(raw.get("name") or "出发点"),
+        "category": "origin",
+        "subcategory": "origin",
+        "lat": lat,
+        "lon": lon,
+        "address": str(raw.get("address") or "用户出发点"),
+    }
+
+
+def _route_harness_logs(route_service: AmapRouteService) -> list[str]:
+    """把高德 ToolHarness 调用摘要写入 DAG logs，供 SSE/Trace 展示。"""
+
+    logs: list[str] = []
+    for entry in route_service.call_log[-6:]:
+        logs.append(
+            "ToolHarness amap.route.estimate_segment: "
+            f"source={entry.get('source')}, success={entry.get('success')}, "
+            f"latency_ms={entry.get('latency_ms')}"
+        )
+    return logs
+
+
+def _movement_level(route_minutes: int) -> str:
+    """把交通分钟数转成用户能理解的移动强度。"""
+
+    if route_minutes <= 15:
+        return "low"
+    if route_minutes <= 35:
+        return "medium"
+    return "high"
 
 
 def _estimate_item_budget(item: dict[str, Any]) -> int:

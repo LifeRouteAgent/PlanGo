@@ -2,7 +2,7 @@
 import { computed, onMounted, ref } from "vue";
 import AmapTripMap from "../components/AmapTripMap.vue";
 import { adjustPlanPoi, executePlanStream, exportPlanPdf, getDataSourceStatus, planTripStream } from "../services/api";
-import type { AgentThinkingEvent, DataSourceStatus, ExecutionStep, PlanAction, PoiItem, RankedPlan, RouteSegment, TimelineItem, TripPlanResponse } from "../types";
+import type { AgentThinkingEvent, DataSourceStatus, ExecutionStep, PlanAction, PoiItem, RankedPlan, RouteSegment, TimelineItem, TraceProgressEvent, TripPlanResponse } from "../types";
 
 // 默认输入要像真实用户需求，方便演示时打开页面就能一键生成方案。
 const query = ref("周末上午和朋友出去玩 4 个小时，想去打麻将打牌然后去唱歌，预算 200");
@@ -15,12 +15,23 @@ const streamStatus = ref("");
 const hasResponseChunk = ref(false);
 const selectedPlanIndex = ref(0);
 const thinkingEvents = ref<AgentThinkingEvent[]>([]);
+const traceEvents = ref<TraceProgressEvent[]>([]);
 const adjustingPoiId = ref("");
 const executionRunning = ref(false);
 const executionStatus = ref("");
 const executionSteps = ref<ExecutionStep[]>([]);
 const theme = ref<"light" | "dark">(getInitialTheme());
 const isDarkTheme = computed(() => theme.value === "dark");
+const productTraceEventNames = new Set([
+  "intent_detected",
+  "constraints_built",
+  "skill_selected",
+  "poi_collected",
+  "skill_ranked",
+  "route_candidate_built",
+  "verification_issue",
+  "plan_ranked"
+]);
 
 const quickQueries = [
   "周六下午 2 点到 6 点，4 个朋友，想吃饭看电影，预算 600，别太远",
@@ -78,6 +89,7 @@ async function submitPlan() {
   hasResponseChunk.value = false;
   selectedPlanIndex.value = 0;
   thinkingEvents.value = [];
+  traceEvents.value = [];
   adjustingPoiId.value = "";
   executionSteps.value = [];
   executionStatus.value = "";
@@ -90,6 +102,11 @@ async function submitPlan() {
         onEvent: (event) => {
           if (event.event === "status" || event.event === "metadata" || event.event === "node_update" || event.event === "progress") {
             const message = event.data.message ?? event.data.stage ?? event.event;
+            streamStatus.value = String(message);
+          }
+          if (productTraceEventNames.has(event.event)) {
+            appendTraceEvent(event.event, event.data);
+            const message = event.data.message ?? event.data.title ?? event.event;
             streamStatus.value = String(message);
           }
           if (event.event === "agent_thinking") {
@@ -129,6 +146,37 @@ function selectPlan(index: number) {
 function appendThinkingEvent(event: AgentThinkingEvent) {
   if (!event?.agent || !event.message) return;
   thinkingEvents.value = [...thinkingEvents.value.slice(-11), event];
+}
+
+function appendTraceEvent(eventName: string, payload: Record<string, unknown>) {
+  const title = typeof payload.title === "string" ? payload.title : traceTitle(eventName);
+  const message = typeof payload.message === "string" ? payload.message : "当前阶段已完成。";
+  const stage = typeof payload.stage === "string" ? payload.stage : undefined;
+  const details = Object.fromEntries(
+    Object.entries(payload).filter(([key]) => !["title", "message", "stage"].includes(key))
+  );
+  const nextEvent: TraceProgressEvent = {
+    event: eventName,
+    stage,
+    title,
+    message,
+    details
+  };
+  traceEvents.value = [...traceEvents.value.filter((item) => item.event !== eventName), nextEvent].slice(-8);
+}
+
+function traceTitle(eventName: string) {
+  const titles: Record<string, string> = {
+    intent_detected: "理解需求",
+    constraints_built: "整理条件",
+    skill_selected: "选择能力",
+    poi_collected: "筛选地点",
+    skill_ranked: "推荐排序",
+    route_candidate_built: "生成动线",
+    verification_issue: "校验方案",
+    plan_ranked: "排序方案"
+  };
+  return titles[eventName] ?? "规划进度";
 }
 
 async function handlePlanAction(action: PlanAction) {
@@ -423,17 +471,23 @@ function escapeSvgText(text: string) {
     <section class="product-shell">
       <p v-if="errorMessage" class="error">{{ errorMessage }}</p>
 
-      <section v-if="thinkingEvents.length || loading" class="progress-strip" aria-label="规划进度">
+      <section v-if="traceEvents.length || thinkingEvents.length || loading" class="progress-strip" aria-label="规划进度">
         <div class="progress-title">
-          <span>规划进度</span>
-          <strong>{{ loading ? "小助手正在处理" : "规划完成" }}</strong>
+          <span>规划过程</span>
+          <strong>{{ loading ? "正在生成" : "已完成" }}</strong>
         </div>
         <ol>
-          <li v-for="event in thinkingEvents" :key="event.agent + '-' + event.message">
-            <span>{{ event.title ?? event.agent }}</span>
+          <li v-for="event in traceEvents" :key="event.event + '-' + event.message" class="trace-step">
+            <span>{{ event.title }}</span>
             <p>{{ event.message }}</p>
           </li>
-          <li v-if="loading">
+          <template v-if="!traceEvents.length">
+            <li v-for="event in thinkingEvents" :key="event.agent + '-' + event.message">
+              <span>{{ event.title ?? event.agent }}</span>
+              <p>{{ event.message }}</p>
+            </li>
+          </template>
+          <li v-if="loading" class="trace-step active">
             <span>继续生成</span>
             <p>{{ streamStatus || "正在组合路线、校验时长和预算" }}</p>
           </li>
@@ -638,6 +692,8 @@ function escapeSvgText(text: string) {
 .progress-strip { margin-bottom: 18px; padding: 16px; }
 .progress-strip ol { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px; margin: 14px 0 0; padding: 0; list-style: none; }
 .progress-strip li { min-height: 76px; padding: 12px; border-radius: 8px; background: #fff8f2; }
+.progress-strip .trace-step { border: 1px solid #ffe1cd; background: #fffaf6; }
+.progress-strip .trace-step.active { border-color: #ff9c65; background: #fff0e5; box-shadow: inset 3px 0 0 #ff6b35; }
 .progress-strip li span { display: block; margin-bottom: 6px; color: #d75017; font-size: 12px; font-weight: 900; }
 .progress-strip li p { margin: 0; color: #65564d; font-size: 13px; line-height: 1.6; }
 .empty-product-state { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 24px; align-items: center; padding: 28px; }
@@ -718,6 +774,8 @@ function escapeSvgText(text: string) {
 .theme-dark .planner-card-head strong, .theme-dark .query-box span, .theme-dark .section-heading h2, .theme-dark .plan-summary-grid strong, .theme-dark .candidate-item button, .theme-dark .pros-cons b, .theme-dark .place-heading strong, .theme-dark .one-line-reason, .theme-dark .issue-panel li span, .theme-dark .execution-panel li strong { color: #edf1f7; }
 .theme-dark .query-box textarea, .theme-dark .response { border-color: #3b4655; background: #0f141b; color: #edf1f7; }
 .theme-dark .plan-summary-grid div, .theme-dark .progress-strip li, .theme-dark .candidate-item, .theme-dark .pros-cons div, .theme-dark .travel-line span, .theme-dark .tag-row span, .theme-dark .map-empty, .theme-dark .issue-panel li, .theme-dark .step-running { background: #1b2632 !important; }
+.theme-dark .progress-strip .trace-step { border-color: #344352; background: #172330 !important; }
+.theme-dark .progress-strip .trace-step.active { border-color: #ff9868; box-shadow: inset 3px 0 0 #ff9868; }
 .theme-dark .progress-strip li p, .theme-dark .plan-summary-grid span, .theme-dark .travel-line span, .theme-dark .tag-row span { color: #c1cad7; }
 .theme-dark .candidate-item { border-color: #354252; }
 .theme-dark .candidate-item.selected { border-color: #ff9868; box-shadow: 0 0 0 4px rgb(255 152 104 / 14%); }

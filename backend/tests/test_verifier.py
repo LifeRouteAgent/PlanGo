@@ -32,6 +32,7 @@ def test_verifier_outputs_structured_blocking_issue() -> None:
     assert issue["severity"] == "error"
     assert issue["message"]
     assert issue["suggestion"]
+    assert issue["target_plan_id"] == "bad_route"
     assert has_blocking_issue(patch["errors"]) is True
 
 
@@ -68,6 +69,7 @@ def test_verifier_warning_does_not_block_verified_plan() -> None:
 
     assert patch["verified_plans"][0]["verified"] is True
     assert issue_codes(patch["errors"]) >= {"queue_risk", "reservation_required"}
+    assert any(issue["target_item_id"] == "movie" for issue in patch["errors"])
     assert has_blocking_issue(patch["errors"]) is False
     assert verifier_route(merged) == "rank"
 

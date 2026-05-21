@@ -7,6 +7,7 @@ from app.tools.poi_schema import (
     recommend_poi,
     score_budget_fit,
 )
+from app.tools.skill_registry import skill_enabled, skipped_skill_patch
 
 
 def poi_activity_recommend_node(state: PlanState) -> PlanStatePatch:
@@ -17,6 +18,9 @@ def poi_activity_recommend_node(state: PlanState) -> PlanStatePatch:
     - 活动停留时长要小于总时间窗口。
     - 朋友、亲子、情侣场景对活动的适配不同。
     """
+
+    if not skill_enabled(state, "poi_activity_recommend"):
+        return skipped_skill_patch("poi_activity_recommend")
 
     constraints = state.get("constraints", {})
     duration_limit = int(float(constraints.get("duration_hours", 6))) * 60

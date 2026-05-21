@@ -78,6 +78,8 @@ export interface PlanAction {
 export interface RouteSegment {
   from?: string;
   to?: string;
+  from_item_id?: string;
+  to_item_id?: string;
   from_id?: string;
   to_id?: string;
   distance_km?: number;
@@ -133,6 +135,15 @@ export interface AgentThinkingEvent {
   message: string;
   summary?: Record<string, unknown>;
   logs?: string[];
+}
+
+// 产品化 Trace 事件：前端只展示阶段、标题和说明，不直接展示后端内部 PlanState。
+export interface TraceProgressEvent {
+  event: string;
+  stage?: string;
+  title: string;
+  message: string;
+  details?: Record<string, unknown>;
 }
 
 export interface AdjustPlanResponse {

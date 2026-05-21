@@ -31,8 +31,9 @@ def poi_collector_node(state: PlanState) -> PlanStatePatch:
             "logs": ["POI Collector: forced empty candidates for branch verification"],
         }
 
-    # `user_profile.use_database=false` 用于测试和离线开发；默认跟随 backend/.env。
-    use_database = state.get("user_profile", {}).get("use_database", settings.use_database)
+    # 本项目已经进入本地数据库驱动阶段，数据源只由 backend/.env 控制。
+    # 不再允许 user_profile.use_database 覆盖配置，避免一次请求把系统降级到 mock 数据。
+    use_database = settings.use_database
     if use_database:
         try:
             candidate_pois = PoiRepository().fetch_by_categories(categories)

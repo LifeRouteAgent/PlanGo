@@ -242,7 +242,7 @@ def _clean_int(value: Any) -> int | None:
         if value is None or value == "":
             return None
         return int(float(value))
-    except TypeError, ValueError:
+    except (TypeError, ValueError):
         return None
 
 
@@ -253,5 +253,5 @@ def _clean_number(value: Any) -> float | None:
         if value is None or value == "":
             return None
         return float(value)
-    except TypeError, ValueError:
+    except (TypeError, ValueError):
         return None

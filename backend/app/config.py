@@ -18,7 +18,7 @@ class Settings:
     mimo_base_url: str = os.getenv("MIMO_BASE_URL", "https://api.xiaomimimo.com/v1")
     mimo_model: str = os.getenv("MIMO_MODEL", "mimo-v2.5-pro")
     amap_api_key: str = os.getenv("AMAP_API_KEY", "")
-    use_database: bool = os.getenv("LIFEROUTE_USE_DATABASE", "0") == "1"
+    use_database: bool = os.getenv("LIFEROUTE_USE_DATABASE", "1") == "1"
     database_host: str = os.getenv("DATABASE_HOST", "127.0.0.1")
     database_port: int = int(os.getenv("DATABASE_PORT", "3306"))
     database_user: str = os.getenv("DATABASE_USER", "root")

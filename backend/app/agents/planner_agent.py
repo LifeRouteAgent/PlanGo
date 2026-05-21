@@ -12,6 +12,7 @@ from app.tools.poi_schema import (
     POI_RESTAURANT,
     POI_SHOPPING,
 )
+from app.tools.skill_registry import collector_categories_for_skills, select_skills_for_plan
 
 
 def planner_agent_node(state: PlanState) -> PlanStatePatch:
@@ -56,25 +57,39 @@ def planner_agent_node(state: PlanState) -> PlanStatePatch:
         elif "restaurant_unavailable" in last_errors:
             retry_policy = "prefer_non_restaurant_backup"
             candidate_strategy = "replace_restaurant_or_delay_meal"
+        elif "budget_exceeded" in last_errors:
+            retry_policy = "lower_price_level"
+            candidate_strategy = "budget_fit_first"
+        elif "reservation_required" in last_errors:
+            retry_policy = "add_reservation_backup"
+            candidate_strategy = "reservation_backup_first"
+        elif "weak_preference_match" in last_errors:
+            retry_policy = "tighten_preference_match"
+            candidate_strategy = "preference_fit_first"
         elif "route_timeout" in last_errors or "total_duration_exceeded" in last_errors:
             retry_policy = "compact_timeline"
             movement_policy = "same_business_area_first"
             candidate_strategy = "compact_slots_same_area_first"
 
+    enabled_skills = select_skills_for_plan(
+        intent_type=state.get("intent_type", "full_trip_plan"),
+        categories=categories,
+        required_slots=required_slots,
+        planning_template=planning_template,
+    )
+    collector_categories = collector_categories_for_skills(enabled_skills, categories)
+
     return {
         "dag_plan": {
-            "collector_categories": categories,
+            "collector_categories": collector_categories,
             "planning_template": planning_template,
             "required_slots": required_slots,
+            "slot_sequence": required_slots,
             "time_budget": time_budget,
             "movement_policy": movement_policy,
             "candidate_strategy": candidate_strategy,
-            "parallel_skills": [
-                "poi_mix_recommend",
-                "poi_activity_recommend",
-                "poi_restaurant_recommend",
-                "poi_lifestyle_recommend",
-            ],
+            "enabled_skills": enabled_skills,
+            "parallel_skills": enabled_skills,
             "feedback_policy": "verifier_failed_then_replan",
             "retry_policy": retry_policy,
         },
@@ -89,7 +104,8 @@ def planner_agent_node(state: PlanState) -> PlanStatePatch:
             "Planner Agent: "
             + ("used LLM template, " if llm_understanding else "used rule fallback, ")
             + f"template={planning_template}, slots={','.join(required_slots)}, "
-            + f"categories={','.join(categories)}, movement_policy={movement_policy}, "
+            + f"categories={','.join(collector_categories)}, "
+            + f"enabled_skills={','.join(enabled_skills)}, movement_policy={movement_policy}, "
             + f"retry_policy={retry_policy}"
         ],
     }

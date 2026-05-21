@@ -6,6 +6,7 @@ from typing import Any
 import httpx
 
 from app.config import settings
+from app.services.tool_harness import ToolHarness
 
 
 @dataclass(frozen=True)
@@ -34,6 +35,7 @@ class AmapRouteService:
     def __init__(self, api_key: str | None = None, *, timeout_seconds: float = 2.5) -> None:
         self._api_key = api_key if api_key is not None else settings.amap_api_key
         self._timeout_seconds = timeout_seconds
+        self.call_log: list[dict[str, Any]] = []
 
     @property
     def enabled(self) -> bool:
@@ -54,17 +56,39 @@ class AmapRouteService:
         统一返回 None，由 Route Planner 使用 Haversine 结果兜底。
         """
 
+        harness = ToolHarness(
+            name="amap.route.estimate_segment",
+            timeout_seconds=self._timeout_seconds + 0.5,
+            max_retries=1,
+            fallback=lambda *_args, **_kwargs: _fallback_estimate(fallback_distance_km),
+        )
         if not self.enabled:
-            return None
+            result = harness.run(lambda: _fallback_estimate(fallback_distance_km))
+            self.call_log.extend(harness.call_log)
+            return result.data
+
+        result = harness.run(self._estimate_segment_live, previous, current, fallback_distance_km)
+        self.call_log.extend(harness.call_log)
+        return result.data if result.success else _fallback_estimate(fallback_distance_km)
+
+    def _estimate_segment_live(
+        self,
+        previous: dict[str, Any],
+        current: dict[str, Any],
+        fallback_distance_km: float,
+    ) -> AmapRouteEstimate:
+        """执行真实高德路线调用，失败时抛出异常交给 ToolHarness 处理。"""
 
         origin = _format_location(previous)
         destination = _format_location(current)
-        try:
-            if fallback_distance_km <= 1:
-                return self._walking(origin, destination)
-            return self._driving(origin, destination)
-        except httpx.HTTPError, KeyError, TypeError, ValueError:
-            return None
+        estimate = (
+            self._walking(origin, destination)
+            if fallback_distance_km <= 1
+            else self._driving(origin, destination)
+        )
+        if estimate is None:
+            raise ValueError("amap route response has no usable path")
+        return estimate
 
     def _walking(self, origin: str, destination: str) -> AmapRouteEstimate | None:
         """调用高德步行路线接口。"""
@@ -142,4 +166,22 @@ def _estimate_from_meters_seconds(
         distance_km=round(distance_meters / 1000, 2),
         duration_minutes=max(1, round(duration_seconds / 60)),
         source=source,
+    )
+
+
+def _fallback_estimate(distance_km: float) -> AmapRouteEstimate:
+    """高德不可用时的 Haversine 降级耗时估算。"""
+
+    if distance_km <= 1:
+        duration = max(8, round(distance_km / 4.5 * 60) + 3)
+    elif distance_km <= 5:
+        duration = max(10, round(distance_km / 25 * 60) + 8)
+    elif distance_km <= 15:
+        duration = max(25, round(distance_km / 22 * 60) + 12)
+    else:
+        duration = max(50, round(distance_km / 28 * 60) + 15)
+    return AmapRouteEstimate(
+        distance_km=round(distance_km, 2),
+        duration_minutes=int(duration),
+        source="fallback_haversine",
     )

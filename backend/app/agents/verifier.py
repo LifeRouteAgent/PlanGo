@@ -91,6 +91,7 @@ def _issues_for_plan(
             make_issue(
                 "route_timeout",
                 source="verifier",
+                target_plan_id=str(plan.get("id", "")),
                 details={
                     "plan_id": plan.get("id"),
                     "route_minutes": route_minutes,
@@ -103,6 +104,7 @@ def _issues_for_plan(
             make_issue(
                 "total_duration_exceeded",
                 source="verifier",
+                target_plan_id=str(plan.get("id", "")),
                 details={
                     "plan_id": plan.get("id"),
                     "total_duration_minutes": total_duration,
@@ -115,6 +117,7 @@ def _issues_for_plan(
             make_issue(
                 "budget_exceeded",
                 source="verifier",
+                target_plan_id=str(plan.get("id", "")),
                 details={
                     "plan_id": plan.get("id"),
                     "estimated_budget": estimated_budget,
@@ -126,6 +129,7 @@ def _issues_for_plan(
     issues.extend(_category_duplication_issues(plan))
     issues.extend(_route_segment_issues(plan))
     issues.extend(_item_risk_issues(plan))
+    issues.extend(_plan_level_risk_issues(plan))
     return dedupe_issues(issues)
 
 
@@ -140,6 +144,7 @@ def _category_duplication_issues(plan: dict[str, Any]) -> list[dict[str, Any]]:
         make_issue(
             "duplicate_category",
             source="verifier",
+            target_plan_id=str(plan.get("id", "")),
             details={"plan_id": plan.get("id"), "categories": duplicated},
         )
     ]
@@ -157,8 +162,11 @@ def _route_segment_issues(plan: dict[str, Any]) -> list[dict[str, Any]]:
                 make_issue(
                     "cross_district_move",
                     source="verifier",
+                    target_plan_id=str(plan.get("id", "")),
                     details={
                         "plan_id": plan.get("id"),
+                        "from_item_id": segment.get("from_item_id") or segment.get("from_id"),
+                        "to_item_id": segment.get("to_item_id") or segment.get("to_id"),
                         "from": segment.get("from"),
                         "to": segment.get("to"),
                         "distance_km": distance_km,
@@ -170,8 +178,11 @@ def _route_segment_issues(plan: dict[str, Any]) -> list[dict[str, Any]]:
                 make_issue(
                     "route_timeout",
                     source="verifier",
+                    target_plan_id=str(plan.get("id", "")),
                     details={
                         "plan_id": plan.get("id"),
+                        "from_item_id": segment.get("from_item_id") or segment.get("from_id"),
+                        "to_item_id": segment.get("to_item_id") or segment.get("to_id"),
                         "from": segment.get("from"),
                         "to": segment.get("to"),
                         "duration_minutes": duration_minutes,
@@ -191,6 +202,8 @@ def _item_risk_issues(plan: dict[str, Any]) -> list[dict[str, Any]]:
                 make_issue(
                     "poi_closed",
                     source="verifier",
+                    target_plan_id=str(plan.get("id", "")),
+                    target_item_id=str(item.get("id", "")),
                     details={
                         "plan_id": plan.get("id"),
                         "poi_id": item.get("id"),
@@ -203,6 +216,8 @@ def _item_risk_issues(plan: dict[str, Any]) -> list[dict[str, Any]]:
                 make_issue(
                     "queue_risk",
                     source="verifier",
+                    target_plan_id=str(plan.get("id", "")),
+                    target_item_id=str(item.get("id", "")),
                     details={
                         "plan_id": plan.get("id"),
                         "poi_id": item.get("id"),
@@ -215,6 +230,8 @@ def _item_risk_issues(plan: dict[str, Any]) -> list[dict[str, Any]]:
                 make_issue(
                     "reservation_required",
                     source="verifier",
+                    target_plan_id=str(plan.get("id", "")),
+                    target_item_id=str(item.get("id", "")),
                     details={
                         "plan_id": plan.get("id"),
                         "poi_id": item.get("id"),
@@ -227,6 +244,8 @@ def _item_risk_issues(plan: dict[str, Any]) -> list[dict[str, Any]]:
                 make_issue(
                     "open_time_unknown",
                     source="verifier",
+                    target_plan_id=str(plan.get("id", "")),
+                    target_item_id=str(item.get("id", "")),
                     details={
                         "plan_id": plan.get("id"),
                         "poi_id": item.get("id"),
@@ -239,6 +258,8 @@ def _item_risk_issues(plan: dict[str, Any]) -> list[dict[str, Any]]:
                 make_issue(
                     "weak_preference_match",
                     source="verifier",
+                    target_plan_id=str(plan.get("id", "")),
+                    target_item_id=str(item.get("id", "")),
                     details={
                         "plan_id": plan.get("id"),
                         "poi_id": item.get("id"),
@@ -246,4 +267,50 @@ def _item_risk_issues(plan: dict[str, Any]) -> list[dict[str, Any]]:
                     },
                 )
             )
+    return issues
+
+
+def _plan_level_risk_issues(plan: dict[str, Any]) -> list[dict[str, Any]]:
+    """汇总单点风险，生成方案级 Critic 反馈。"""
+
+    issues: list[dict[str, Any]] = []
+    items = plan.get("items", [])
+    if not items:
+        return issues
+
+    reservation_count = sum(
+        1
+        for item in items
+        if item.get("reservation_required") or "reservation_required" in item.get("risk_flags", [])
+    )
+    if reservation_count >= 2:
+        issues.append(
+            make_issue(
+                "reservation_required",
+                severity="warning",
+                source="verifier",
+                target_plan_id=str(plan.get("id", "")),
+                details={
+                    "plan_id": plan.get("id"),
+                    "reservation_item_count": reservation_count,
+                },
+            )
+        )
+
+    weak_count = sum(
+        1
+        for item in items
+        if float(item.get("scene_fit", 0.7) or 0.7) < 0.55
+        or "weak_preference_match" in item.get("risk_flags", [])
+    )
+    if weak_count:
+        issues.append(
+            make_issue(
+                "weak_preference_match",
+                severity="warning",
+                source="verifier",
+                target_plan_id=str(plan.get("id", "")),
+                details={"plan_id": plan.get("id"), "weak_item_count": weak_count},
+            )
+        )
     return issues

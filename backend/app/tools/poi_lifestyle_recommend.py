@@ -9,6 +9,7 @@ from app.tools.poi_schema import (
     recommend_poi,
     score_budget_fit,
 )
+from app.tools.skill_registry import skill_enabled, skipped_skill_patch
 
 
 def poi_lifestyle_recommend_node(state: PlanState) -> PlanStatePatch:
@@ -20,6 +21,9 @@ def poi_lifestyle_recommend_node(state: PlanState) -> PlanStatePatch:
     - 健身只在用户明确偏运动时更适合进入方案。
     - 美容养生更适合慢节奏放松，通常需要预约。
     """
+
+    if not skill_enabled(state, "poi_lifestyle_recommend"):
+        return skipped_skill_patch("poi_lifestyle_recommend")
 
     categories = (POI_FITNESS, POI_ENTERTAINMENT, POI_BEAUTY)
     constraints = state.get("constraints", {})

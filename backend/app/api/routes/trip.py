@@ -12,6 +12,7 @@ from fastapi.responses import StreamingResponse
 
 from app.config import settings
 from app.dag.langgraph_dag_config import life_route_graph
+from app.agents.verifier import _issues_for_plan
 from app.models.schemas import (
     AdjustPlanRequest,
     DataSourceStatusResponse,
@@ -19,6 +20,15 @@ from app.models.schemas import (
     TripPlanRequest,
     TripPlanResponse,
 )
+from app.agents.issue_utils import dedupe_issues
+from app.agents.route_planner import (
+    _build_route_segments,
+    _build_timeline,
+    _estimate_budget,
+    _fit_stay_minutes,
+    _fit_summary,
+)
+from app.services.amap_route_service import AmapRouteService
 from app.services.poi_repository import PoiRepository
 from app.services.tool_harness import ToolHarness
 from app.state.plan_state import create_initial_state
@@ -85,6 +95,12 @@ def stream_plan_trip(request: TripPlanRequest) -> StreamingResponse:
                                 "message": latest_log or f"{node_name} completed",
                             },
                         ))
+                        for trace_event, trace_payload in _trace_events_for_node(
+                            node_name,
+                            patch,
+                            current_state,
+                        ):
+                            event_queue.put((trace_event, trace_payload))
                         if node_name == "response_generator" and patch.get("response_text"):
                             for chunk in _chunk_text(str(patch["response_text"])):
                                 event_queue.put(("response_chunk", {"delta": chunk}))
@@ -289,6 +305,237 @@ def _chunk_text(text: str, chunk_size: int = 18) -> Iterator[str]:
         return
     for index in range(0, len(text), chunk_size):
         yield text[index : index + chunk_size]
+
+
+def _trace_events_for_node(
+    node_name: str,
+    patch: dict[str, Any],
+    current_state: dict[str, Any],
+) -> list[tuple[str, dict[str, Any]]]:
+    """把内部 DAG 节点输出转换成前端可展示的产品化进度事件。
+
+    这里刻意不把完整 PlanState、SQL 结果或大模型原始输出透给前端，只保留用户能理解的
+    阶段、结论和少量统计数据；这样既能展示“系统正在想什么”，也不会把页面变成调试控制台。
+    """
+
+    if node_name == "intent_router":
+        return [(
+            "intent_detected",
+            {
+                "stage": "understanding",
+                "title": "理解需求",
+                "message": _intent_trace_message(patch, current_state),
+                "intent_type": current_state.get("intent_type", ""),
+                "answer_mode": current_state.get("answer_mode", ""),
+                "target_categories": _safe_list(current_state.get("target_categories")),
+            },
+        )]
+
+    if node_name == "constraint_builder":
+        constraints = current_state.get("constraints", {})
+        return [(
+            "constraints_built",
+            {
+                "stage": "constraints",
+                "title": "整理条件",
+                "message": "已整理人数、时间、预算、位置和移动范围，用于后续筛选。",
+                "constraints": _public_constraints(constraints if isinstance(constraints, dict) else {}),
+            },
+        )]
+
+    if node_name == "planner_agent":
+        dag_plan = current_state.get("dag_plan", {})
+        if not isinstance(dag_plan, dict):
+            dag_plan = {}
+        return [(
+            "skill_selected",
+            {
+                "stage": "planning",
+                "title": "选择规划策略",
+                "message": _planner_trace_message(dag_plan),
+                "planning_template": dag_plan.get("planning_template", ""),
+                "enabled_skills": _safe_list(dag_plan.get("enabled_skills")),
+                "collector_categories": _safe_list(dag_plan.get("collector_categories")),
+                "slot_sequence": _safe_list(dag_plan.get("slot_sequence") or dag_plan.get("required_slots")),
+                "movement_policy": dag_plan.get("movement_policy", ""),
+                "candidate_strategy": dag_plan.get("candidate_strategy", ""),
+            },
+        )]
+
+    if node_name == "poi_collector":
+        counts = _count_mapping(current_state.get("candidate_pois", {}))
+        return [(
+            "poi_collected",
+            {
+                "stage": "collecting",
+                "title": "检索本地地点",
+                "message": f"已从本地数据库筛出 {sum(counts.values())} 个候选地点。",
+                "candidate_counts": counts,
+            },
+        )]
+
+    if node_name in {
+        "poi_mix_recommend",
+        "poi_activity_recommend",
+        "poi_restaurant_recommend",
+        "poi_lifestyle_recommend",
+    }:
+        counts = _count_mapping(patch.get("recommended_pois", {}))
+        skill_label = _agent_title(node_name)
+        return [(
+            "skill_ranked",
+            {
+                "stage": "ranking_pois",
+                "title": skill_label,
+                "message": f"{skill_label} 已按偏好、预算、场景和风险重新排序。",
+                "skill": node_name,
+                "recommended_counts": counts,
+            },
+        )]
+
+    if node_name == "route_time_planner":
+        plans = current_state.get("candidate_plans", [])
+        plan_count = len(plans) if isinstance(plans, list) else 0
+        best_plan = plans[0] if plan_count and isinstance(plans[0], dict) else {}
+        return [(
+            "route_candidate_built",
+            {
+                "stage": "routing",
+                "title": "生成动线",
+                "message": f"已组合 {plan_count} 个带时间线的候选方案。",
+                "candidate_plan_count": plan_count,
+                "best_duration_minutes": best_plan.get("total_duration_minutes"),
+                "best_route_minutes": best_plan.get("route_minutes"),
+                "best_budget": best_plan.get("estimated_budget"),
+            },
+        )]
+
+    if node_name == "verifier":
+        issues = _public_issues(current_state.get("errors", []))
+        verified = current_state.get("verified_plans", [])
+        verified_count = len(verified) if isinstance(verified, list) else 0
+        return [(
+            "verification_issue",
+            {
+                "stage": "checking",
+                "title": "校验可执行性",
+                "message": (
+                    f"发现 {len(issues)} 个需要注意的问题，正在尝试优化。"
+                    if issues
+                    else f"校验通过，保留 {verified_count} 个可执行方案。"
+                ),
+                "verified_count": verified_count,
+                "issue_count": len(issues),
+                "issues": issues,
+            },
+        )]
+
+    if node_name == "ranker":
+        ranked_plans = current_state.get("ranked_plans", [])
+        ranked_count = len(ranked_plans) if isinstance(ranked_plans, list) else 0
+        top_plan = ranked_plans[0] if ranked_count and isinstance(ranked_plans[0], dict) else {}
+        return [(
+            "plan_ranked",
+            {
+                "stage": "ranking_plans",
+                "title": "方案排序",
+                "message": f"已按偏好、距离、时间、预算综合排序出 {ranked_count} 个方案。",
+                "ranked_count": ranked_count,
+                "selected_plan_id": top_plan.get("id"),
+                "top_plan_score": top_plan.get("plan_score"),
+            },
+        )]
+
+    return []
+
+
+def _intent_trace_message(patch: dict[str, Any], current_state: dict[str, Any]) -> str:
+    """生成意图识别阶段的用户可读说明。"""
+
+    intent_type = patch.get("intent_type", current_state.get("intent_type", ""))
+    answer_mode = patch.get("answer_mode", current_state.get("answer_mode", ""))
+    categories = _safe_list(current_state.get("target_categories"))
+    if answer_mode == "simple_answer":
+        return "判断这是一个简单问答，不需要进入完整行程规划。"
+    if answer_mode == "category_recommend":
+        return f"判断用户只需要单类推荐，目标类别：{', '.join(str(item) for item in categories) or '待确认'}。"
+    return f"判断为 {intent_type or '本地生活'} 需求，需要生成可执行方案。"
+
+
+def _planner_trace_message(dag_plan: dict[str, Any]) -> str:
+    """生成 Planner 阶段的用户可读说明。"""
+
+    template = dag_plan.get("planning_template") or "local_life_plan"
+    skills = _safe_list(dag_plan.get("enabled_skills"))
+    slots = _safe_list(dag_plan.get("slot_sequence") or dag_plan.get("required_slots"))
+    return (
+        f"采用 {template} 模板，启用 {len(skills)} 个推荐能力，"
+        f"计划安排 {' -> '.join(str(item) for item in slots) if slots else '按需推荐'}。"
+    )
+
+
+def _public_constraints(constraints: dict[str, Any]) -> dict[str, Any]:
+    """只暴露前端进度展示需要的约束字段。"""
+
+    allowed_keys = {
+        "city",
+        "district",
+        "start_area",
+        "start_time",
+        "end_time",
+        "duration_hours",
+        "duration_minutes",
+        "budget",
+        "people_count",
+        "scenario",
+        "preferences",
+        "max_route_minutes",
+        "transport_preference",
+    }
+    return {key: constraints.get(key) for key in allowed_keys if constraints.get(key) not in (None, "", [])}
+
+
+def _public_issues(issues: Any) -> list[dict[str, Any]]:
+    """把结构化 issue 压缩成前端展示所需字段。"""
+
+    if not isinstance(issues, list):
+        return []
+    public: list[dict[str, Any]] = []
+    for issue in issues[:8]:
+        if not isinstance(issue, dict):
+            continue
+        public.append({
+            "code": issue.get("code"),
+            "severity": issue.get("severity"),
+            "message": issue.get("message"),
+            "suggestion": issue.get("suggestion"),
+            "source": issue.get("source"),
+            "target_plan_id": issue.get("target_plan_id"),
+            "target_item_id": issue.get("target_item_id"),
+        })
+    return public
+
+
+def _count_mapping(value: Any) -> dict[str, int]:
+    """统计候选/推荐结果数量，避免前端消费完整 POI 列表。"""
+
+    if not isinstance(value, dict):
+        return {}
+    return {
+        str(key): len(items)
+        for key, items in value.items()
+        if isinstance(items, list)
+    }
+
+
+def _safe_list(value: Any) -> list[Any]:
+    """把可选字段安全转换为列表，便于 SSE JSON 结构稳定。"""
+
+    if isinstance(value, list):
+        return value
+    if isinstance(value, tuple | set):
+        return list(value)
+    return []
 
 
 def _build_agent_thinking_payload(
@@ -560,11 +807,13 @@ def _replace_plan_poi(plan: dict[str, Any], poi_id: str, prompt: str) -> dict[st
 
     replacement = _pick_replacement(candidate_dicts, prompt, old_item)
     adjusted_plan = _apply_replacement(plan, old_item, replacement, prompt)
+    adjusted_plan = _recalculate_adjusted_plan(adjusted_plan)
     return {
         "success": True,
         "plan": adjusted_plan,
         "old_poi": old_item,
         "new_poi": replacement,
+        "issues": adjusted_plan.get("issues", []),
         "message": f"已将「{old_item.get('name')}」替换为「{replacement.get('name')}」。",
     }
 
@@ -649,8 +898,174 @@ def _rough_distance(a: dict[str, Any], b: dict[str, Any]) -> float:
             abs(float(a.get("lat", 0)) - float(b.get("lat", 0))) * 111
             + abs(float(a.get("lon", 0)) - float(b.get("lon", 0))) * 85
         )
-    except TypeError, ValueError:
+    except (TypeError, ValueError):
         return 99
+
+
+def _pick_replacement(
+    candidates: list[dict[str, Any]],
+    prompt: str,
+    old_item: dict[str, Any],
+) -> dict[str, Any]:
+    """根据局部调整意图选择替代 POI。
+
+    这里覆盖上方旧实现，保留同名函数是为了不改动 `/plan/adjust` 的调用点。
+    支持“更近、室内、更省钱、时间短一点、不要 X”等产品化调整选项。
+    """
+
+    prompt_text = prompt.lower()
+    forbidden_terms = _forbidden_terms(prompt)
+
+    def score(candidate: dict[str, Any]) -> float:
+        value = float(candidate.get("rating", 0) or 0)
+        tags = " ".join(str(tag) for tag in candidate.get("tags", []))
+        joined = f"{candidate.get('name', '')} {candidate.get('subcategory', '')} {tags}"
+        distance = _rough_distance(old_item, candidate)
+        if any(term and term in joined for term in forbidden_terms):
+            value -= 8
+        if "室内" in prompt and any(
+            word in joined for word in ["室内", "商场", "影院", "电影", "ktv", "KTV", "棋牌", "桌游"]
+        ):
+            value += 1.5
+        if "不要火锅" in prompt and "火锅" in joined:
+            value -= 5
+        if "便宜" in prompt or "省钱" in prompt or "预算" in prompt:
+            if str(candidate.get("price_level")) == "low":
+                value += 1.2
+            if str(candidate.get("price_level")) == "high":
+                value -= 1.2
+        if "近" in prompt_text or "near" in prompt_text:
+            value += max(0, 2 - distance / 5)
+        if "时间短" in prompt or "短一点" in prompt:
+            value -= distance / 8
+        return value
+
+    return sorted(candidates, key=score, reverse=True)[0]
+
+
+def _apply_replacement(
+    plan: dict[str, Any],
+    old_item: dict[str, Any],
+    replacement: dict[str, Any],
+    prompt: str,
+) -> dict[str, Any]:
+    """把替换结果写回方案，并保留 slot_type 供后续重算时间线。"""
+
+    adjusted = dict(plan)
+    old_id = str(old_item.get("id"))
+    old_slot_type = _slot_type_for_item(plan, old_id)
+    replacement_item = {
+        **replacement,
+        "slot_type": old_slot_type,
+        "recommendation_reason": f"根据“{prompt}”替换，保留原槽位类型并优先满足当前调整方向。",
+        "option_prompts": replacement.get("option_prompts")
+        or ["再近一点", "换成室内", "换个更省钱的"],
+    }
+    adjusted["items"] = [
+        replacement_item if str(item.get("id")) == old_id else item
+        for item in adjusted.get("items", [])
+    ]
+    adjusted["title"] = f"{adjusted.get('title', '方案')}（已局部调整）"
+    adjusted["recommendation_reason"] = f"已按“{prompt}”替换单站，并重新计算路线、时间和预算。"
+    return adjusted
+
+
+def _recalculate_adjusted_plan(plan: dict[str, Any]) -> dict[str, Any]:
+    """局部替换后重算路线、时间线、预算和 Verifier 结果。"""
+
+    adjusted = dict(plan)
+    items = [dict(item) for item in adjusted.get("items", []) if isinstance(item, dict)]
+    duration_limit = _infer_duration_limit(adjusted)
+    budget_limit = _infer_budget_limit(adjusted)
+    start_time = _infer_start_time(adjusted)
+    route_segments = _build_route_segments(items, AmapRouteService())
+    route_minutes = sum(int(segment.get("duration_minutes", 0) or 0) for segment in route_segments)
+    stay_minutes = _fit_stay_minutes(items, route_minutes, duration_limit)
+    total_duration = sum(stay_minutes) + route_minutes
+    estimated_budget = _estimate_budget(items)
+    timeline = _build_timeline(items, route_segments, start_time, stay_minutes)
+    issues = dedupe_issues(_issues_for_plan(
+        {
+            **adjusted,
+            "items": items,
+            "route_segments": route_segments,
+            "route_minutes": route_minutes,
+            "total_duration_minutes": total_duration,
+            "estimated_budget": estimated_budget,
+        },
+        max_route_minutes=45,
+        duration_limit=duration_limit,
+        budget=budget_limit,
+    ))
+    return {
+        **adjusted,
+        "items": items,
+        "timeline": timeline,
+        "route_segments": route_segments,
+        "total_distance_km": round(sum(float(s.get("distance_km", 0) or 0) for s in route_segments), 2),
+        "route_minutes": route_minutes,
+        "total_duration_minutes": total_duration,
+        "estimated_budget": estimated_budget,
+        "fit_summary": _fit_summary(
+            items=items,
+            route_minutes=route_minutes,
+            total_duration=total_duration,
+            duration_limit=duration_limit,
+            estimated_budget=estimated_budget,
+            budget=budget_limit,
+        ),
+        "issues": issues,
+        "verified": not any(issue.get("severity") == "error" for issue in issues),
+    }
+
+
+def _slot_type_for_item(plan: dict[str, Any], poi_id: str) -> str:
+    """从原 timeline 中找回被替换 POI 的 slot_type。"""
+
+    for entry in plan.get("timeline", []) if isinstance(plan.get("timeline"), list) else []:
+        if str(entry.get("poi_id")) == str(poi_id):
+            return str(entry.get("slot_type") or "poi")
+    return "poi"
+
+
+def _infer_duration_limit(plan: dict[str, Any]) -> int:
+    """局部调整时沿用原方案时间窗口，缺失时默认 4 小时。"""
+
+    value = int(plan.get("duration_limit") or plan.get("time_budget") or 0)
+    if value > 0:
+        return value
+    return max(240, int(plan.get("total_duration_minutes", 0) or 0))
+
+
+def _infer_budget_limit(plan: dict[str, Any]) -> int:
+    """局部调整时沿用原预算，缺失时默认不低于当前估算预算。"""
+
+    value = int(plan.get("budget") or plan.get("budget_limit") or 0)
+    if value > 0:
+        return value
+    return max(600, int(plan.get("estimated_budget", 0) or 0))
+
+
+def _infer_start_time(plan: dict[str, Any]) -> str:
+    """从原时间线推断开始时间，缺失时使用下午 2 点。"""
+
+    timeline = plan.get("timeline", [])
+    if isinstance(timeline, list) and timeline:
+        return str(timeline[0].get("start_time") or "14:00")
+    return "14:00"
+
+
+def _forbidden_terms(prompt: str) -> list[str]:
+    """从用户调整文案里提取“不要 X”的轻量排除词。"""
+
+    terms: list[str] = []
+    for marker in ("不要", "不想要", "别要", "换掉"):
+        if marker not in prompt:
+            continue
+        tail = prompt.split(marker, 1)[1].strip()
+        if tail:
+            terms.append(tail[:8])
+    return terms
 
 
 def _fallback_adjust_response(

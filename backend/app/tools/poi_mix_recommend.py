@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from app.state.plan_state import PlanState, PlanStatePatch
 from app.tools.poi_schema import POI_ATTRACTION, POI_SHOPPING, recommend_poi
+from app.tools.skill_registry import skill_enabled, skipped_skill_patch
 
 
 def poi_mix_recommend_node(state: PlanState) -> PlanStatePatch:
@@ -11,6 +12,9 @@ def poi_mix_recommend_node(state: PlanState) -> PlanStatePatch:
     - 景点/公园/citywalk 适合作为 60-120 分钟的轻休闲时间块。
     - 商场/购物中心适合作为餐饮、电影、咖啡的中转容器，动线更稳。
     """
+
+    if not skill_enabled(state, "poi_mix_recommend"):
+        return skipped_skill_patch("poi_mix_recommend")
 
     categories = (POI_ATTRACTION, POI_SHOPPING)
     items = _score_items(state, categories)
