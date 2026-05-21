@@ -1,6 +1,8 @@
 import type { AdjustPlanResponse, DataSourceStatus, ExecutionStep, RankedPlan, TripPlanRequest, TripPlanResponse, TripPlanStreamEvent } from "../types";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:8000";
+// Local dev defaults to Vite's same-origin proxy so remote browsers do not
+// resolve the backend loopback address on their own machine.
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "";
 
 // 同步规划接口保留给调试和不支持流式读取的调用方。
 export async function planTrip(request: TripPlanRequest): Promise<TripPlanResponse> {
