@@ -325,13 +325,16 @@ def _agent_title(node_name: str) -> str:
         "poi_activity_recommend": "活动推荐 Skill",
         "poi_restaurant_recommend": "餐厅推荐 Skill",
         "poi_lifestyle_recommend": "生活方式 Skill",
+        "post_skill_router": "推荐汇总",
         "route_time_planner": "路线时间规划",
         "availability_checker": "可用性检查",
         "verifier": "方案校验",
         "ranker": "方案排序",
         "response_generator": "响应生成",
+        "user_confirm": "方案确认",
+        "execution_agent": "执行准备",
     }
-    return titles.get(node_name, node_name)
+    return titles.get(node_name, "处理步骤")
 
 
 def _agent_message(node_name: str, patch: dict[str, Any], current_state: dict[str, Any]) -> str:
@@ -341,22 +344,47 @@ def _agent_message(node_name: str, patch: dict[str, Any], current_state: dict[st
         return (
             f"判断为 {patch.get('intent_type', current_state.get('intent_type', '未知'))}，决定是否进入规划。"
         )
+    if node_name == "intent_parser":
+        return "提取场景、人数和偏好信息，准备整理规划条件。"
+    if node_name == "constraint_builder":
+        return "整理城市、时间、预算和路线约束。"
+    if node_name == "constraint_clarifier":
+        return (
+            "当前信息还需补充，准备生成追问。"
+            if patch.get("need_clarification")
+            else "规划信息已满足要求，继续生成方案。"
+        )
+    if node_name == "planner_agent":
+        return (
+            "根据校验结果调整规划策略，重新组织候选方案。"
+            if patch.get("replanning_count", 0) > 1
+            else "生成规划模板，并确定候选地点检索策略。"
+        )
     if node_name == "poi_collector":
         counts = {
             key: len(value)
             for key, value in patch.get("candidate_pois", {}).items()
             if isinstance(value, list)
         }
-        return f"从本地数据源召回候选 POI：{counts or '等待结果'}。"
+        return _format_poi_progress("从本地数据源召回", counts)
     if "recommend" in node_name:
         counts = {
             key: len(value)
             for key, value in patch.get("recommended_pois", {}).items()
             if isinstance(value, list)
         }
-        return f"按偏好、预算、场景和风险给候选打分：{counts or '已完成'}。"
+        return _format_poi_progress("按偏好、预算、场景和风险筛选", counts)
+    if node_name == "post_skill_router":
+        return "汇总并行推荐结果，准备进入下一步。"
     if node_name == "route_time_planner":
         return f"生成 {len(patch.get('candidate_plans', []))} 个带时间线的候选方案。"
+    if node_name == "availability_checker":
+        issues = patch.get("errors", [])
+        return (
+            f"发现 {len(issues)} 个可用性问题，交给方案校验处理。"
+            if issues
+            else "候选地点可用性检查完成。"
+        )
     if node_name == "verifier":
         errors = patch.get("errors", [])
         return (
@@ -366,8 +394,45 @@ def _agent_message(node_name: str, patch: dict[str, Any], current_state: dict[st
         return f"综合偏好、距离、时间、预算排序出 {len(patch.get('ranked_plans', []))} 个方案。"
     if node_name == "response_generator":
         return "把结构化方案转成用户可读文本，并补充方案操作。"
-    latest_log = patch.get("logs", [""])[-1] if patch.get("logs") else ""
-    return latest_log or f"{node_name} 已完成。"
+    if node_name == "user_confirm":
+        return "方案已确认，进入执行模拟。"
+    if node_name == "execution_agent":
+        return (
+            "已生成模拟执行结果。"
+            if patch.get("execution_status") == "simulated"
+            else "当前没有可执行方案，已跳过执行。"
+        )
+    return "当前处理步骤已完成。"
+
+
+def _format_poi_progress(action: str, counts: dict[str, int]) -> str:
+    """把内部 POI 分类计数转成面向用户的进度文案。"""
+
+    total = sum(counts.values())
+    if not counts:
+        return f"{action}候选地点中。"
+    if total == 0:
+        return f"{action}完成，当前未筛出匹配地点。"
+
+    category_labels = {
+        "activity": "活动体验",
+        "restaurant": "餐厅",
+        "lifestyle": "生活方式",
+        "mix": "综合",
+        "poi_activity": "活动体验",
+        "poi_restaurant": "餐厅",
+        "poi_entertainment": "休闲娱乐",
+        "poi_fitness": "运动健身",
+        "poi_beauty": "美容养生",
+        "poi_attraction": "景点",
+        "poi_shopping": "购物",
+    }
+    detail = "、".join(
+        f"{category_labels.get(category, '本地生活')} {count} 个"
+        for category, count in counts.items()
+        if count > 0
+    )
+    return f"{action}完成，得到{detail or f'{total} 个'}候选地点。"
 
 
 def _summarize_patch(patch: dict[str, Any]) -> dict[str, Any]:
