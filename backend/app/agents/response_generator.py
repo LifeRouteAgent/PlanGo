@@ -351,6 +351,12 @@ def _default_plan_actions(plan: dict[str, Any]) -> list[dict[str, str]]:
             "prompt": "把当前方案导出成可分享 PDF。",
         },
         {
+            "id": "calendar_ics",
+            "label": "加入日历",
+            "type": "calendar",
+            "prompt": "把当前方案导出为 ICS 日历文件。",
+        },
+        {
             "id": "cheaper",
             "label": "换个更省钱的",
             "type": "refine",
@@ -368,7 +374,7 @@ def _default_plan_actions(plan: dict[str, Any]) -> list[dict[str, str]]:
 def _merge_plan_actions(plan: dict[str, Any], llm_actions: Any) -> list[dict[str, str]]:
     """合并 LLM 方案操作，并强制保留执行和导出两个核心按钮。"""
 
-    fixed = _default_plan_actions(plan)[:2]
+    fixed = _default_plan_actions(plan)[:3]
     fixed_ids = {action["id"] for action in fixed}
     dynamic: list[dict[str, str]] = []
     if isinstance(llm_actions, list):
@@ -384,12 +390,12 @@ def _merge_plan_actions(plan: dict[str, Any], llm_actions: Any) -> list[dict[str
             dynamic.append({
                 "id": action_id[:40],
                 "label": label[:24],
-                "type": action_type if action_type in {"execute", "export", "refine"} else "refine",
+                "type": action_type if action_type in {"execute", "export", "calendar", "refine"} else "refine",
                 "prompt": prompt[:80],
             })
 
     if len(dynamic) < 2:
-        dynamic = _default_plan_actions(plan)[2:]
+        dynamic = _default_plan_actions(plan)[3:]
     return [*fixed, *dynamic[:2]]
 
 

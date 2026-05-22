@@ -171,10 +171,13 @@ def collector_categories_for_skills(
             continue
         inputs = set(spec.input_categories)
         if requested:
-            matched = inputs & requested
-            categories.update(matched or inputs)
+            categories.update(inputs & requested)
         else:
             categories.update(inputs)
+    if requested_categories:
+        ordered = [category for category in requested_categories if category in categories]
+        extras = sorted(category for category in categories if category not in set(ordered))
+        return [*ordered, *extras]
     return sorted(categories)
 
 

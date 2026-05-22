@@ -1,4 +1,4 @@
-import type { AdjustPlanResponse, DataSourceStatus, ExecutionStep, RankedPlan, TripPlanRequest, TripPlanResponse, TripPlanStreamEvent } from "../types";
+import type { AdjustPlanResponse, DataSourceStatus, ExecutionStep, RankedPlan, RevisePlanRequest, TripPlanRequest, TripPlanResponse, TripPlanStreamEvent } from "../types";
 
 // Local dev defaults to Vite's same-origin proxy so remote browsers do not
 // resolve the backend loopback address on their own machine.
@@ -39,7 +39,15 @@ export async function planTripStream(
   request: TripPlanRequest,
   callbacks: PlanTripStreamCallbacks = {}
 ): Promise<TripPlanResponse> {
-  const response = await fetch(`${API_BASE_URL}/trip/plan/stream`, {
+  return readTripPlanStream(`${API_BASE_URL}/trip/plan/stream`, request, callbacks);
+}
+
+async function readTripPlanStream(
+  url: string,
+  request: object,
+  callbacks: PlanTripStreamCallbacks = {}
+): Promise<TripPlanResponse> {
+  const response = await fetch(url, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -91,9 +99,17 @@ export async function planTripStream(
   return finalResponse;
 }
 
+export async function revisePlanStream(
+  request: RevisePlanRequest,
+  callbacks: PlanTripStreamCallbacks = {}
+): Promise<TripPlanResponse> {
+  return readTripPlanStream(`${API_BASE_URL}/trip/plan/revise/stream`, request, callbacks);
+}
+
 export async function executePlanStream(
   plan: RankedPlan,
-  callbacks: ExecutePlanStreamCallbacks = {}
+  callbacks: ExecutePlanStreamCallbacks = {},
+  meta: { session_id?: string; trace_id?: string; run_id?: string } = {}
 ): Promise<void> {
   const response = await fetch(`${API_BASE_URL}/trip/execute/stream`, {
     method: "POST",
@@ -101,7 +117,7 @@ export async function executePlanStream(
       "Content-Type": "application/json",
       Accept: "text/event-stream"
     },
-    body: JSON.stringify({ plan })
+    body: JSON.stringify({ plan, ...meta })
   });
 
   if (!response.ok || !response.body) {
@@ -140,13 +156,36 @@ export async function executePlanStream(
   }
 }
 
-export async function exportPlanPdf(plan: RankedPlan): Promise<Blob> {
+export async function exportPlanCalendar(
+  plan: RankedPlan,
+  meta: { session_id?: string; trace_id?: string; run_id?: string } = {}
+): Promise<Blob> {
+  const response = await fetch(`${API_BASE_URL}/trip/calendar/ics`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ plan, ...meta })
+  });
+
+  if (!response.ok) {
+    const message = await response.text();
+    throw new Error(`导出日历失败：${response.status} ${message}`);
+  }
+
+  return await response.blob();
+}
+
+export async function exportPlanPdf(
+  plan: RankedPlan,
+  meta: { session_id?: string; trace_id?: string; run_id?: string } = {}
+): Promise<Blob> {
   const response = await fetch(`${API_BASE_URL}/export/plan/pdf`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json"
     },
-    body: JSON.stringify({ plan })
+    body: JSON.stringify({ plan, ...meta })
   });
 
   if (!response.ok) {

@@ -3,6 +3,16 @@ export interface TripPlanRequest {
   user_query: string;
   user_profile?: Record<string, unknown>;
   max_replanning_count?: number;
+  session_id?: string;
+  trace_id?: string;
+  run_id?: string;
+}
+
+export interface RevisePlanRequest {
+  session_id: string;
+  user_query: string;
+  selected_plan_id?: string;
+  max_replanning_count?: number;
 }
 
 export interface PoiItem {
@@ -122,6 +132,11 @@ export interface TripPlanResponse {
   ranked_plans: RankedPlan[];
   errors: PlanIssue[];
   logs: string[];
+  session_id?: string;
+  trace_id?: string;
+  run_id?: string;
+  revision_id?: string;
+  is_revision?: boolean;
 }
 
 export interface TripPlanStreamEvent {

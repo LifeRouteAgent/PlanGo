@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
 import AmapTripMap from "../components/AmapTripMap.vue";
-import { adjustPlanPoi, executePlanStream, exportPlanPdf, getDataSourceStatus, planTripStream } from "../services/api";
+import { adjustPlanPoi, executePlanStream, exportPlanCalendar, exportPlanPdf, getDataSourceStatus, planTripStream, revisePlanStream } from "../services/api";
 import type { AgentThinkingEvent, DataSourceStatus, ExecutionStep, PlanAction, PoiItem, RankedPlan, RouteSegment, TimelineItem, TraceProgressEvent, TripPlanResponse } from "../types";
 
 // 默认输入要像真实用户需求，方便演示时打开页面就能一键生成方案。
@@ -20,6 +20,9 @@ const adjustingPoiId = ref("");
 const executionRunning = ref(false);
 const executionStatus = ref("");
 const executionSteps = ref<ExecutionStep[]>([]);
+const sessionId = ref(getInitialSessionId());
+const traceId = ref("");
+const runId = ref("");
 const theme = ref<"light" | "dark">(getInitialTheme());
 const isDarkTheme = computed(() => theme.value === "dark");
 const productTraceEventNames = new Set([
@@ -93,11 +96,25 @@ async function submitPlan() {
   adjustingPoiId.value = "";
   executionSteps.value = [];
   executionStatus.value = "";
-  result.value = null;
+  const shouldRevise = Boolean(result.value?.ranked_plans?.length) && looksLikeRevision(query.value);
+  if (!shouldRevise) {
+    result.value = null;
+  }
 
   try {
-    const finalResult = await planTripStream(
-      { user_query: query.value, max_replanning_count: 2 },
+    const finalResult = await (shouldRevise ? revisePlanStream : planTripStream)(
+      shouldRevise
+        ? {
+            session_id: sessionId.value,
+            user_query: query.value,
+            selected_plan_id: selectedPlan.value?.id,
+            max_replanning_count: 2
+          }
+        : {
+            user_query: query.value,
+            max_replanning_count: 2,
+            session_id: sessionId.value
+          },
       {
         onEvent: (event) => {
           if (event.event === "status" || event.event === "metadata" || event.event === "node_update" || event.event === "progress") {
@@ -126,6 +143,12 @@ async function submitPlan() {
       }
     );
     result.value = finalResult;
+    if (finalResult.session_id) {
+      sessionId.value = finalResult.session_id;
+      window.localStorage.setItem("liferoute-session-id", finalResult.session_id);
+    }
+    traceId.value = finalResult.trace_id ?? traceId.value;
+    runId.value = finalResult.run_id ?? runId.value;
     streamedResponse.value = finalResult.response_text;
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : "规划请求失败";
@@ -139,6 +162,12 @@ function useQuickQuery(text: string) {
   query.value = text;
 }
 
+function looksLikeRevision(text: string): boolean {
+  return ["不要", "别", "太热", "下雨", "更近", "近一点", "更便宜", "省钱", "换", "室内", "时间短"].some((keyword) =>
+    text.includes(keyword)
+  );
+}
+
 function selectPlan(index: number) {
   selectedPlanIndex.value = index;
 }
@@ -146,6 +175,14 @@ function selectPlan(index: number) {
 function appendThinkingEvent(event: AgentThinkingEvent) {
   if (!event?.agent || !event.message) return;
   thinkingEvents.value = [...thinkingEvents.value.slice(-11), event];
+}
+
+function getInitialSessionId(): string {
+  const savedSession = window.localStorage.getItem("liferoute-session-id");
+  if (savedSession) return savedSession;
+  const nextSession = `web_${crypto.randomUUID?.() ?? `${Date.now()}_${Math.random().toString(16).slice(2)}`}`;
+  window.localStorage.setItem("liferoute-session-id", nextSession);
+  return nextSession;
 }
 
 function appendTraceEvent(eventName: string, payload: Record<string, unknown>) {
@@ -187,6 +224,10 @@ async function handlePlanAction(action: PlanAction) {
   }
   if (action.type === "export" || action.id === "share_pdf") {
     await sharePlanPdf();
+    return;
+  }
+  if (action.type === "calendar" || action.id === "calendar_ics") {
+    await sharePlanCalendar();
     return;
   }
   if (action.prompt) {
@@ -246,6 +287,10 @@ async function executeSelectedPlan() {
       onDone: (payload) => {
         executionStatus.value = String(payload.message ?? "模拟执行完成");
       }
+    }, {
+      session_id: sessionId.value,
+      trace_id: traceId.value,
+      run_id: runId.value
     });
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : "执行方案失败";
@@ -257,7 +302,10 @@ async function executeSelectedPlan() {
 async function sharePlanPdf() {
   if (!selectedPlan.value) return;
   try {
-    const blob = await exportPlanPdf(selectedPlan.value);
+    const blob = await exportPlanPdf(selectedPlan.value, {
+      session_id: sessionId.value,
+      trace_id: traceId.value
+    });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
@@ -266,6 +314,25 @@ async function sharePlanPdf() {
     URL.revokeObjectURL(url);
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : "导出 PDF 失败";
+  }
+}
+
+async function sharePlanCalendar() {
+  if (!selectedPlan.value) return;
+  try {
+    const blob = await exportPlanCalendar(selectedPlan.value, {
+      session_id: sessionId.value,
+      trace_id: traceId.value,
+      run_id: runId.value
+    });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "liferoute-plan.ics";
+    link.click();
+    URL.revokeObjectURL(url);
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : "导出日历失败";
   }
 }
 

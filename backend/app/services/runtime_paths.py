@@ -1,0 +1,23 @@
+from __future__ import annotations
+
+from pathlib import Path
+
+from app.config import BACKEND_DIR
+
+
+RUNTIME_DIR = BACKEND_DIR / "data" / "runtime"
+SESSIONS_DIR = RUNTIME_DIR / "sessions"
+TRACES_DIR = RUNTIME_DIR / "traces"
+MEMORY_DIR = RUNTIME_DIR / "memory"
+CALENDAR_DIR = RUNTIME_DIR / "calendar"
+
+
+def ensure_runtime_dirs() -> None:
+    """创建本地运行态目录。
+
+    这些目录只保存 demo 运行时状态，不属于源码资产；后续如果切换 MySQL/Redis，
+    可以保持上层接口不变，只替换服务实现。
+    """
+
+    for path in (SESSIONS_DIR, TRACES_DIR, MEMORY_DIR, CALENDAR_DIR):
+        path.mkdir(parents=True, exist_ok=True)

@@ -8,15 +8,17 @@ from collections.abc import Iterator
 from typing import Any
 
 from fastapi import APIRouter
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response, StreamingResponse
 
 from app.config import settings
+from app.agents.availability_checker import availability_checker_node
 from app.dag.langgraph_dag_config import life_route_graph
 from app.agents.verifier import _issues_for_plan
 from app.models.schemas import (
     AdjustPlanRequest,
     DataSourceStatusResponse,
     ExecutePlanRequest,
+    RevisePlanRequest,
     TripPlanRequest,
     TripPlanResponse,
 )
@@ -29,9 +31,23 @@ from app.agents.route_planner import (
     _fit_summary,
 )
 from app.services.amap_route_service import AmapRouteService
+from app.services.calendar_service import build_plan_ics
+from app.services.memory_service import MemoryService
 from app.services.poi_repository import PoiRepository
+from app.services.session_store import SessionStore
 from app.services.tool_harness import ToolHarness
+from app.services.trace_recorder import TraceRecorder, new_id, record_trace_event, set_trace_context
 from app.state.plan_state import create_initial_state
+from app.agents.planner_agent import planner_agent_node
+from app.agents.poi_collector import poi_collector_node
+from app.tools.poi_mix_recommend import poi_mix_recommend_node
+from app.tools.poi_activity_recommend import poi_activity_recommend_node
+from app.tools.poi_restaurant_recommend import poi_restaurant_recommend_node
+from app.tools.poi_lifestyle_recommend import poi_lifestyle_recommend_node
+from app.agents.route_planner import route_time_planner_node
+from app.agents.verifier import verifier_node, verifier_route
+from app.agents.ranker import ranker_node
+from app.agents.response_generator import response_generator_node
 
 router = APIRouter(prefix="/trip", tags=["trip"])
 
@@ -43,13 +59,42 @@ def plan_trip(request: TripPlanRequest) -> TripPlanResponse:
     这个接口保留给测试和非流式调用方使用；前端主流程优先调用 `/trip/plan/stream`。
     """
 
+    session_store = SessionStore()
+    memory = MemoryService()
+    session_id = session_store.ensure_session_id(request.session_id)
+    trace_id = request.trace_id or new_id("trace")
+    run_id = request.run_id or new_id("run")
+    set_trace_context(trace_id=trace_id, run_id=run_id, session_id=session_id)
+    memory.observe_user_query(request.user_query)
+    user_profile = memory.enrich_user_profile({
+        **request.user_profile,
+        "last_query": request.user_query,
+    })
+
     initial_state = create_initial_state(
         request.user_query,
-        user_profile=request.user_profile,
+        user_profile=user_profile,
         max_replanning_count=request.max_replanning_count,
+        session_id=session_id,
+        trace_id=trace_id,
+        run_id=run_id,
     )
-    result = life_route_graph.invoke(initial_state)
-    return _build_trip_response(result)
+    recorder = TraceRecorder(trace_id=trace_id, run_id=run_id, session_id=session_id)
+    result = recorder.time_node(
+        "life_route_graph.invoke",
+        lambda: life_route_graph.invoke(initial_state),
+        input_summary={"user_query": request.user_query},
+    )
+    response = _build_trip_response(result)
+    session_store.save_turn(
+        session_id=session_id,
+        trace_id=trace_id,
+        run_id=run_id,
+        user_query=request.user_query,
+        state=result,
+        response=response.model_dump(),
+    )
+    return response
 
 
 @router.post("/plan/stream")
@@ -63,10 +108,25 @@ def stream_plan_trip(request: TripPlanRequest) -> StreamingResponse:
 
     def event_stream() -> Iterator[str]:
         event_queue: queue.Queue[tuple[str, dict[str, Any]] | None] = queue.Queue()
+        session_store = SessionStore()
+        memory = MemoryService()
+        session_id = session_store.ensure_session_id(request.session_id)
+        trace_id = request.trace_id or new_id("trace")
+        run_id = request.run_id or new_id("run")
+        set_trace_context(trace_id=trace_id, run_id=run_id, session_id=session_id)
+        memory.observe_user_query(request.user_query)
+        user_profile = memory.enrich_user_profile({
+            **request.user_profile,
+            "last_query": request.user_query,
+        })
+        recorder = TraceRecorder(trace_id=trace_id, run_id=run_id, session_id=session_id)
         current_state = create_initial_state(
             request.user_query,
-            user_profile=request.user_profile,
+            user_profile=user_profile,
             max_replanning_count=request.max_replanning_count,
+            session_id=session_id,
+            trace_id=trace_id,
+            run_id=run_id,
         )
 
         def run_graph() -> None:
@@ -74,6 +134,18 @@ def stream_plan_trip(request: TripPlanRequest) -> StreamingResponse:
             try:
                 for update in life_route_graph.stream(current_state, stream_mode="updates"):
                     for node_name, patch in update.items():
+                        recorder.record(
+                            "node_run",
+                            {
+                                "node_name": node_name,
+                                "started_at": time.time(),
+                                "ended_at": time.time(),
+                                "duration_ms": 0,
+                                "input_summary": _summarize_patch(current_state),
+                                "output_summary": _summarize_patch(patch),
+                                "error": None,
+                            },
+                        )
                         current_state = _merge_stream_patch(current_state, patch)
                         latest_log = patch.get("logs", [])[-1] if patch.get("logs") else ""
                         event_queue.put((
@@ -150,6 +222,9 @@ def stream_plan_trip(request: TripPlanRequest) -> StreamingResponse:
                 "execution_status": response.execution_status,
                 "need_clarification": response.need_clarification,
                 "plan_count": len(response.ranked_plans),
+                "session_id": response.session_id,
+                "trace_id": response.trace_id,
+                "run_id": response.run_id,
             },
         )
 
@@ -158,8 +233,107 @@ def stream_plan_trip(request: TripPlanRequest) -> StreamingResponse:
                 yield _sse_event("response_chunk", {"delta": chunk})
                 time.sleep(0.03)
 
+        session_store.save_turn(
+            session_id=session_id,
+            trace_id=trace_id,
+            run_id=run_id,
+            user_query=request.user_query,
+            state=current_state,
+            response=response.model_dump(),
+        )
         yield _sse_event("final", response.model_dump())
         yield _sse_event("done", {"ok": True})
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+@router.post("/plan/revise/stream")
+def stream_revise_plan(request: RevisePlanRequest) -> StreamingResponse:
+    """基于同一会话的上一版 PlanState 修正方案，而不是从空状态重新规划。"""
+
+    def event_stream() -> Iterator[str]:
+        session_store = SessionStore()
+        memory = MemoryService()
+        saved_session = session_store.load(request.session_id)
+        if not saved_session or not isinstance(saved_session.get("latest_state"), dict):
+            yield _sse_event("error", {"message": "没有找到可续跑的会话，请先生成一次方案。"})
+            yield _sse_event("done", {"ok": False})
+            return
+
+        trace_id = new_id("trace")
+        run_id = new_id("run")
+        revision_id = new_id("rev")
+        set_trace_context(trace_id=trace_id, run_id=run_id, session_id=request.session_id)
+        memory.observe_user_query(request.user_query)
+        recorder = TraceRecorder(trace_id=trace_id, run_id=run_id, session_id=request.session_id)
+        current_state = _build_revision_state(
+            saved_session["latest_state"],
+            request.user_query,
+            request.max_replanning_count,
+            trace_id,
+            run_id,
+            revision_id,
+        )
+        current_state["user_profile"] = memory.enrich_user_profile(current_state.get("user_profile", {}))
+        _apply_revision_constraints(current_state, request.user_query)
+
+        yield _sse_event(
+            "status",
+            {
+                "stage": "revision",
+                "session_id": request.session_id,
+                "trace_id": trace_id,
+                "run_id": run_id,
+                "revision_id": revision_id,
+                "message": "已读取上一版方案，正在基于新需求做局部/全局修正。",
+            },
+        )
+        record_trace_event(
+            "user_action",
+            {
+                "action": "revision_requested",
+                "query": request.user_query,
+                "selected_plan_id": request.selected_plan_id,
+            },
+        )
+
+        try:
+            current_state = _run_revision_pipeline(current_state, recorder, event_stream=True)
+            response = _build_trip_response(current_state)
+            session_store.save_turn(
+                session_id=request.session_id,
+                trace_id=trace_id,
+                run_id=run_id,
+                revision_id=revision_id,
+                is_revision=True,
+                user_query=request.user_query,
+                state=current_state,
+                response=response.model_dump(),
+            )
+            for chunk in _chunk_text(response.response_text):
+                yield _sse_event("response_chunk", {"delta": chunk})
+                time.sleep(0.03)
+            yield _sse_event("metadata", {
+                "session_id": response.session_id,
+                "trace_id": response.trace_id,
+                "run_id": response.run_id,
+                "revision_id": response.revision_id,
+                "is_revision": response.is_revision,
+                "plan_count": len(response.ranked_plans),
+            })
+            yield _sse_event("final", response.model_dump())
+            yield _sse_event("done", {"ok": True})
+        except Exception as exc:  # noqa: BLE001 - 修正流需要把异常转成 SSE，避免前端一直等待。
+            recorder.record("revision_error", {"error": str(exc)})
+            yield _sse_event("error", {"message": str(exc)})
+            yield _sse_event("done", {"ok": False})
 
     return StreamingResponse(
         event_stream(),
@@ -180,6 +354,15 @@ def stream_execute_plan(request: ExecutePlanRequest) -> StreamingResponse:
     """
 
     def event_stream() -> Iterator[str]:
+        session_id = request.session_id or "execution_session"
+        trace_id = request.trace_id or new_id("trace")
+        run_id = request.run_id or new_id("run")
+        set_trace_context(trace_id=trace_id, run_id=run_id, session_id=session_id)
+        MemoryService().observe_selected_plan(request.plan)
+        record_trace_event("user_action", {
+            "action": "plan_executed",
+            "plan_id": request.plan.get("id"),
+        })
         harness = ToolHarness(
             name="execution.mock.build_steps",
             timeout_seconds=3,
@@ -198,6 +381,9 @@ def stream_execute_plan(request: ExecutePlanRequest) -> StreamingResponse:
             {
                 "plan_id": request.plan.get("id"),
                 "total_steps": len(steps),
+                "session_id": session_id,
+                "trace_id": trace_id,
+                "run_id": run_id,
                 "message": "开始模拟执行当前方案。",
             },
         )
@@ -218,6 +404,12 @@ def stream_execute_plan(request: ExecutePlanRequest) -> StreamingResponse:
                 "result": result.data if result.success else "模拟执行完成。",
             }
             yield _sse_event("execution_step", done)
+            if step.get("type") == "calendar_export":
+                yield _sse_event("calendar_ready", {
+                    "plan_id": request.plan.get("id"),
+                    "download_url": "/trip/calendar/ics",
+                    "message": "日历文件已准备好，可下载后导入系统日历。",
+                })
         yield _sse_event(
             "execution_done",
             {
@@ -256,6 +448,159 @@ def adjust_plan(request: AdjustPlanRequest) -> dict[str, Any]:
     return _fallback_adjust_response(request.plan, request.poi_id, request.prompt)
 
 
+@router.post("/calendar/ics")
+def export_calendar_ics(request: ExecutePlanRequest) -> Response:
+    """把当前方案导出为标准 ICS 日历文件，demo 阶段不接真实日历账号。"""
+
+    session_id = request.session_id or "calendar_session"
+    trace_id = request.trace_id or new_id("trace")
+    run_id = request.run_id or new_id("run")
+    set_trace_context(trace_id=trace_id, run_id=run_id, session_id=session_id)
+    record_trace_event("user_action", {
+        "action": "calendar_exported",
+        "plan_id": request.plan.get("id"),
+    })
+    harness = ToolHarness(
+        name="calendar.ics.export",
+        timeout_seconds=3,
+        max_retries=1,
+        fallback=lambda: build_plan_ics(request.plan),
+    )
+    result = harness.run(build_plan_ics, request.plan)
+    ics_text = result.data if result.success else build_plan_ics(request.plan)
+    return Response(
+        content=ics_text,
+        media_type="text/calendar; charset=utf-8",
+        headers={"Content-Disposition": 'attachment; filename="liferoute-plan.ics"'},
+    )
+
+
+@router.get("/trace/{trace_id}")
+def get_trace(trace_id: str) -> dict[str, Any]:
+    """读取一次请求链路的 trace 事件，供调试页或 demo 复盘使用。"""
+
+    return TraceRecorder.read(trace_id)
+
+
+@router.delete("/memory")
+def clear_memory() -> dict[str, Any]:
+    """清空文件型长期记忆。"""
+
+    MemoryService().clear()
+    return {"ok": True}
+
+
+def _build_revision_state(
+    previous_state: dict[str, Any],
+    user_query: str,
+    max_replanning_count: int,
+    trace_id: str,
+    run_id: str,
+    revision_id: str,
+) -> dict[str, Any]:
+    """从上一轮完整 PlanState 克隆出可续跑状态，并保留原始意图和约束。"""
+
+    state = dict(previous_state)
+    state["user_query"] = user_query
+    state["trace_id"] = trace_id
+    state["run_id"] = run_id
+    state["revision_id"] = revision_id
+    state["is_revision"] = True
+    state["max_replanning_count"] = max_replanning_count
+    state["replanning_count"] = 0
+    state["errors"] = []
+    state["logs"] = [*state.get("logs", []), f"收到续跑修正需求：{user_query}"]
+    state["candidate_plans"] = []
+    state["verified_plans"] = []
+    state["ranked_plans"] = []
+    state["response_text"] = ""
+    state["execution_status"] = "revision_running"
+    return state
+
+
+def _apply_revision_constraints(state: dict[str, Any], user_query: str) -> None:
+    """把常见自然语言修正转成结构化约束，作为 Planner/Skill/Route 的输入。"""
+
+    constraints = state.get("constraints")
+    if not isinstance(constraints, dict):
+        constraints = {}
+    text = user_query.lower()
+    avoid_tags = list(constraints.get("avoid_tags", []) or [])
+    excluded_keywords = list(constraints.get("excluded_keywords", []) or [])
+    if any(word in user_query for word in ["不要室外", "别室外", "太热", "下雨", "室内"]):
+        constraints["indoor_preferred"] = True
+        avoid_tags.extend(["室外", "公园", "露天", "户外"])
+    if any(word in user_query for word in ["更便宜", "省钱", "便宜点", "预算低"]):
+        constraints["budget_strategy"] = "lower_cost"
+        constraints["price_preference"] = "low"
+    if any(word in user_query for word in ["别太远", "近一点", "更近", "少走路"]):
+        current_max = int(constraints.get("max_route_minutes", 45) or 45)
+        constraints["max_route_minutes"] = min(current_max, 30)
+        constraints["movement_policy"] = "low_movement"
+    excluded_keywords.extend(_forbidden_terms(user_query))
+    if "不要ktv" in text or "不要唱歌" in user_query:
+        excluded_keywords.extend(["KTV", "唱歌"])
+    constraints["avoid_tags"] = sorted({str(item) for item in avoid_tags if item})
+    constraints["excluded_keywords"] = sorted({str(item) for item in excluded_keywords if item})
+    state["constraints"] = constraints
+    state["logs"] = [
+        *state.get("logs", []),
+        f"已把修正需求转成约束：avoid_tags={constraints.get('avoid_tags', [])}, excluded_keywords={constraints.get('excluded_keywords', [])}",
+    ]
+
+
+def _run_revision_pipeline(
+    state: dict[str, Any],
+    recorder: TraceRecorder,
+    *,
+    event_stream: bool = False,
+) -> dict[str, Any]:
+    """跳过完整意图澄清，从 Planner 到 Response 重新生成可执行方案。"""
+
+    del event_stream
+
+    def run_node(node_name: str, node_fn) -> None:
+        nonlocal state
+        patch = recorder.time_node(
+            node_name,
+            lambda: node_fn(state),
+            input_summary=_summarize_patch(state),
+        )
+        state = _merge_stream_patch(state, patch)
+        for trace_event, trace_payload in _trace_events_for_node(node_name, patch, state):
+            record_trace_event("product_progress", {"event": trace_event, **trace_payload})
+
+    run_node("planner_agent", planner_agent_node)
+    run_node("poi_collector", poi_collector_node)
+    for skill_name, skill_fn in (
+        ("poi_mix_recommend", poi_mix_recommend_node),
+        ("poi_activity_recommend", poi_activity_recommend_node),
+        ("poi_restaurant_recommend", poi_restaurant_recommend_node),
+        ("poi_lifestyle_recommend", poi_lifestyle_recommend_node),
+    ):
+        run_node(skill_name, skill_fn)
+    run_node("route_time_planner", route_time_planner_node)
+    run_node("availability_checker", availability_checker_node)
+    run_node("verifier", verifier_node)
+    if verifier_route(state) == "replan":
+        state["logs"] = [*state.get("logs", []), "修正方案未通过校验，按反馈重新收紧策略。"]
+        run_node("planner_agent", planner_agent_node)
+        run_node("poi_collector", poi_collector_node)
+        for skill_name, skill_fn in (
+            ("poi_mix_recommend", poi_mix_recommend_node),
+            ("poi_activity_recommend", poi_activity_recommend_node),
+            ("poi_restaurant_recommend", poi_restaurant_recommend_node),
+            ("poi_lifestyle_recommend", poi_lifestyle_recommend_node),
+        ):
+            run_node(skill_name, skill_fn)
+        run_node("route_time_planner", route_time_planner_node)
+        run_node("availability_checker", availability_checker_node)
+        run_node("verifier", verifier_node)
+    run_node("ranker", ranker_node)
+    run_node("response_generator", response_generator_node)
+    return state
+
+
 def _build_trip_response(result: dict[str, Any]) -> TripPlanResponse:
     """把内部 PlanState 裁剪成 API 对外响应结构。"""
 
@@ -271,6 +616,11 @@ def _build_trip_response(result: dict[str, Any]) -> TripPlanResponse:
         ranked_plans=result.get("ranked_plans", []),
         errors=result.get("errors", []),
         logs=result.get("logs", []),
+        session_id=result.get("session_id", ""),
+        trace_id=result.get("trace_id", ""),
+        run_id=result.get("run_id", ""),
+        revision_id=result.get("revision_id", ""),
+        is_revision=bool(result.get("is_revision", False)),
     )
 
 
@@ -757,6 +1107,13 @@ def _build_mock_execution_steps(plan: dict[str, Any]) -> list[dict[str, Any]]:
             "transport_mode": segment.get("transport_mode"),
         })
 
+    steps.append({
+        "id": "calendar_export",
+        "type": "calendar_export",
+        "title": "生成日历文件",
+        "description": "把确认后的时间线导出为标准 ICS，方便导入系统日历。",
+    })
+
     if not steps:
         steps.append({
             "id": "share_only",
@@ -777,6 +1134,8 @@ def _mock_execution_result(step: dict[str, Any]) -> str:
         return "已生成模拟票务订单，状态：待支付。"
     if step_type == "ride_hailing":
         return "已生成模拟叫车单，状态：等待司机接单。"
+    if step_type == "calendar_export":
+        return "已生成可导入系统日历的 ICS 文件。"
     return "已完成模拟确认。"
 
 
@@ -978,7 +1337,8 @@ def _recalculate_adjusted_plan(plan: dict[str, Any]) -> dict[str, Any]:
     duration_limit = _infer_duration_limit(adjusted)
     budget_limit = _infer_budget_limit(adjusted)
     start_time = _infer_start_time(adjusted)
-    route_segments = _build_route_segments(items, AmapRouteService())
+    # 局部替换是用户交互链路，必须快；这里强制用 Haversine fallback，完整规划再走高德路线增强。
+    route_segments = _build_route_segments(items, AmapRouteService(api_key=""))
     route_minutes = sum(int(segment.get("duration_minutes", 0) or 0) for segment in route_segments)
     stay_minutes = _fit_stay_minutes(items, route_minutes, duration_limit)
     total_duration = sum(stay_minutes) + route_minutes

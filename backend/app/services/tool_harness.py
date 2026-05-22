@@ -7,6 +7,8 @@ from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeout
 from dataclasses import dataclass, field
 from typing import Any, TypeVar
 
+from app.services.trace_recorder import record_trace_event
+
 logger = logging.getLogger("liferoute.tool_harness")
 
 T = TypeVar("T")
@@ -130,6 +132,7 @@ class ToolHarness:
             "timestamp": time.time(),
         }
         self.call_log.append(entry)
+        record_trace_event("tool_call", entry)
         if success:
             logger.info("%s success source=%s latency=%sms", self.name, source, latency_ms)
         else:

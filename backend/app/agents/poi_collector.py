@@ -36,7 +36,10 @@ def poi_collector_node(state: PlanState) -> PlanStatePatch:
     use_database = settings.use_database
     if use_database:
         try:
-            candidate_pois = PoiRepository().fetch_by_categories(categories)
+            candidate_pois = _filter_candidates(
+                PoiRepository().fetch_by_categories(categories),
+                state.get("constraints", {}),
+            )
             total = sum(len(items) for items in candidate_pois.values())
             return {
                 "candidate_pois": candidate_pois,
@@ -45,11 +48,17 @@ def poi_collector_node(state: PlanState) -> PlanStatePatch:
         except MySQLError as exc:
             # 数据库不可用时降级到 mock，保证 DAG 本身仍可运行；错误细节进入 logs 供排查。
             return {
-                "candidate_pois": {category: _mock_pois(category) for category in categories},
+                "candidate_pois": _filter_candidates(
+                    {category: _mock_pois(category) for category in categories},
+                    state.get("constraints", {}),
+                ),
                 "logs": [f"POI Collector: database unavailable, fallback to mock: {exc}"],
             }
 
-    candidate_pois = {category: _mock_pois(category) for category in categories}
+    candidate_pois = _filter_candidates(
+        {category: _mock_pois(category) for category in categories},
+        state.get("constraints", {}),
+    )
 
     return {
         "candidate_pois": candidate_pois,
@@ -85,3 +94,41 @@ def _mock_pois(category: str) -> list[dict]:
             tags=tags,
         )
     ]
+
+
+def _filter_candidates(
+    candidate_pois: dict[str, list[dict]],
+    constraints: dict,
+) -> dict[str, list[dict]]:
+    """按本轮修正约束过滤候选 POI。
+
+    例如用户中途说“不要室外了，今天太热”，会写入 avoid_tags/excluded_keywords，
+    Collector 在源头过滤明显不合适的候选，后续 Skill 和 Route Planner 就不会继续消耗它们。
+    """
+
+    avoid_terms = [
+        str(term)
+        for term in [
+            *constraints.get("avoid_tags", []),
+            *constraints.get("excluded_keywords", []),
+        ]
+        if str(term).strip()
+    ]
+    if not avoid_terms:
+        return candidate_pois
+
+    filtered: dict[str, list[dict]] = {}
+    for category, items in candidate_pois.items():
+        kept = []
+        for item in items:
+            text = " ".join([
+                str(item.get("name", "")),
+                str(item.get("subcategory", "")),
+                str(item.get("address", "")),
+                " ".join(str(tag) for tag in item.get("tags", [])),
+            ])
+            if any(term in text for term in avoid_terms):
+                continue
+            kept.append(item)
+        filtered[category] = kept
+    return filtered

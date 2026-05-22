@@ -16,3 +16,5 @@ coverage/
 Thumbs.db
 *.log
 *.tsbuildinfo
+.vscode/
+backend/data/runtime/

@@ -64,6 +64,11 @@ class PlanState(TypedDict):
     force_restaurant_unavailable: bool
     force_route_timeout: bool
     force_duration_exceeded: bool
+    session_id: str
+    trace_id: str
+    run_id: str
+    revision_id: str
+    is_revision: bool
 
 
 class PlanStatePatch(TypedDict, total=False):
@@ -99,6 +104,11 @@ class PlanStatePatch(TypedDict, total=False):
     force_restaurant_unavailable: bool
     force_route_timeout: bool
     force_duration_exceeded: bool
+    session_id: str
+    trace_id: str
+    run_id: str
+    revision_id: str
+    is_revision: bool
 
 
 class PoiRecord(TypedDict):
@@ -143,6 +153,11 @@ def create_initial_state(
     *,
     user_profile: dict[str, Any] | None = None,
     max_replanning_count: int = 2,
+    session_id: str = "",
+    trace_id: str = "",
+    run_id: str = "",
+    revision_id: str = "",
+    is_revision: bool = False,
 ) -> PlanState:
     """创建一次规划运行的初始状态。"""
 
@@ -183,4 +198,9 @@ def create_initial_state(
         "force_duration_exceeded": (
             bool(user_profile.get("force_duration_exceeded")) if user_profile else False
         ),
+        "session_id": session_id,
+        "trace_id": trace_id,
+        "run_id": run_id,
+        "revision_id": revision_id,
+        "is_revision": is_revision,
     }
