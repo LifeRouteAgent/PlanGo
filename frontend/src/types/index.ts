@@ -107,6 +107,7 @@ export interface ScoreBreakdown {
   rating_heat?: number;
   budget_fit?: number;
   scene_fit?: number;
+  memory_fit?: number;
   warning_penalty?: number;
   issue_codes?: string[];
 }

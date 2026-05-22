@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.services.context_builder import ContextBuilder
 from app.services.llm_service import call_chat_completion, extract_json_object
 from app.tools.poi_schema import (
     POI_ACTIVITY,
@@ -96,7 +97,7 @@ def _build_prompt(query: str, user_profile: dict[str, Any]) -> str:
 {query}
 
 用户画像：
-{user_profile}
+{ContextBuilder().build_user_profile_context(user_profile)}
 
 可选 intent_type：
 - capability：询问系统能力或怎么使用

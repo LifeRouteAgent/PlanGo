@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from app.state.plan_state import PlanState, PlanStatePatch
+from app.services.memory_scoring import attach_memory_fields
 from app.tools.poi_schema import (
     POI_ACTIVITY,
     price_level_budget_fit,
@@ -27,7 +28,7 @@ def poi_activity_recommend_node(state: PlanState) -> PlanStatePatch:
     per_person_budget = _per_person_budget(constraints)
     scenario = str(constraints.get("scenario", "unknown"))
     items = [
-        recommend_poi(
+        attach_memory_fields(recommend_poi(
             item,
             score_boost=_score_boost(item, duration_limit, per_person_budget, scenario),
             reason=_reason_for_activity(item, scenario),
@@ -40,7 +41,7 @@ def poi_activity_recommend_node(state: PlanState) -> PlanStatePatch:
             scene_fit=_scene_fit(item, scenario),
             distance_sensitive=True,
             risk_flags=_risk_flags(item, duration_limit, per_person_budget),
-        )
+        ), state.get("user_profile", {}))
         for item in state.get("candidate_pois", {}).get(POI_ACTIVITY, [])
     ]
     return {

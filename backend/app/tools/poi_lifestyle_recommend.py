@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from app.state.plan_state import PlanState, PlanStatePatch
+from app.services.memory_scoring import attach_memory_fields
 from app.tools.poi_schema import (
     POI_BEAUTY,
     POI_ENTERTAINMENT,
@@ -33,7 +34,7 @@ def poi_lifestyle_recommend_node(state: PlanState) -> PlanStatePatch:
     for category in categories:
         for item in state.get("candidate_pois", {}).get(category, []):
             items.append(
-                recommend_poi(
+                attach_memory_fields(recommend_poi(
                     item,
                     score_boost=_score_boost(
                         item, state["user_query"], scenario, per_person_budget
@@ -48,7 +49,7 @@ def poi_lifestyle_recommend_node(state: PlanState) -> PlanStatePatch:
                     scene_fit=_scene_fit(item, state["user_query"], scenario),
                     distance_sensitive=True,
                     risk_flags=_risk_flags(item, state["user_query"], per_person_budget),
-                )
+                ), state.get("user_profile", {}))
             )
     return {
         "recommended_pois": {"lifestyle": items},

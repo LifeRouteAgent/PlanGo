@@ -7,7 +7,7 @@ import time
 from collections.abc import Iterator
 from typing import Any
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Query
 from fastapi.responses import Response, StreamingResponse
 
 from app.config import settings
@@ -65,10 +65,12 @@ def plan_trip(request: TripPlanRequest) -> TripPlanResponse:
     trace_id = request.trace_id or new_id("trace")
     run_id = request.run_id or new_id("run")
     set_trace_context(trace_id=trace_id, run_id=run_id, session_id=session_id)
-    memory.observe_user_query(request.user_query)
+    memory.observe_user_query(request.user_query, user_id=session_id)
     user_profile = memory.enrich_user_profile({
         **request.user_profile,
         "last_query": request.user_query,
+        "session_id": session_id,
+        "user_id": session_id,
     })
 
     initial_state = create_initial_state(
@@ -114,10 +116,12 @@ def stream_plan_trip(request: TripPlanRequest) -> StreamingResponse:
         trace_id = request.trace_id or new_id("trace")
         run_id = request.run_id or new_id("run")
         set_trace_context(trace_id=trace_id, run_id=run_id, session_id=session_id)
-        memory.observe_user_query(request.user_query)
+        memory.observe_user_query(request.user_query, user_id=session_id)
         user_profile = memory.enrich_user_profile({
             **request.user_profile,
             "last_query": request.user_query,
+            "session_id": session_id,
+            "user_id": session_id,
         })
         recorder = TraceRecorder(trace_id=trace_id, run_id=run_id, session_id=session_id)
         current_state = create_initial_state(
@@ -271,7 +275,7 @@ def stream_revise_plan(request: RevisePlanRequest) -> StreamingResponse:
         run_id = new_id("run")
         revision_id = new_id("rev")
         set_trace_context(trace_id=trace_id, run_id=run_id, session_id=request.session_id)
-        memory.observe_user_query(request.user_query)
+        memory.observe_user_query(request.user_query, user_id=request.session_id)
         recorder = TraceRecorder(trace_id=trace_id, run_id=run_id, session_id=request.session_id)
         current_state = _build_revision_state(
             saved_session["latest_state"],
@@ -281,7 +285,12 @@ def stream_revise_plan(request: RevisePlanRequest) -> StreamingResponse:
             run_id,
             revision_id,
         )
-        current_state["user_profile"] = memory.enrich_user_profile(current_state.get("user_profile", {}))
+        current_state["user_profile"] = memory.enrich_user_profile({
+            **current_state.get("user_profile", {}),
+            "last_query": request.user_query,
+            "session_id": request.session_id,
+            "user_id": request.session_id,
+        })
         _apply_revision_constraints(current_state, request.user_query)
 
         yield _sse_event(
@@ -358,7 +367,7 @@ def stream_execute_plan(request: ExecutePlanRequest) -> StreamingResponse:
         trace_id = request.trace_id or new_id("trace")
         run_id = request.run_id or new_id("run")
         set_trace_context(trace_id=trace_id, run_id=run_id, session_id=session_id)
-        MemoryService().observe_selected_plan(request.plan)
+        MemoryService().observe_selected_plan(request.plan, user_id=session_id)
         record_trace_event("user_action", {
             "action": "plan_executed",
             "plan_id": request.plan.get("id"),
@@ -460,6 +469,8 @@ def export_calendar_ics(request: ExecutePlanRequest) -> Response:
         "action": "calendar_exported",
         "plan_id": request.plan.get("id"),
     })
+    if request.session_id:
+        MemoryService().observe_selected_plan(request.plan, user_id=request.session_id)
     harness = ToolHarness(
         name="calendar.ics.export",
         timeout_seconds=3,
@@ -483,11 +494,47 @@ def get_trace(trace_id: str) -> dict[str, Any]:
 
 
 @router.delete("/memory")
-def clear_memory() -> dict[str, Any]:
-    """清空文件型长期记忆。"""
+def clear_memory(user_id: str | None = Query(default=None)) -> dict[str, Any]:
+    """清空文件型长期记忆，并清理 Milvus 中对应用户/session 的向量记忆。"""
 
-    MemoryService().clear()
+    MemoryService().clear(user_id=user_id)
     return {"ok": True}
+
+
+@router.get("/memory/search")
+def search_memory(
+    q: str = Query(default="", description="检索关键词或自然语言问题"),
+    limit: int = Query(default=5, ge=1, le=20),
+    user_id: str = Query(default="default"),
+) -> dict[str, Any]:
+    """检索长期记忆；优先 Milvus 语义检索，不可用时回退文件关键词。"""
+
+    memory = MemoryService()
+    return {
+        "query": q,
+        "results": memory.semantic_search(q, limit=limit, user_id=user_id),
+    }
+
+
+@router.get("/memory/profile")
+def get_memory_profile(user_id: str = Query(default="default")) -> dict[str, Any]:
+    """返回当前用户画像、压缩上下文和向量存储状态。"""
+
+    return MemoryService().profile_payload(user_id=user_id)
+
+
+@router.post("/memory/rebuild-index")
+def rebuild_memory_index(user_id: str = Query(default="default")) -> dict[str, Any]:
+    """把文件型记忆重建到 Milvus，便于演示前手动补齐向量索引。"""
+
+    return MemoryService().rebuild_vector_index(user_id=user_id)
+
+
+@router.get("/memory/clusters")
+def get_memory_clusters() -> dict[str, Any]:
+    """返回 Milvus 用户画像向量的粗粒度聚类结果。"""
+
+    return {"clusters": MemoryService().clusters()}
 
 
 def _build_revision_state(

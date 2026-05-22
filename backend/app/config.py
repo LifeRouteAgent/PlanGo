@@ -24,6 +24,16 @@ class Settings:
     database_user: str = os.getenv("DATABASE_USER", "root")
     database_password: str = os.getenv("DATABASE_PASSWORD", "")
     database_name: str = os.getenv("DATABASE_NAME", "life_route_agent")
+    milvus_enabled: bool = os.getenv("MILVUS_ENABLED", "1") == "1"
+    milvus_host: str = os.getenv("MILVUS_HOST", "127.0.0.1")
+    milvus_port: int = int(os.getenv("MILVUS_PORT", "19530"))
+    milvus_collection_memory: str = os.getenv("MILVUS_COLLECTION_MEMORY", "liferoute_memory")
+    milvus_collection_user_profile: str = os.getenv(
+        "MILVUS_COLLECTION_USER_PROFILE", "liferoute_user_profile_vectors"
+    )
+    embedding_provider: str = os.getenv("EMBEDDING_PROVIDER", "local_bge")
+    embedding_model_path: str = os.getenv("EMBEDDING_MODEL_PATH", "BAAI/bge-small-zh-v1.5")
+    embedding_dimension: int = int(os.getenv("EMBEDDING_DIMENSION", "512"))
 
 
 settings = Settings()

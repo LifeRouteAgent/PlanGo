@@ -4,6 +4,7 @@ import json
 from typing import Any
 
 from app.agents.issue_utils import normalize_issues
+from app.services.context_builder import ContextBuilder
 from app.services.llm_service import call_chat_completion, extract_json_object
 from app.state.plan_state import PlanState, PlanStatePatch
 
@@ -203,6 +204,7 @@ def _llm_plan_enrichment(
                             for key, value in state.get("constraints", {}).items()
                             if key != "llm_understanding"
                         },
+                        "memory_context": ContextBuilder().build_state_context(state).get("memory_context"),
                         "plans": compact_plans,
                         "required_schema": {
                             "plans": [{
@@ -474,17 +476,15 @@ def _llm_response_text(
     这里限制模型只做表达：它只能使用 PlanState 里已有的方案、地点、路线、预算和错误信息。
     """
 
+    state_context = ContextBuilder().build_state_context(state)
     response_context = {
         "user_query": state.get("user_query"),
         "intent_type": state.get("intent_type"),
         "answer_mode": state.get("answer_mode"),
         "need_clarification": state.get("need_clarification"),
         "clarify_question": state.get("clarify_question"),
-        "constraints": {
-            key: value
-            for key, value in state.get("constraints", {}).items()
-            if key != "llm_understanding"
-        },
+        "constraints": state_context.get("constraints", {}),
+        "memory_context": state_context.get("memory_context", {}),
         "llm_understanding": state.get("constraints", {}).get("llm_understanding"),
         "selected_plan": selected_plan if selected_plan is not None else state.get("selected_plan"),
         "ranked_plans": ranked_plans if ranked_plans is not None else state.get("ranked_plans"),

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from app.state.plan_state import PlanState, PlanStatePatch
+from app.services.memory_scoring import attach_memory_fields
 from app.tools.poi_schema import (
     POI_RESTAURANT,
     price_level_budget_fit,
@@ -29,7 +30,7 @@ def poi_restaurant_recommend_node(state: PlanState) -> PlanStatePatch:
     scenario = str(constraints.get("scenario", "unknown"))
     per_person_budget = _per_person_budget(constraints)
     items = [
-        recommend_poi(
+        attach_memory_fields(recommend_poi(
             item,
             score_boost=_score_boost(item, scenario, per_person_budget, state["user_query"]),
             reason=_reason_for_restaurant(item, scenario),
@@ -42,7 +43,7 @@ def poi_restaurant_recommend_node(state: PlanState) -> PlanStatePatch:
             scene_fit=_scene_fit(scenario),
             distance_sensitive=True,
             risk_flags=_risk_flags(item, per_person_budget, state["user_query"]),
-        )
+        ), state.get("user_profile", {}))
         for item in state.get("candidate_pois", {}).get(POI_RESTAURANT, [])
     ]
     return {

@@ -12,6 +12,8 @@ LifeRouteAgent 是一个面向本地生活出行决策的多 Agent 路线规划�
 - 本地生活分表存储：不同业务域独立建表，方便后续让不同 Agent 使用不同召回策略。
 - 数据库/Mock 双模式：`LIFEROUTE_USE_DATABASE=1` 时读取 MySQL；否则使用内置 Mock 数据。
 - 路线耗时修正：默认使用 Haversine 估算；配置 `AMAP_API_KEY` 后优先调用高德步行/驾车路线接口，失败自动回退估算结果。
+- 混合长期记忆：保留 `MEMORY.md / user_profile.json / history.jsonl` 可读审计层，并可选接入 Milvus + 本地 BGE embedding 做语义检索、相似画像召回和画像聚类。
+- 上下文分层：LLM 只接收当前任务摘要、少量相关记忆和候选统计，不把完整历史、Trace 或大批 POI 原始数据塞进 prompt。
 - 可扩展履约入口：保留可用性检查、用户确认和执行 Agent，后续可接入订座、购票、下单、退款等真实接口。
 
 ## Agent 架构
@@ -155,6 +157,9 @@ python-dotenv
 httpx
 pytest
 pymysql
+pymilvus
+sentence-transformers
+numpy
 ```
 
 前端依赖见 `frontend/package.json`：Vue、TypeScript、Vite。
@@ -181,6 +186,14 @@ DATABASE_PORT=3306
 DATABASE_USER=root
 DATABASE_PASSWORD=
 DATABASE_NAME=life_route_agent
+MILVUS_ENABLED=1
+MILVUS_HOST=127.0.0.1
+MILVUS_PORT=19530
+MILVUS_COLLECTION_MEMORY=liferoute_memory
+MILVUS_COLLECTION_USER_PROFILE=liferoute_user_profile_vectors
+EMBEDDING_PROVIDER=local_bge
+EMBEDDING_MODEL_PATH=BAAI/bge-small-zh-v1.5
+EMBEDDING_DIMENSION=512
 ```
 
 路线规划说明：
@@ -189,6 +202,39 @@ DATABASE_NAME=life_route_agent
 - 已配置 `AMAP_API_KEY`：优先调用高德步行/驾车路线接口修正相邻 POI 的真实距离和耗时。
 - 高德接口失败、超时或返回异常：自动回退 Haversine，不阻断 DAG。
 - 当前公交/地铁先用 `transit_or_taxi` 近似；后续可在 `backend/app/services/amap_route_service.py` 扩展公交换乘接口。
+
+## 启动 Milvus 向量记忆
+
+向量记忆是增强能力，不启动 Milvus 时系统会自动回退到文件型 Memory，不影响规划主流程。
+
+启动 Milvus Standalone：
+
+```powershell
+docker compose -f docker-compose.milvus.yml up -d
+```
+
+安装后端依赖后，首次使用本地 BGE embedding 会下载模型：
+
+```powershell
+cd backend
+pip install -r requirements.txt
+```
+
+可用接口：
+
+```text
+GET  /trip/memory/profile          # 当前画像、压缩记忆上下文、向量状态
+GET  /trip/memory/search?q=唱歌     # 语义检索长期记忆
+POST /trip/memory/rebuild-index    # 把文件记忆重建到 Milvus
+GET  /trip/memory/clusters         # 查看粗粒度用户画像聚类
+DELETE /trip/memory                # 清空文件记忆和向量记忆
+```
+
+记忆写入策略：
+
+- 用户输入、需求修正、采纳方案、执行方案会写入长期记忆。
+- API key、数据库密码、完整住址、手机号等敏感信息不会写入向量库。
+- Memory 只做软约束，本轮用户明确要求永远优先。
 
 ## 初始化数据库
 

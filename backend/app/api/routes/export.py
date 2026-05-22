@@ -6,6 +6,8 @@ from fastapi import APIRouter
 from fastapi.responses import Response
 
 from app.models.schemas import ExportPlanRequest
+from app.services.memory_service import MemoryService
+from app.services.trace_recorder import record_trace_event, set_trace_context
 
 router = APIRouter(prefix="/export", tags=["export"])
 
@@ -25,6 +27,18 @@ def export_plan_pdf(request: ExportPlanRequest) -> Response:
     为完整中文排版。
     """
 
+    if request.trace_id or request.session_id:
+        set_trace_context(
+            trace_id=request.trace_id,
+            run_id="export_pdf",
+            session_id=request.session_id or "export_session",
+        )
+    record_trace_event("user_action", {
+        "action": "plan_exported_pdf",
+        "plan_id": request.plan.get("id"),
+    })
+    if request.session_id:
+        MemoryService().observe_selected_plan(request.plan, user_id=request.session_id)
     pdf_bytes = _build_minimal_pdf(_plan_to_pdf_lines(request.plan))
     return Response(
         pdf_bytes,

@@ -4,6 +4,7 @@ from statistics import mean
 from typing import Any
 
 from app.agents.issue_utils import normalize_issues
+from app.services.memory_scoring import plan_memory_fit
 from app.state.plan_state import PlanState, PlanStatePatch
 
 
@@ -96,15 +97,17 @@ def _attach_plan_score(plan: dict[str, Any], state: PlanState) -> dict[str, Any]
     rating_heat = _rating_score(plan)
     budget_fit = _budget_score(plan, budget)
     scene_fit = _scene_score(plan)
+    memory_fit = plan_memory_fit(plan, state.get("user_profile", {}))
     warning_penalty = _warning_penalty(issues)
 
     weighted_score = (
-        0.25 * preference_match
-        + 0.20 * distance_reasonable
-        + 0.20 * time_feasible
-        + 0.15 * rating_heat
+        0.22 * preference_match
+        + 0.18 * distance_reasonable
+        + 0.18 * time_feasible
+        + 0.14 * rating_heat
         + 0.10 * budget_fit
         + 0.10 * scene_fit
+        + 0.08 * memory_fit
     )
     plan_score = round(max(0, min(100, weighted_score * 100 - warning_penalty * 100)), 2)
     return {
@@ -117,6 +120,7 @@ def _attach_plan_score(plan: dict[str, Any], state: PlanState) -> dict[str, Any]
             "rating_heat": round(rating_heat, 3),
             "budget_fit": round(budget_fit, 3),
             "scene_fit": round(scene_fit, 3),
+            "memory_fit": round(memory_fit, 3),
             "warning_penalty": round(warning_penalty, 3),
             "issue_codes": [issue["code"] for issue in issues],
         },
@@ -139,7 +143,8 @@ def _attach_item_rank_score(item: dict[str, Any]) -> dict[str, Any]:
         "medium": -0.05,
         "high": -0.45,
     }.get(str(item.get("crowd_risk", "medium")), -0.05)
-    recommendation_score = round(score + scene_fit * 0.5 + budget_bonus + crowd_penalty, 2)
+    memory_bonus = float(item.get("memory_score_adjustment", 0) or 0)
+    recommendation_score = round(score + scene_fit * 0.5 + budget_bonus + crowd_penalty + memory_bonus, 2)
     return {**item, "recommendation_score": recommendation_score}
 
 
