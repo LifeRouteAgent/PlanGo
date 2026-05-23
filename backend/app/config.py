@@ -1,39 +1,90 @@
 from __future__ import annotations
 
-import os
+import json
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
-from dotenv import load_dotenv
-
-# 优先加载 backend/.env。真实密码只放在 .env，.env.example 只保留字段说明。
 BACKEND_DIR = Path(__file__).resolve().parents[1]
-load_dotenv(BACKEND_DIR / ".env")
+CONFIG_LOCAL_PATH = BACKEND_DIR / "config.local.json"
+CONFIG_EXAMPLE_PATH = BACKEND_DIR / "config.example.json"
+
+
+def _load_config() -> dict[str, Any]:
+    """从文件读取运行配置。
+
+    读取优先级：
+    1. backend/config.local.json：本机真实配置，包含 key 和数据库密码，不提交 Git。
+    2. backend/config.example.json：仓库内示例配置，只放非敏感默认值和空占位。
+
+    业务代码统一从 settings 读取配置，不再直接依赖系统环境变量。
+    """
+
+    for path in (CONFIG_LOCAL_PATH, CONFIG_EXAMPLE_PATH):
+        if not path.exists():
+            continue
+        with path.open("r", encoding="utf-8") as file:
+            data = json.load(file)
+        if isinstance(data, dict):
+            return data
+    return {}
+
+
+def _get(config: dict[str, Any], key: str, default: Any) -> Any:
+    """读取单个配置项，并把空字符串视为未配置。"""
+
+    value = config.get(key, default)
+    return default if value == "" or value is None else value
+
+
+def _get_bool(config: dict[str, Any], key: str, default: bool) -> bool:
+    """读取 bool 配置，兼容 JSON bool 和字符串形式。"""
+
+    value = config.get(key, default)
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _get_int(config: dict[str, Any], key: str, default: int) -> int:
+    """读取 int 配置，配置异常时回退默认值。"""
+
+    try:
+        return int(config.get(key, default))
+    except (TypeError, ValueError):
+        return default
+
+
+_CONFIG = _load_config()
 
 
 @dataclass(frozen=True)
 class Settings:
-    app_env: str = os.getenv("APP_ENV", "local")
-    mimo_api_key: str = os.getenv("MIMO_API_KEY") or os.getenv("travelAgent", "")
-    mimo_base_url: str = os.getenv("MIMO_BASE_URL", "https://api.xiaomimimo.com/v1")
-    mimo_model: str = os.getenv("MIMO_MODEL", "mimo-v2.5-pro")
-    amap_api_key: str = os.getenv("AMAP_API_KEY", "")
-    use_database: bool = os.getenv("LIFEROUTE_USE_DATABASE", "1") == "1"
-    database_host: str = os.getenv("DATABASE_HOST", "127.0.0.1")
-    database_port: int = int(os.getenv("DATABASE_PORT", "3306"))
-    database_user: str = os.getenv("DATABASE_USER", "root")
-    database_password: str = os.getenv("DATABASE_PASSWORD", "")
-    database_name: str = os.getenv("DATABASE_NAME", "life_route_agent")
-    milvus_enabled: bool = os.getenv("MILVUS_ENABLED", "1") == "1"
-    milvus_host: str = os.getenv("MILVUS_HOST", "127.0.0.1")
-    milvus_port: int = int(os.getenv("MILVUS_PORT", "19530"))
-    milvus_collection_memory: str = os.getenv("MILVUS_COLLECTION_MEMORY", "liferoute_memory")
-    milvus_collection_user_profile: str = os.getenv(
-        "MILVUS_COLLECTION_USER_PROFILE", "liferoute_user_profile_vectors"
+    app_env: str = _get(_CONFIG, "APP_ENV", "local")
+    mimo_api_key: str = _get(_CONFIG, "MIMO_API_KEY", "")
+    mimo_base_url: str = _get(_CONFIG, "MIMO_BASE_URL", "https://api.xiaomimimo.com/v1")
+    mimo_model: str = _get(_CONFIG, "MIMO_MODEL", "mimo-v2.5-pro")
+    amap_api_key: str = _get(_CONFIG, "AMAP_API_KEY", "")
+    use_database: bool = _get_bool(_CONFIG, "LIFEROUTE_USE_DATABASE", True)
+    database_host: str = _get(_CONFIG, "DATABASE_HOST", "127.0.0.1")
+    database_port: int = _get_int(_CONFIG, "DATABASE_PORT", 3306)
+    database_user: str = _get(_CONFIG, "DATABASE_USER", "root")
+    database_password: str = _get(_CONFIG, "DATABASE_PASSWORD", "")
+    database_name: str = _get(_CONFIG, "DATABASE_NAME", "life_route_agent")
+    milvus_enabled: bool = _get_bool(_CONFIG, "MILVUS_ENABLED", True)
+    milvus_host: str = _get(_CONFIG, "MILVUS_HOST", "127.0.0.1")
+    milvus_port: int = _get_int(_CONFIG, "MILVUS_PORT", 19530)
+    milvus_collection_memory: str = _get(
+        _CONFIG, "MILVUS_COLLECTION_MEMORY", "liferoute_memory"
     )
-    embedding_provider: str = os.getenv("EMBEDDING_PROVIDER", "local_bge")
-    embedding_model_path: str = os.getenv("EMBEDDING_MODEL_PATH", "BAAI/bge-small-zh-v1.5")
-    embedding_dimension: int = int(os.getenv("EMBEDDING_DIMENSION", "512"))
+    milvus_collection_user_profile: str = _get(
+        _CONFIG, "MILVUS_COLLECTION_USER_PROFILE", "liferoute_user_profile_vectors"
+    )
+    embedding_provider: str = _get(_CONFIG, "EMBEDDING_PROVIDER", "local_bge")
+    embedding_model_path: str = _get(
+        _CONFIG, "EMBEDDING_MODEL_PATH", "BAAI/bge-small-zh-v1.5"
+    )
+    embedding_dimension: int = _get_int(_CONFIG, "EMBEDDING_DIMENSION", 512)
 
 
 settings = Settings()

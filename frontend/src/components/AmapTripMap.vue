@@ -37,9 +37,9 @@ declare global {
 const mapContainer = ref<HTMLDivElement | null>(null);
 const mapError = ref("");
 const mapLoaded = ref(false);
-const mapEnabled = computed(() => Boolean(import.meta.env.VITE_AMAP_KEY));
-const amapKey = String(import.meta.env.VITE_AMAP_KEY ?? "");
-const amapSecurityCode = String(import.meta.env.VITE_AMAP_SECURITY_JS_CODE ?? "");
+const amapKey = ref(String(import.meta.env.VITE_AMAP_KEY ?? ""));
+const amapSecurityCode = ref(String(import.meta.env.VITE_AMAP_SECURITY_JS_CODE ?? ""));
+const mapEnabled = computed(() => Boolean(amapKey.value));
 
 let mapInstance: AMapMap | null = null;
 let activeOverlays: Array<AMapMarker | AMapPolyline> = [];
@@ -84,6 +84,7 @@ watch(
 );
 
 onMounted(async () => {
+  await loadClientConfig();
   await renderMap();
 });
 
@@ -168,18 +169,18 @@ function loadAmap(): Promise<AMapNamespace> {
   if (window.__lifeRouteAmapLoader) {
     return window.__lifeRouteAmapLoader;
   }
-  if (!amapKey) {
-    return Promise.reject(new Error("缺少 VITE_AMAP_KEY，无法加载高德地图。"));
+  if (!amapKey.value) {
+    return Promise.reject(new Error("缺少高德地图 Key，无法加载地图。"));
   }
-  if (amapSecurityCode) {
+  if (amapSecurityCode.value) {
     window._AMapSecurityConfig = {
-      securityJsCode: amapSecurityCode,
+      securityJsCode: amapSecurityCode.value,
     };
   }
 
   window.__lifeRouteAmapLoader = new Promise((resolve, reject) => {
     const script = document.createElement("script");
-    script.src = `https://webapi.amap.com/maps?v=2.0&key=${encodeURIComponent(amapKey)}`;
+    script.src = `https://webapi.amap.com/maps?v=2.0&key=${encodeURIComponent(amapKey.value)}`;
     script.async = true;
     script.onload = () => {
       if (window.AMap) {
@@ -192,6 +193,27 @@ function loadAmap(): Promise<AMapNamespace> {
     document.head.appendChild(script);
   });
   return window.__lifeRouteAmapLoader;
+}
+
+async function loadClientConfig() {
+  try {
+    const response = await fetch("/trip/client-config");
+    if (!response.ok) {
+      return;
+    }
+    const config = (await response.json()) as {
+      amap_key?: string;
+      amap_security_js_code?: string;
+    };
+    if (config.amap_key) {
+      amapKey.value = config.amap_key;
+    }
+    if (config.amap_security_js_code) {
+      amapSecurityCode.value = config.amap_security_js_code;
+    }
+  } catch {
+    // 读取后端运行配置失败时保留 Vite 环境变量 fallback，不阻塞页面渲染。
+  }
 }
 
 function markerHtml(order: number, name: string) {
@@ -235,7 +257,7 @@ function formatTransport(mode?: string) {
         <div class="map-content">
           <p class="map-title">高德地图未启用</p>
           <p class="map-subtitle">
-            配置 <code>VITE_AMAP_KEY</code> 后会显示真实地图、POI 点位和路线连线。当前仍可查看下方时间线。
+            配置 <code>backend/config.local.json</code> 的 <code>AMAP_API_KEY</code> 后会显示真实地图、POI 点位和路线连线。当前仍可查看下方时间线。
           </p>
         </div>
       </div>

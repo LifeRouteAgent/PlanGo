@@ -1,0 +1,21 @@
+{
+  "APP_ENV": "local",
+  "MIMO_API_KEY": "",
+  "MIMO_BASE_URL": "https://api.xiaomimimo.com/v1",
+  "MIMO_MODEL": "mimo-v2.5-pro",
+  "AMAP_API_KEY": "",
+  "LIFEROUTE_USE_DATABASE": true,
+  "DATABASE_HOST": "127.0.0.1",
+  "DATABASE_PORT": 3306,
+  "DATABASE_USER": "root",
+  "DATABASE_PASSWORD": "",
+  "DATABASE_NAME": "life_route_agent",
+  "MILVUS_ENABLED": true,
+  "MILVUS_HOST": "127.0.0.1",
+  "MILVUS_PORT": 19530,
+  "MILVUS_COLLECTION_MEMORY": "liferoute_memory",
+  "MILVUS_COLLECTION_USER_PROFILE": "liferoute_user_profile_vectors",
+  "EMBEDDING_PROVIDER": "local_bge",
+  "EMBEDDING_MODEL_PATH": "BAAI/bge-small-zh-v1.5",
+  "EMBEDDING_DIMENSION": 512
+}

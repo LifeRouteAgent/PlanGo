@@ -52,6 +52,20 @@ from app.agents.response_generator import response_generator_node
 router = APIRouter(prefix="/trip", tags=["trip"])
 
 
+@router.get("/client-config")
+def get_client_config() -> dict[str, str]:
+    """返回前端运行所需的公开配置。
+
+    前端高德 JS Key 必须下发到浏览器才能加载地图，因此这里统一从后端文件配置读取，
+    避免前端继续依赖 Vite 环境变量。不要在这个接口返回数据库密码或 LLM Key。
+    """
+
+    return {
+        "amap_key": settings.amap_api_key,
+        "amap_security_js_code": "",
+    }
+
+
 @router.post("/plan", response_model=TripPlanResponse)
 def plan_trip(request: TripPlanRequest) -> TripPlanResponse:
     """同步规划接口。

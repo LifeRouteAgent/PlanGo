@@ -164,36 +164,38 @@ numpy
 
 前端依赖见 `frontend/package.json`：Vue、TypeScript、Vite。
 
-## 环境变量
+## 配置文件
 
-复制后端环境变量模板：
+后端配置已改为优先读取文件，不再要求把 key 写进系统环境变量。
+
+本机真实配置文件：
 
 ```powershell
-Copy-Item backend\.env.example backend\.env
+Copy-Item backend\config.example.json backend\config.local.json
 ```
+
+`backend/config.local.json` 会被 `.gitignore` 排除，用来保存真实 API key、数据库密码等敏感信息。仓库只提交 `backend/config.example.json`，避免把凭据推到 GitHub。
+
+读取优先级：
+
+1. `backend/config.local.json`：本机真实配置。
+2. `backend/config.example.json`：仓库示例配置和安全默认值。
 
 主要配置：
 
-```text
-MIMO_API_KEY=                 # MiMo LLM Key，可为空，按当前实现降级使用规则/Mock
-MIMO_BASE_URL=https://api.xiaomimimo.com/v1
-MIMO_MODEL=mimo-v2.5-pro
-AMAP_API_KEY=                 # 高德 API Key，Route Planner 会用它修正步行/驾车路线时间
-APP_ENV=local
-LIFEROUTE_USE_DATABASE=0      # 0 使用 Mock；1 使用 MySQL 自建 POI 库
-DATABASE_HOST=127.0.0.1
-DATABASE_PORT=3306
-DATABASE_USER=root
-DATABASE_PASSWORD=
-DATABASE_NAME=life_route_agent
-MILVUS_ENABLED=1
-MILVUS_HOST=127.0.0.1
-MILVUS_PORT=19530
-MILVUS_COLLECTION_MEMORY=liferoute_memory
-MILVUS_COLLECTION_USER_PROFILE=liferoute_user_profile_vectors
-EMBEDDING_PROVIDER=local_bge
-EMBEDDING_MODEL_PATH=BAAI/bge-small-zh-v1.5
-EMBEDDING_DIMENSION=512
+```json
+{
+  "MIMO_API_KEY": "",
+  "MIMO_BASE_URL": "https://api.xiaomimimo.com/v1",
+  "MIMO_MODEL": "mimo-v2.5-pro",
+  "AMAP_API_KEY": "",
+  "LIFEROUTE_USE_DATABASE": true,
+  "DATABASE_HOST": "127.0.0.1",
+  "DATABASE_PORT": 3306,
+  "DATABASE_USER": "root",
+  "DATABASE_PASSWORD": "",
+  "DATABASE_NAME": "life_route_agent"
+}
 ```
 
 路线规划说明：
