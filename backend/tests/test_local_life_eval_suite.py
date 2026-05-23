@@ -26,10 +26,10 @@ from app.tools.poi_schema import (
 
 @dataclass(frozen=True)
 class EvalCase:
-    """本地生活 Agent 的轻量 Eval 样本。
+    """本地生活 Agent 的轻量评测样本。
 
-    这些样本不追求覆盖所有数据库结果，而是固定“理解 -> 追问 -> Planner 选 Skill”
-    这条关键链路，避免以后改 Prompt、规则或模板时把核心意图能力改坏。
+    这些样本固定“理解 -> 追问 -> Planner 选 Skill”关键链路，避免后续改 prompt、
+    规则或模板时把核心意图能力改坏。
     """
 
     query: str
@@ -50,7 +50,11 @@ class EvalCase:
 
 EVAL_CASES: list[EvalCase] = [
     EvalCase("你好", "simple_qa"),
+    EvalCase("谢谢", "simple_qa"),
+    EvalCase("你是什么模型", "simple_qa"),
+    EvalCase("你用的什么模型", "simple_qa"),
     EvalCase("你能做什么", "capability"),
+    EvalCase("这个系统怎么用", "capability"),
     EvalCase(
         "推荐几个适合朋友聚会的餐厅",
         "category_recommend",
@@ -78,6 +82,37 @@ EVAL_CASES: list[EvalCase] = [
         [POI_ACTIVITY],
         preferences=["活动"],
         expected_enabled_skills={"poi_activity_recommend"},
+    ),
+    EvalCase(
+        "只想找附近商场逛街",
+        "poi_search",
+        [POI_SHOPPING],
+        preferences=["逛街"],
+        expected_enabled_skills={"poi_mix_recommend"},
+    ),
+    EvalCase(
+        "今晚 2 个人吃火锅，预算 300",
+        "poi_search",
+        [POI_RESTAURANT],
+        people_count=2,
+        preferences=["火锅"],
+        budget=300,
+        expected_enabled_skills={"poi_restaurant_recommend"},
+    ),
+    EvalCase(
+        "推荐几个适合亲子的室内活动",
+        "category_recommend",
+        [POI_ACTIVITY],
+        scenario="family",
+        preferences=["亲子", "室内活动"],
+        expected_enabled_skills={"poi_activity_recommend"},
+    ),
+    EvalCase(
+        "推荐一个美容 SPA",
+        "category_recommend",
+        [POI_BEAUTY],
+        preferences=["美容", "SPA"],
+        expected_enabled_skills={"poi_lifestyle_recommend"},
     ),
     EvalCase(
         "周末想出去玩",
@@ -171,30 +206,6 @@ EVAL_CASES: list[EvalCase] = [
         expected_enabled_skills={"poi_lifestyle_recommend", "poi_activity_recommend", "poi_restaurant_recommend"},
     ),
     EvalCase(
-        "只想找附近商场逛街",
-        "poi_search",
-        [POI_SHOPPING],
-        preferences=["逛街"],
-        expected_enabled_skills={"poi_mix_recommend"},
-    ),
-    EvalCase(
-        "推荐几个适合亲子的室内活动",
-        "category_recommend",
-        [POI_ACTIVITY],
-        scenario="family",
-        preferences=["亲子", "室内活动"],
-        expected_enabled_skills={"poi_activity_recommend"},
-    ),
-    EvalCase(
-        "今晚 2 个人吃火锅，预算 300",
-        "poi_search",
-        [POI_RESTAURANT],
-        people_count=2,
-        preferences=["火锅"],
-        budget=300,
-        expected_enabled_skills={"poi_restaurant_recommend"},
-    ),
-    EvalCase(
         "明天下午 3 小时朋友桌游，然后晚饭预算 500",
         "full_trip_plan",
         [POI_ENTERTAINMENT, POI_RESTAURANT],
@@ -222,20 +233,106 @@ EVAL_CASES: list[EvalCase] = [
         required_slots=["family_activity", "restaurant"],
         expected_enabled_skills={"poi_mix_recommend", "poi_activity_recommend", "poi_restaurant_recommend"},
     ),
-    EvalCase("谢谢", "simple_qa"),
     EvalCase(
-        "推荐一个美容 SPA",
+        "今天太热，不要室外，下午 4 小时朋友聚会",
+        "full_trip_plan",
+        [POI_ENTERTAINMENT, POI_SHOPPING],
+        scenario="friends",
+        people_count=4,
+        preferences=["室内", "朋友聚会"],
+        start_time="14:00",
+        duration_hours=4,
+        planning_template="friends_gathering",
+        required_slots=["activity_or_entertainment", "restaurant"],
+        expected_enabled_skills={"poi_lifestyle_recommend", "poi_restaurant_recommend", "poi_activity_recommend"},
+    ),
+    EvalCase(
+        "预算只有 100，想和朋友简单吃点再逛逛",
+        "full_trip_plan",
+        [POI_RESTAURANT, POI_SHOPPING],
+        scenario="friends",
+        people_count=2,
+        preferences=["便宜", "吃饭", "逛街"],
+        duration_hours=3,
+        budget=100,
+        planning_template="shopping_leisure",
+        required_slots=["shopping", "restaurant"],
+        expected_enabled_skills={"poi_restaurant_recommend", "poi_mix_recommend"},
+    ),
+    EvalCase(
+        "给我安排一个周日亲子半日，不要太远",
+        "full_trip_plan",
+        [POI_ACTIVITY, POI_RESTAURANT],
+        scenario="family",
+        people_count=3,
+        preferences=["亲子", "近一点"],
+        duration_hours=4,
+        planning_template="family_half_day",
+        required_slots=["family_activity", "restaurant"],
+        expected_enabled_skills={"poi_activity_recommend", "poi_restaurant_recommend"},
+    ),
+    EvalCase(
+        "晚上想约会，不想太吵，吃饭加轻松活动",
+        "full_trip_plan",
+        [POI_RESTAURANT, POI_ACTIVITY],
+        scenario="couple",
+        people_count=2,
+        preferences=["约会", "安静", "吃饭"],
+        start_time="18:00",
+        duration_hours=4,
+        planning_template="couple_date",
+        required_slots=["activity", "restaurant"],
+        expected_enabled_skills={"poi_activity_recommend", "poi_restaurant_recommend"},
+    ),
+    EvalCase(
+        "朋友生日，晚饭后 KTV，预算 1000",
+        "full_trip_plan",
+        [POI_RESTAURANT, POI_ENTERTAINMENT],
+        scenario="friends",
+        people_count=6,
+        preferences=["生日", "晚饭", "KTV"],
+        start_time="18:00",
+        duration_hours=5,
+        budget=1000,
+        planning_template="friends_gathering",
+        required_slots=["restaurant", "entertainment"],
+        expected_enabled_skills={"poi_restaurant_recommend", "poi_lifestyle_recommend"},
+    ),
+    EvalCase(
+        "一个人周末想找咖啡馆看看书",
         "category_recommend",
-        [POI_BEAUTY],
-        preferences=["美容", "SPA"],
+        [POI_RESTAURANT],
+        scenario="solo",
+        people_count=1,
+        preferences=["咖啡", "安静"],
+        expected_enabled_skills={"poi_restaurant_recommend"},
+    ),
+    EvalCase(
+        "查一下附近羽毛球馆",
+        "poi_search",
+        [POI_FITNESS],
+        preferences=["羽毛球"],
         expected_enabled_skills={"poi_lifestyle_recommend"},
+    ),
+    EvalCase(
+        "周末晚上想去密室再夜宵",
+        "full_trip_plan",
+        [POI_ENTERTAINMENT, POI_RESTAURANT],
+        scenario="friends",
+        people_count=4,
+        preferences=["密室", "夜宵"],
+        start_time="19:00",
+        duration_hours=4,
+        planning_template="entertainment_gathering",
+        required_slots=["entertainment", "restaurant"],
+        expected_enabled_skills={"poi_lifestyle_recommend", "poi_restaurant_recommend"},
     ),
 ]
 
 
 @pytest.mark.parametrize("case", EVAL_CASES, ids=lambda case: case.query)
 def test_eval_intent_clarifier_and_skill_selection(monkeypatch: pytest.MonkeyPatch, case: EvalCase) -> None:
-    """20 条典型本地生活输入应稳定产出正确意图、追问状态和 Skill 选择。"""
+    """典型本地生活输入应稳定产出正确意图、追问状态和 Skill 选择。"""
 
     monkeypatch.setattr(
         "app.agents.intent_router.build_llm_understanding",

@@ -1,4 +1,4 @@
-import type { AdjustPlanResponse, DataSourceStatus, ExecutionStep, RankedPlan, RevisePlanRequest, TripPlanRequest, TripPlanResponse, TripPlanStreamEvent } from "../types";
+import type { AdjustPlanResponse, DataSourceStatus, ExecutionStep, RankedPlan, RevisePlanRequest, TraceResponse, TripPlanRequest, TripPlanResponse, TripPlanStreamEvent } from "../types";
 
 // Local dev defaults to Vite's same-origin proxy so remote browsers do not
 // resolve the backend loopback address on their own machine.
@@ -248,4 +248,15 @@ export async function getDataSourceStatus(): Promise<DataSourceStatus> {
   }
 
   return (await response.json()) as DataSourceStatus;
+}
+
+export async function getTrace(traceId: string): Promise<TraceResponse> {
+  const response = await fetch(`${API_BASE_URL}/trip/trace/${encodeURIComponent(traceId)}`);
+
+  if (!response.ok) {
+    const message = await response.text();
+    throw new Error(`Trace 请求失败：${response.status} ${message}`);
+  }
+
+  return (await response.json()) as TraceResponse;
 }

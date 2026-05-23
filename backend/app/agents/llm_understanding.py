@@ -60,7 +60,7 @@ def build_llm_understanding(
     """用大模型完成意图识别、约束抽取、追问判断和规划模板选择。
 
     该函数只负责“理解用户输入”，不访问数据库，也不生成不存在的 POI。
-    如果模型不可用或输出不合规，返回 None，让调用方使用规则兜底。
+    如果模型不可用或输出不合规，返回 None，让调用方使用确定性规则兜底。
     """
 
     profile = user_profile or {}
@@ -69,7 +69,7 @@ def build_llm_understanding(
             "role": "system",
             "content": (
                 "你是本地生活规划系统的意图与约束理解器。"
-                "你只做结构化理解，不要推荐具体商家，不要编造 POI、路线、价格或营业信息。"
+                "你只做结构化理解，不推荐具体商家，不编造 POI、路线、价格或营业信息。"
                 "必须只输出一个 JSON 对象，不要输出 Markdown。"
             ),
         },
@@ -78,8 +78,6 @@ def build_llm_understanding(
             "content": _build_prompt(query, profile),
         },
     ]
-    # 结构化理解 prompt 较长，MiMo 还可能返回 reasoning_content。
-    # 这里给足输出预算，避免 JSON 被截断后触发规则兜底。
     raw = call_chat_completion(
         messages, temperature=0.0, timeout_seconds=60, max_completion_tokens=2048
     )
@@ -100,11 +98,11 @@ def _build_prompt(query: str, user_profile: dict[str, Any]) -> str:
 {ContextBuilder().build_user_profile_context(user_profile)}
 
 可选 intent_type：
-- capability：询问系统能力或怎么使用
-- simple_qa：普通闲聊/解释类问题，不需要查库和规划
-- category_recommend：只要求推荐某一类地点，例如餐厅、KTV、按摩
-- poi_search：查找某类地点或附近地点，但不要求排序规划
-- full_trip_plan：需要把多个活动或一个时间窗口组织成可执行安排
+- capability：询问系统能力或怎么使用。
+- simple_qa：普通闲聊、模型身份、解释类问题，不需要查库和规划。
+- category_recommend：只要求推荐某一类地点，例如餐厅、KTV、按摩。
+- poi_search：查找某类地点或附近地点，但不要求排序规划。
+- full_trip_plan：需要把多个活动或一个时间窗口组织成可执行安排。
 
 可选 target_categories：
 - poi_restaurant
@@ -126,12 +124,12 @@ def _build_prompt(query: str, user_profile: dict[str, Any]) -> str:
 - shopping_leisure
 - category_recommendation
 
-完整规划是否需要追问的判断：
+追问判断：
 - 如果用户已经说明同行对象/人数、时间窗口或时长、活动偏好，则 need_clarification=false。
-- 预算和位置缺失可以使用默认值，不要因为只缺预算或位置就追问。
+- 预算和位置缺失可以使用默认值，不要只因为缺预算或位置就追问。
 - 只有缺少导致无法执行规划的核心信息时才追问。
 
-请输出如下 JSON 字段：
+请输出这些字段：
 {{
   "intent_type": "full_trip_plan",
   "target_categories": ["poi_entertainment"],
@@ -172,7 +170,7 @@ def _normalize_understanding(data: dict[str, Any]) -> dict[str, Any] | None:
         str(item) for item in data.get("missing_constraints", []) if str(item) in ALLOWED_MISSING
     ]
 
-    normalized: dict[str, Any] = {
+    return {
         "intent_type": intent_type,
         "target_categories": categories,
         "scenario": _clean_optional_string(data.get("scenario")) or "unknown",
@@ -188,7 +186,6 @@ def _normalize_understanding(data: dict[str, Any]) -> dict[str, Any] | None:
         "missing_constraints": missing,
         "clarify_question": _clean_optional_string(data.get("clarify_question")) or "",
     }
-    return normalized
 
 
 def _clean_optional_string(value: Any) -> str | None:
@@ -209,11 +206,7 @@ def _clean_string_list(value: Any) -> list[str]:
 
 
 def _has_readable_preference(preferences: list[str]) -> bool:
-    """判断模型返回的偏好词是否可读。
-
-    MiMo 在少数中文抽取场景下可能把偏好词输出成乱码或其他文字系统。
-    这类值不适合进入 PlanState，后续用目标类别映射出的中文偏好兜底。
-    """
+    """判断模型返回的偏好词是否可读。"""
 
     return any(
         any("\u4e00" <= char <= "\u9fff" or (char.isascii() and char.isalnum()) for char in item)

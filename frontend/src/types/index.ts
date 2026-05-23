@@ -188,3 +188,33 @@ export interface DataSourceStatus {
   table_counts: Record<string, number>;
   error?: string | null;
 }
+
+export interface TraceSummary {
+  event_count: number;
+  node_count?: number;
+  tool_count?: number;
+  duration_ms?: number;
+}
+
+export interface TraceEvent {
+  event_type: string;
+  trace_id?: string;
+  run_id?: string;
+  session_id?: string;
+  timestamp?: number;
+  node_name?: string;
+  duration_ms?: number;
+  tool?: string;
+  success?: boolean;
+  source?: string;
+  error?: string | null;
+  payload?: Record<string, unknown>;
+  output_summary?: Record<string, unknown>;
+  [key: string]: unknown;
+}
+
+export interface TraceResponse {
+  trace_id: string;
+  summary: TraceSummary;
+  events: TraceEvent[];
+}

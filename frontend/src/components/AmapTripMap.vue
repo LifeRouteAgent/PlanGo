@@ -129,13 +129,12 @@ function drawPlan(AMap: AMapNamespace) {
   clearMap();
 
   const markers = mapPoints.value.map((point) => {
-    const marker = new AMap.Marker({
+    return new AMap.Marker({
       position: new AMap.LngLat(point.lnglat[0], point.lnglat[1]),
       title: point.item.name,
       offset: new AMap.Pixel(-13, -34),
       content: markerHtml(point.order, point.item.name),
     });
-    return marker;
   });
 
   const polyline =
@@ -311,243 +310,33 @@ function formatTransport(mode?: string) {
 </template>
 
 <style scoped>
-.map-panel {
-  display: grid;
-  gap: 16px;
-}
-
-.map-surface {
-  position: relative;
-  min-height: 300px;
-  overflow: hidden;
-  border: 1px solid #d8dee8;
-  border-radius: 8px;
-  background: #f6f8fb;
-}
-
-.amap-container,
-.map-fallback {
-  min-height: 300px;
-}
-
-.amap-container {
-  width: 100%;
-  height: 300px;
-}
-
-.map-grid {
-  position: absolute;
-  inset: 0;
-  background-image:
-    linear-gradient(#e4e9f1 1px, transparent 1px),
-    linear-gradient(90deg, #e4e9f1 1px, transparent 1px);
-  background-size: 28px 28px;
-}
-
-.map-content {
-  position: relative;
-  display: grid;
-  min-height: 300px;
-  place-items: center;
-  padding: 24px;
-  text-align: center;
-}
-
-.map-title {
-  margin: 0 0 8px;
-  color: #162033;
-  font-size: 18px;
-  font-weight: 700;
-}
-
-.map-subtitle {
-  max-width: 360px;
-  margin: 0;
-  color: #687386;
-  line-height: 1.6;
-}
-
-.map-subtitle code {
-  border-radius: 5px;
-  background: #fff4c2;
-  color: #7a5400;
-  padding: 2px 5px;
-}
-
-.map-loading,
-.map-error {
-  position: absolute;
-  right: 12px;
-  bottom: 12px;
-  border-radius: 999px;
-  padding: 7px 10px;
-  font-size: 12px;
-  font-weight: 800;
-}
-
-.map-loading {
-  background: #fff4c2;
-  color: #7a5400;
-}
-
-.map-error {
-  background: #fee2e2;
-  color: #b91c1c;
-}
-
-.route-summary {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.route-summary div {
-  display: grid;
-  gap: 4px;
-  border: 1px solid #d8dee8;
-  border-radius: 8px;
-  padding: 10px;
-  background: #f8fafc;
-}
-
-.route-summary span {
-  color: #687386;
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.route-summary strong {
-  color: #172033;
-  font-size: 14px;
-}
-
-.stop-list,
-.timeline-list {
-  display: grid;
-  gap: 10px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.stop-list {
-  border: 1px solid #ececec;
-  border-radius: 8px;
-  background: #fffdf4;
-  padding: 10px;
-}
-
-.stop-list li,
-.timeline-list li {
-  display: grid;
-  grid-template-columns: 28px 1fr;
-  gap: 10px;
-  align-items: start;
-}
-
-.stop-list span,
-.timeline-list span {
-  display: grid;
-  width: 28px;
-  height: 28px;
-  place-items: center;
-  border-radius: 50%;
-  background: #ff7a00;
-  color: white;
-  font-size: 13px;
-  font-weight: 700;
-}
-
-.timeline-list span {
-  background: #1f6feb;
-}
-
-.stop-list strong,
-.timeline-list strong {
-  color: #172033;
-}
-
-.stop-list p,
-.timeline-list p {
-  margin: 4px 0 0;
-  color: #687386;
-  font-size: 13px;
-}
-
-:global(.amap-stop-marker) {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  max-width: 180px;
-  border: 2px solid #ffffff;
-  border-radius: 999px;
-  background: #ff7a00;
-  box-shadow: 0 6px 16px rgb(0 0 0 / 20%);
-  color: #ffffff;
-  padding: 5px 9px 5px 5px;
-  font-size: 12px;
-  font-weight: 800;
-  white-space: nowrap;
-}
-
-:global(.amap-stop-marker span) {
-  display: grid;
-  width: 20px;
-  height: 20px;
-  place-items: center;
-  border-radius: 50%;
-  background: #ffffff;
-  color: #ff7a00;
-}
-
-:global(.amap-stop-marker strong) {
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-:global(.theme-dark) .map-surface {
-  border-color: #394657;
-  background: #101720;
-}
-
-:global(.theme-dark) .map-grid {
-  background-image:
-    linear-gradient(#273545 1px, transparent 1px),
-    linear-gradient(90deg, #273545 1px, transparent 1px);
-}
-
-:global(.theme-dark) .map-title,
-:global(.theme-dark) .route-summary strong,
-:global(.theme-dark) .stop-list strong,
-:global(.theme-dark) .timeline-list strong {
-  color: #edf1f7;
-}
-
-:global(.theme-dark) .map-subtitle,
-:global(.theme-dark) .route-summary span,
-:global(.theme-dark) .stop-list p,
-:global(.theme-dark) .timeline-list p {
-  color: #b5c0cf;
-}
-
-:global(.theme-dark) .map-subtitle code {
-  background: #453619;
-  color: #ffd48a;
-}
-
-:global(.theme-dark) .route-summary div {
-  border-color: #394657;
-  background: #1b2632;
-}
-
-:global(.theme-dark) .stop-list {
-  border-color: #394657;
-  background: #151f2a;
-}
-
-@media (max-width: 920px) {
-  .route-summary {
-    grid-template-columns: 1fr;
-  }
-}
+.map-panel { display: grid; gap: 16px; }
+.map-surface { position: relative; min-height: 300px; overflow: hidden; border: 1px solid #d8dee8; border-radius: 8px; background: #f6f8fb; }
+.amap-container, .map-fallback { min-height: 300px; }
+.amap-container { width: 100%; height: 300px; }
+.map-grid { position: absolute; inset: 0; background-image: linear-gradient(#e4e9f1 1px, transparent 1px), linear-gradient(90deg, #e4e9f1 1px, transparent 1px); background-size: 28px 28px; }
+.map-content { position: relative; display: grid; min-height: 300px; place-items: center; padding: 24px; text-align: center; }
+.map-title { margin: 0 0 8px; color: #162033; font-size: 18px; font-weight: 700; }
+.map-subtitle { max-width: 360px; margin: 0; color: #5d6b7c; font-size: 13px; line-height: 1.6; }
+.map-subtitle code { padding: 2px 5px; border-radius: 4px; background: #fff1df; color: #a64a00; }
+.map-loading, .map-error { position: absolute; right: 12px; bottom: 12px; max-width: calc(100% - 24px); border-radius: 8px; padding: 8px 10px; font-size: 12px; font-weight: 700; }
+.map-loading { background: rgb(255 255 255 / 86%); color: #334155; }
+.map-error { background: #fff1f0; color: #c2410c; }
+.route-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.route-summary div { min-height: 70px; padding: 12px; border: 1px solid #e5eaf2; border-radius: 8px; background: #fff; }
+.route-summary span { display: block; color: #64748b; font-size: 12px; font-weight: 700; }
+.route-summary strong { display: block; margin-top: 8px; color: #162033; font-size: 16px; }
+.stop-list, .timeline-list { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; }
+.stop-list li, .timeline-list li { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 10px; align-items: start; padding: 10px; border: 1px solid #e5eaf2; border-radius: 8px; background: #fff; }
+.stop-list li > span, .timeline-list li > span { display: grid; width: 28px; height: 28px; place-items: center; border-radius: 50%; background: #ff7a00; color: #fff; font-size: 12px; font-weight: 800; }
+.stop-list strong, .timeline-list strong { display: block; color: #162033; font-size: 14px; }
+.stop-list p, .timeline-list p { margin: 4px 0 0; color: #617086; font-size: 12px; line-height: 1.5; }
+:global(.amap-stop-marker) { display: inline-flex; align-items: center; gap: 6px; max-width: 180px; border: 2px solid #ffffff; border-radius: 999px; background: #ff7a00; box-shadow: 0 6px 16px rgb(0 0 0 / 20%); color: #ffffff; padding: 5px 9px 5px 5px; font-size: 12px; font-weight: 800; white-space: nowrap; }
+:global(.amap-stop-marker span) { display: grid; width: 20px; height: 20px; place-items: center; border-radius: 50%; background: #ffffff; color: #ff7a00; }
+:global(.amap-stop-marker strong) { overflow: hidden; text-overflow: ellipsis; }
+:global(.theme-dark) .map-surface, :global(.theme-dark) .route-summary div, :global(.theme-dark) .stop-list li, :global(.theme-dark) .timeline-list li { border-color: #394657; background: #101720; }
+:global(.theme-dark) .map-grid { background-image: linear-gradient(#273545 1px, transparent 1px), linear-gradient(90deg, #273545 1px, transparent 1px); }
+:global(.theme-dark) .map-title, :global(.theme-dark) .route-summary strong, :global(.theme-dark) .stop-list strong, :global(.theme-dark) .timeline-list strong { color: #edf1f7; }
+:global(.theme-dark) .map-subtitle, :global(.theme-dark) .route-summary span, :global(.theme-dark) .stop-list p, :global(.theme-dark) .timeline-list p { color: #b5c0cf; }
+@media (max-width: 920px) { .route-summary { grid-template-columns: 1fr; } }
 </style>
