@@ -10,6 +10,7 @@ __pycache__/
 !.env.example
 backend/config.local.json
 node_modules/
+.npm-cache/
 dist/
 build/
 coverage/
