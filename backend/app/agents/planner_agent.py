@@ -40,7 +40,7 @@ def planner_agent_node(state: PlanState) -> PlanStatePatch:
         if llm_understanding and llm_understanding.get("required_slots")
         else _required_slots_for_template(planning_template, categories)
     )
-    time_budget = int(float(constraints.get("duration_hours", 6))) * 60
+    time_budget = int(float(constraints.get("duration_hours", 10))) * 60
     movement_policy = _movement_policy_for_state(state, planning_template, time_budget)
     candidate_strategy = _candidate_strategy_for_template(planning_template)
     replanning_count = state.get("replanning_count", 0) + 1

@@ -1,4 +1,4 @@
-import { X } from "lucide-react";
+import { Car, Sparkles, Utensils, X } from "lucide-react";
 import type { PlanAlternative, PlanStep } from "../types/agent";
 
 export type DetailPayload =
@@ -16,6 +16,16 @@ function fallbackImageClass(index = 0) {
   return ["science", "park", "museum", "play"][index % 4];
 }
 
+function StepIcon({ step }: { step: PlanStep }) {
+  if (step.type === "meal") {
+    return <Utensils size={16} />;
+  }
+  if (step.type === "travel") {
+    return <Car size={16} />;
+  }
+  return <Sparkles size={16} />;
+}
+
 export function PlanDetailModal({ detail, onClose, onSelectAlternative }: PlanDetailModalProps) {
   if (!detail) {
     return null;
@@ -24,7 +34,12 @@ export function PlanDetailModal({ detail, onClose, onSelectAlternative }: PlanDe
   const items: Array<{ step?: PlanStep; alternative?: PlanAlternative }> =
     detail.type === "alternatives"
       ? detail.items.map((item) => ({ alternative: item }))
-      : [{ step: detail.type === "step" ? detail.item : undefined, alternative: detail.type === "alternative" ? detail.item : undefined }];
+      : [
+          {
+            step: detail.type === "step" ? detail.item : undefined,
+            alternative: detail.type === "alternative" ? detail.item : undefined
+          }
+        ];
 
   return (
     <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label={detail.title}>
@@ -41,16 +56,43 @@ export function PlanDetailModal({ detail, onClose, onSelectAlternative }: PlanDe
 
         <div className="detail-modal-body">
           {items.map(({ step, alternative }, index) => {
+            const alternativeSteps = alternative?.steps ?? [];
             const tags = step?.detail?.tags ?? alternative?.tags ?? [];
-            const description = step?.detail?.description ?? alternative?.description ?? step?.reason ?? "";
+            const description =
+              step?.detail?.description ??
+              alternative?.recommendation_reason ??
+              alternative?.description ??
+              step?.reason ??
+              "";
             const address = step?.detail?.address ?? step?.location?.address ?? "";
-            const cost = step?.detail?.cost ?? step?.cost;
+            const cost = step?.detail?.cost ?? step?.cost ?? alternative?.total_cost;
             return (
               <article className="detail-card" key={step?.title ?? alternative?.id ?? index}>
                 <div className={`detail-image ${fallbackImageClass(index)}`} />
                 <div>
                   <h3>{step?.title ?? alternative?.title}</h3>
                   <p>{description}</p>
+
+                  {alternativeSteps.length > 0 && (
+                    <div className="itinerary-list modal-itinerary-list">
+                      {alternativeSteps.map((altStep) => (
+                        <div className="itinerary-row" key={`${altStep.title}-${altStep.start_time}`}>
+                          <span className={`step-icon is-${altStep.type}`}>
+                            <StepIcon step={altStep} />
+                          </span>
+                          <time>
+                            {altStep.start_time} - {altStep.end_time}
+                          </time>
+                          <div>
+                            <strong>{altStep.title}</strong>
+                            <p>{altStep.reason}</p>
+                            <small>{altStep.detail?.traffic || "交通耗时由高德路线或系统估算"}</small>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
                   <div className="tag-cloud">
                     {tags.map((tag: string) => (
                       <span key={tag}>{tag}</span>
@@ -80,6 +122,10 @@ export function PlanDetailModal({ detail, onClose, onSelectAlternative }: PlanDe
                         <div>
                           <dt>距离</dt>
                           <dd>{alternative.distance_km.toFixed(1)} 公里</dd>
+                        </div>
+                        <div>
+                          <dt>总时长</dt>
+                          <dd>{alternative.duration_min} 分钟</dd>
                         </div>
                       </>
                     )}

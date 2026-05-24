@@ -93,6 +93,7 @@ def recommend_poi(
         "address": str(poi["address"]),
         "rating": rating,
         "price_level": str(poi["price_level"]),
+        "avg_price": poi.get("avg_price"),
         "open_status": str(poi["open_status"]),
         "tags": list(poi.get("tags", [])),
         "score": round(rating + score_boost, 2),
@@ -104,6 +105,8 @@ def recommend_poi(
         "budget_fit": budget_fit,
         "scene_fit": normalized_scene_fit,
         "distance_sensitive": distance_sensitive,
+        "must_include": bool(poi.get("must_include")),
+        "must_keyword": str(poi.get("must_keyword", "")),
     }
 
 

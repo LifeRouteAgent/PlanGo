@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
 import queue
@@ -31,6 +31,7 @@ from app.agents.route_planner import (
     _fit_summary,
 )
 from app.services.amap_route_service import AmapRouteService
+from app.services.amap_weather_service import AmapWeatherService
 from app.services.calendar_service import build_plan_ics
 from app.services.memory_service import MemoryService
 from app.services.poi_repository import PoiRepository
@@ -79,22 +80,29 @@ def plan_trip(request: TripPlanRequest) -> TripPlanResponse:
     trace_id = request.trace_id or new_id("trace")
     run_id = request.run_id or new_id("run")
     set_trace_context(trace_id=trace_id, run_id=run_id, session_id=session_id)
+    saved_session = session_store.load(session_id)
+    effective_query = _effective_query_for_request(saved_session, request.user_query)
     memory.observe_user_query(request.user_query, user_id=session_id)
     user_profile = memory.enrich_user_profile({
         **request.user_profile,
-        "last_query": request.user_query,
+        "last_query": effective_query,
         "session_id": session_id,
         "user_id": session_id,
     })
 
     initial_state = create_initial_state(
-        request.user_query,
+        effective_query,
         user_profile=user_profile,
         max_replanning_count=request.max_replanning_count,
         session_id=session_id,
         trace_id=trace_id,
         run_id=run_id,
     )
+    if effective_query != request.user_query:
+        initial_state["logs"] = [
+            *initial_state.get("logs", []),
+            f"Clarification Follow-up: merged user reply into previous pending request: {request.user_query}",
+        ]
     recorder = TraceRecorder(trace_id=trace_id, run_id=run_id, session_id=session_id)
     result = recorder.time_node(
         "life_route_graph.invoke",
@@ -130,22 +138,30 @@ def stream_plan_trip(request: TripPlanRequest) -> StreamingResponse:
         trace_id = request.trace_id or new_id("trace")
         run_id = request.run_id or new_id("run")
         set_trace_context(trace_id=trace_id, run_id=run_id, session_id=session_id)
+        saved_session = session_store.load(session_id)
+        effective_query = _effective_query_for_request(saved_session, request.user_query)
+        is_clarification_followup = effective_query != request.user_query
         memory.observe_user_query(request.user_query, user_id=session_id)
         user_profile = memory.enrich_user_profile({
             **request.user_profile,
-            "last_query": request.user_query,
+            "last_query": effective_query,
             "session_id": session_id,
             "user_id": session_id,
         })
         recorder = TraceRecorder(trace_id=trace_id, run_id=run_id, session_id=session_id)
         current_state = create_initial_state(
-            request.user_query,
+            effective_query,
             user_profile=user_profile,
             max_replanning_count=request.max_replanning_count,
             session_id=session_id,
             trace_id=trace_id,
             run_id=run_id,
         )
+        if is_clarification_followup:
+            current_state["logs"] = [
+                *current_state.get("logs", []),
+                f"Clarification Follow-up: merged user reply into previous pending request: {request.user_query}",
+            ]
 
         def run_graph() -> None:
             nonlocal current_state
@@ -200,13 +216,22 @@ def stream_plan_trip(request: TripPlanRequest) -> StreamingResponse:
                 event_queue.put(("error", {"message": str(exc)}))
                 event_queue.put(None)
 
-        yield _sse_event(
-            "status",
-            {
-                "stage": "start",
-                "message": "已收到需求，开始理解意图并构建本地生活规划 DAG。",
-            },
-        )
+        if is_clarification_followup:
+            yield _sse_event(
+                "status",
+                {
+                    "stage": "clarification_followup",
+                    "message": "\u5df2\u63a5\u4e0a\u4e0a\u4e00\u8f6e\u8ffd\u95ee\uff0c\u628a\u4f60\u7684\u8865\u5145\u4fe1\u606f\u5408\u5e76\u8fdb\u539f\u59cb\u89c4\u5212\u9700\u6c42\u3002",
+                },
+            )
+        else:
+            yield _sse_event(
+                "status",
+                {
+                    "stage": "start",
+                    "message": "已收到需求，开始理解意图并构建本地生活规划 DAG。",
+                },
+            )
 
         worker = threading.Thread(target=run_graph, daemon=True)
         worker.start()
@@ -564,6 +589,47 @@ def get_memory_clusters() -> dict[str, Any]:
     return {"clusters": MemoryService().clusters()}
 
 
+def _effective_query_for_request(
+    saved_session: dict[str, Any] | None,
+    current_query: str,
+) -> str:
+    """把澄清追问后的短回答合并回上一轮待补全需求。
+
+    同一个 session 中，如果上一轮停在 `need_clarification=true`，用户下一句
+    往往不是新问题，而是在回答追问，例如“两个人，预算1000”。
+    这里在进入 Intent Router 前合并上下文，避免把短回答误判成 simple_qa。
+    """
+
+    previous_state = _latest_pending_clarification_state(saved_session)
+    if not previous_state:
+        return current_query
+    previous_query = str(previous_state.get("user_query") or "").strip()
+    reply = current_query.strip()
+    if not previous_query or not reply:
+        return current_query
+    return f"{previous_query}\n补充信息：{reply}"
+
+
+def _latest_pending_clarification_state(
+    saved_session: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    """读取上一轮是否处于等待澄清状态。"""
+
+    if not isinstance(saved_session, dict):
+        return None
+    latest_state = saved_session.get("latest_state")
+    latest_response = saved_session.get("latest_response")
+    if not isinstance(latest_state, dict):
+        return None
+    state_waiting = bool(latest_state.get("need_clarification"))
+    response_waiting = (
+        isinstance(latest_response, dict)
+        and bool(latest_response.get("need_clarification"))
+    )
+    if state_waiting or response_waiting:
+        return latest_state
+    return None
+
 def _build_revision_state(
     previous_state: dict[str, Any],
     user_query: str,
@@ -681,6 +747,7 @@ def _run_revision_pipeline(
 def _build_trip_response(result: dict[str, Any]) -> TripPlanResponse:
     """把内部 PlanState 裁剪成 API 对外响应结构。"""
 
+    result = _attach_weather_to_result(result)
     return TripPlanResponse(
         response_text=result.get("response_text", ""),
         execution_status=result.get("execution_status", "unknown"),
@@ -699,6 +766,26 @@ def _build_trip_response(result: dict[str, Any]) -> TripPlanResponse:
         revision_id=result.get("revision_id", ""),
         is_revision=bool(result.get("is_revision", False)),
     )
+
+
+
+def _attach_weather_to_result(result: dict[str, Any]) -> dict[str, Any]:
+    """把高德实时天气挂到最终方案，供前端天气卡片直接展示。"""
+
+    if not result.get("ranked_plans") and not result.get("selected_plan"):
+        return result
+    weather = AmapWeatherService().current_weather(
+        str(result.get("constraints", {}).get("city") or "北京")
+    )
+    ranked_plans = [
+        {**plan, "weather": weather}
+        for plan in result.get("ranked_plans", [])
+        if isinstance(plan, dict)
+    ]
+    selected_plan = dict(result.get("selected_plan", {}) or {})
+    if selected_plan:
+        selected_plan["weather"] = weather
+    return {**result, "ranked_plans": ranked_plans, "selected_plan": selected_plan, "weather": weather}
 
 
 def _sse_event(event: str, data: dict[str, Any]) -> str:
@@ -1564,3 +1651,4 @@ def data_source_status() -> DataSourceStatusResponse:
             database_name=settings.database_name,
             error=str(exc),
         )
+

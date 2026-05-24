@@ -1,4 +1,4 @@
-import type { Plan, PlanStep, StreamEvent, StreamRequest, WeatherInfo } from "../types/agent";
+﻿import type { Plan, PlanStep, StreamEvent, StreamRequest, WeatherInfo } from "../types/agent";
 
 type StreamHandler = (event: StreamEvent) => void;
 
@@ -92,53 +92,106 @@ function buildStep(item: Record<string, unknown>, index: number): PlanStep {
     item.recommendation_reason ?? poi.recommendation_reason ?? item.reason,
     "符合本次时间、距离和偏好约束。"
   );
+  const cost = asNumber(item.estimated_cost ?? poi.avg_price ?? poi.price, 0);
 
   return {
     type: stepTypeFromSlot(slotType, category),
     title,
-    start_time: asString(item.start_time, `${14 + index}:00`),
-    end_time: asString(item.end_time, `${15 + index}:00`),
-    location: {
-      name: title,
-      lat,
-      lng,
-      address: asString(poi.address, "地址待确认")
-    },
+    start_time: asString(item.start_time, "--:--"),
+    end_time: asString(item.end_time, "--:--"),
+    location: { name: title, lat, lng, address: asString(poi.address, "地址待确认") },
     target_id: asString(poi.id ?? item.id, `${index}`),
     reason,
-    cost: asNumber(item.estimated_cost ?? poi.price ?? poi.avg_price, 0),
+    cost,
     booking_required: Boolean(item.reservation_required ?? poi.reservation_required),
-    metadata: {
-      slot_type: slotType,
-      category,
-      rating: poi.rating,
-      raw: item
-    },
+    metadata: { slot_type: slotType, category, rating: poi.rating, raw: item },
     detail: {
       image_url: imageFromPoi(poi) || null,
       tags: asArray<string>(poi.tags).slice(0, 5),
       description: reason,
-      traffic: asString(item.travel_summary, "交通耗时由系统估算"),
-      cost: asNumber(item.estimated_cost ?? poi.price ?? poi.avg_price, 0),
+      traffic: asString(item.travel_summary, "交通耗时由高德路线或系统估算。"),
+      cost,
       address: asString(poi.address, "地址待确认")
     }
   };
 }
 
-function buildPlanFromLifeRouteResponse(payload: unknown): Plan {
-  const response = asRecord(payload);
-  const selected = asRecord(response.selected_plan);
-  const rankedPlans = asArray<Record<string, unknown>>(response.ranked_plans);
-  const source = Object.keys(selected).length ? selected : asRecord(rankedPlans[0]);
-  const items = asArray<Record<string, unknown>>(source.items ?? source.timeline);
-  const steps = items.length ? items.map(buildStep) : [];
+function mergeItemsWithTimeline(source: Record<string, unknown>) {
+  const items = asArray<Record<string, unknown>>(source.items);
+  const timeline = asArray<Record<string, unknown>>(source.timeline);
+  if (!timeline.length) return items;
+  const itemById = new Map(items.map((item) => [asString(item.id ?? item.target_id), item]));
+  return timeline.map((slot, index) => {
+    const id = asString(slot.item_id ?? slot.poi_id ?? slot.target_id ?? slot.id);
+    const matched = itemById.get(id) ?? items[index] ?? {};
+    return { ...matched, ...slot };
+  });
+}
+
+function buildRouteSegments(routeSegments: Record<string, unknown>[]) {
+  return routeSegments.map((segment, index) => {
+    const polyline = asArray<Record<string, unknown>>(segment.polyline).map((point) => ({
+      lat: asNumber(point.lat),
+      lng: asNumber(point.lng)
+    }));
+    return {
+      type: "travel" as const,
+      title: asString(segment.transport_mode, `第 ${index + 1} 段交通`),
+      color: "#ff6b35",
+      polyline,
+      distance_km: asNumber(segment.distance_km, 0),
+      duration_min: asNumber(segment.duration_minutes, 0),
+      transport_mode: asString(segment.transport_mode, "")
+    };
+  });
+}
+
+function buildWeather(source: Record<string, unknown>, response: Record<string, unknown>): WeatherInfo {
+  const weather = asRecord(source.weather ?? response.weather);
+  if (Object.keys(weather).length) {
+    return {
+      temperature_c: weather.temperature_c === null || weather.temperature_c === undefined ? null : asNumber(weather.temperature_c),
+      condition: asString(weather.condition, "天气未知"),
+      icon: asString(weather.icon, "🌤️"),
+      summary: asString(weather.summary, "已接入高德实时天气。"),
+      source: asString(weather.source, "amap") as WeatherInfo["source"],
+      hourly: asArray(weather.hourly),
+      message: asString(weather.message, "")
+    };
+  }
+  return { temperature_c: null, condition: "天气未配置", icon: "🌤️", summary: "暂未获取到高德实时天气。", source: "unconfigured", hourly: [] };
+}
+
+function buildPlanFromSource(
+  source: Record<string, unknown>,
+  response: Record<string, unknown>,
+  rankedPlans: Record<string, unknown>[],
+  includeAlternatives: boolean
+): Plan {
+  const steps = mergeItemsWithTimeline(source).map(buildStep);
   const firstStep = steps[0];
   const lastStep = steps[steps.length - 1];
   const planId = asString(source.plan_id ?? source.id, crypto.randomUUID());
   const title = asString(source.title, "本地生活推荐方案");
-  const fitSummary = asString(source.fit_summary ?? response.response_text, "根据偏好、时间、距离和预算生成。");
+  const fitSummary = asString(asRecord(source.fit_summary).summary ?? source.recommendation_reason ?? response.response_text, "根据偏好、时间、距离和预算生成。");
   const tags = asArray<string>(source.tags).length ? asArray<string>(source.tags) : ["本地生活", "路线可执行", "智能规划"];
   const routeSegments = asArray<Record<string, unknown>>(source.route_segments);
+  const routeSegmentViews = buildRouteSegments(routeSegments);
+  const hasOriginSegment = routeSegments.length === steps.length;
+  steps.forEach((step, index) => {
+    const segmentIndex = hasOriginSegment ? index : index - 1;
+    const segment = segmentIndex >= 0 ? routeSegments[segmentIndex] : undefined;
+    if (!segment) return;
+    const distance = asNumber(segment.distance_km, 0);
+    const duration = asNumber(segment.duration_minutes, 0);
+    const mode = asString(segment.transport_mode, "交通");
+    step.metadata.route = { distance_km: distance, duration_min: duration, mode };
+    if (step.detail) {
+      step.detail.traffic = `${mode}，${distance.toFixed(1)} 公里，约 ${duration} 分钟`;
+    }
+  });
+  const routePolyline = routeSegmentViews.flatMap((segment) => segment.polyline);
+  const totalCost = asNumber(source.estimated_budget ?? source.total_cost, steps.reduce((sum, step) => sum + step.cost, 0));
 
   const plan: Plan = {
     id: planId,
@@ -146,93 +199,74 @@ function buildPlanFromLifeRouteResponse(payload: unknown): Plan {
     run_id: asString(response.run_id),
     session_id: asString(response.session_id),
     scenario: scenarioFromIntent(response.intent_type),
-    start_time: firstStep?.start_time ?? "14:00",
-    end_time: lastStep?.end_time ?? "18:00",
-    total_duration_min: asNumber(source.total_duration_minutes ?? source.duration_minutes, 240),
-    total_cost: asNumber(source.estimated_budget ?? source.total_cost, steps.reduce((sum, step) => sum + step.cost, 0)),
+    start_time: firstStep?.start_time ?? "--:--",
+    end_time: lastStep?.end_time ?? "--:--",
+    total_duration_min: asNumber(source.total_duration_minutes ?? source.duration_minutes, 0),
+    total_cost: totalCost,
     steps,
-    actions: steps
-      .filter((step) => step.type === "meal" || step.booking_required)
-      .map((step, index) => ({
-        action_id: `${planId}-action-${index}`,
-        action_type: step.type === "meal" ? "restaurant_booking" : "ticket_or_reservation",
-        target_id: step.target_id ?? `${index}`,
-        target_name: step.title,
-        scheduled_time: step.start_time,
-        people_count: asNumber(asRecord(response.constraints).group_size, 2),
-        status: "pending",
-        order_id: null,
-        failure_reason: null
-      })),
-    rationale: [
-      fitSummary,
-      ...asArray<string>(source.pros).slice(0, 2),
-      ...steps.map((step) => step.reason).slice(0, 2)
-    ].filter(Boolean),
+    actions: steps.filter((step) => step.type === "meal" || step.booking_required).map((step, index) => ({
+      action_id: `${planId}-action-${index}`,
+      action_type: step.type === "meal" ? "restaurant_booking" : "ticket_or_reservation",
+      target_id: step.target_id ?? `${index}`,
+      target_name: step.title,
+      scheduled_time: step.start_time,
+      people_count: asNumber(asRecord(response.constraints).people_count, 2),
+      status: "pending",
+      order_id: null,
+      failure_reason: null
+    })),
+    rationale: [fitSummary, ...asArray<string>(source.pros).slice(0, 2), ...steps.map((step) => step.reason).slice(0, 2)].filter(Boolean),
     share_message: asString(response.response_text, `${title}：${fitSummary}`),
-    risk_flags: asArray<Record<string, unknown>>(response.errors).map((item) =>
-      asString(item.message ?? item.code, "存在待确认风险")
-    ),
-    city: {
-      code: "beijing",
-      name: "北京"
-    },
+    risk_flags: asArray<Record<string, unknown>>(response.errors).map((item) => asString(item.message ?? item.code, "存在待确认风险")),
+    city: { code: "beijing", name: "北京" },
     recommendation: {
       title,
       rating: asNumber(source.score ?? source.plan_score, 4.7),
-      distance_km: asNumber(routeSegments[0]?.distance_km, 0),
+      distance_km: asNumber(source.total_distance_km ?? routeSegments[0]?.distance_km, 0),
       tags,
       cover_image: firstStep?.detail?.image_url ?? null
     },
     route: {
-      provider: "LifeRouteAgent",
-      source: "langgraph",
-      polyline: steps
-        .map((step) => step.location)
-        .filter(Boolean)
-        .map((location) => ({ lat: location!.lat, lng: location!.lng })),
-      segments: routeSegments.map((segment, index) => ({
-        type: "travel",
-        title: asString(segment.transport_mode, `第 ${index + 1} 段交通`),
-        color: "#ff6b35",
-        polyline: []
-      })),
-      stops: steps.map((step, index) => ({
-        order: index + 1,
-        title: step.title,
-        start_time: step.start_time,
-        end_time: step.end_time,
-        location: step.location
-      })),
+      provider: routeSegments.some((segment) => asString(segment.source).startsWith("amap")) ? "高德地图" : "LifeRouteAgent",
+      source: asString(routeSegments[0]?.source, "langgraph"),
+      polyline: routePolyline.length ? routePolyline : steps.map((step) => step.location).filter(Boolean).map((location) => ({ lat: location!.lat, lng: location!.lng })),
+      segments: routeSegmentViews,
+      stops: steps.map((step, index) => ({ order: index + 1, title: step.title, start_time: step.start_time, end_time: step.end_time, location: step.location })),
       navigate_url: null
     },
-    alternatives: rankedPlans.slice(1, 4).map((item, index) => ({
-      id: asString(item.plan_id ?? item.id, `alt-${index}`),
-      title: asString(item.title, `备选方案 ${index + 1}`),
-      rating: asNumber(item.score ?? item.plan_score, 4.5),
-      distance_km: asNumber(item.route_km, 0),
-      duration_min: asNumber(item.total_duration_minutes, 240),
-      tags: asArray<string>(item.tags).slice(0, 4),
-      description: asString(item.fit_summary, "可作为当前方案的备选。")
-    })),
-    weather: {
-      temperature_c: null,
-      condition: "未配置",
-      icon: "☁️",
-      summary: "可继续接入高德天气或后端天气接口。",
-      source: "unconfigured",
-      hourly: []
-    },
-    details: {
-      steps,
-      alternatives: []
-    }
+    alternatives: includeAlternatives ? rankedPlans.slice(1, 4).map((item, index) => {
+      const altPlan = buildPlanFromSource(item, response, [], false);
+      return {
+        id: asString(item.plan_id ?? item.id, `alt-${index}`),
+        title: asString(item.title, `备选方案 ${index + 1}`),
+        rating: asNumber(item.score ?? item.plan_score, 4.5),
+        distance_km: asNumber(item.total_distance_km, 0),
+        duration_min: asNumber(item.total_duration_minutes, 0),
+        total_cost: asNumber(item.estimated_budget, 0),
+        tags: asArray<string>(item.tags).slice(0, 4),
+        description: asString(asRecord(item.fit_summary).summary ?? item.recommendation_reason, "可作为当前方案的备选。"),
+        steps: altPlan.steps,
+        route: altPlan.route,
+        recommendation_reason: asString(item.recommendation_reason, ""),
+        pros: asArray<string>(item.pros),
+        cons: asArray<string>(item.cons)
+      };
+    }) : [],
+    weather: buildWeather(source, response),
+    details: { steps, alternatives: [] }
   };
 
   planCache.set(planId, plan);
   return plan;
 }
 
+function buildPlanFromLifeRouteResponse(payload: unknown): Plan {
+  const response = asRecord(payload);
+  const selected = asRecord(response.selected_plan);
+  const rankedPlans = asArray<Record<string, unknown>>(response.ranked_plans);
+  const source = Object.keys(selected).length ? selected : asRecord(rankedPlans[0]);
+  return buildPlanFromSource(source, response, rankedPlans, true);
+}
 function normalizeSseEvent(raw: { event: string; data: unknown }): StreamEvent | null {
   if (raw.event === "final") {
     const response = asRecord(raw.data);
@@ -499,3 +533,4 @@ export async function selectAlternative(planId: string, alternativeId: string) {
   const selected = plan.alternatives?.find((item) => item.id === alternativeId);
   return { plan, selected_alternative: selected };
 }
+

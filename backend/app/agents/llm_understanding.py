@@ -49,7 +49,7 @@ ALLOWED_MISSING = {"people_or_scenario", "time_window", "preference", "location"
 
 
 def get_llm_understanding(state: dict[str, Any]) -> dict[str, Any] | None:
-    """读取已经缓存到 PlanState.constraints 的大模型理解结果。"""
+    """读取 Intent Router 写入 PlanState.constraints 的 LLM 结构化理解结果。"""
 
     understanding = state.get("constraints", {}).get("llm_understanding")
     return understanding if isinstance(understanding, dict) else None
@@ -58,10 +58,10 @@ def get_llm_understanding(state: dict[str, Any]) -> dict[str, Any] | None:
 def build_llm_understanding(
     query: str, user_profile: dict[str, Any] | None = None
 ) -> dict[str, Any] | None:
-    """用大模型完成意图识别、约束抽取、追问判断和规划模板选择。
+    """调用大模型做意图识别、约束抽取、追问判断和规划模板选择。
 
-    该函数只负责“理解用户输入”，不访问数据库，也不生成不存在的 POI。
-    如果模型不可用或输出不合规，返回 None，让调用方使用确定性规则兜底。
+    这个函数只负责理解输入，不访问数据库，也不生成具体 POI、路线、价格或营业信息。
+    如果模型不可用或输出不合规，返回 None，让调用方走确定性规则兜底。
     """
 
     profile = user_profile or {}
@@ -74,10 +74,7 @@ def build_llm_understanding(
                 "必须只输出一个 JSON 对象，不要输出 Markdown。"
             ),
         },
-        {
-            "role": "user",
-            "content": _build_prompt(query, profile),
-        },
+        {"role": "user", "content": _build_prompt(query, profile)},
     ]
     raw = call_chat_completion(
         messages, temperature=0.0, timeout_seconds=60, max_completion_tokens=2048
@@ -96,25 +93,36 @@ def build_llm_understanding(
 
 
 def _build_prompt(query: str, user_profile: dict[str, Any]) -> str:
-    """构造稳定的结构化抽取 prompt。"""
+    """构造稳定的结构化抽取 prompt。
 
+    用户画像和 Memory 只能作为软偏好，不能被模型复制成“本轮用户明确说过的约束”。
+    """
+
+    profile_context = ContextBuilder().build_user_profile_context(user_profile)
     return f"""
-请理解用户的本地生活需求，并输出 JSON。
+请理解用户的本地生活需求，并且只输出一个 JSON 对象。
 
-用户输入：
+用户本轮输入：
 {query}
 
-用户画像：
-{ContextBuilder().build_user_profile_context(user_profile)}
+历史画像和记忆（只能作为软偏好，不得覆盖本轮输入）：
+{profile_context}
 
-可选 intent_type：
-- capability：询问系统能力或怎么使用。
-- simple_qa：普通闲聊、模型身份、解释类问题，不需要查库和规划。
-- category_recommend：只要求推荐某一类地点，例如餐厅、KTV、按摩。
-- poi_search：查找某类地点或附近地点，但不要求排序规划。
-- full_trip_plan：需要把多个活动或一个时间窗口组织成可执行安排。
+关键规则：
+1. intent_type 可选：
+   - capability：询问系统能力、怎么使用。
+   - simple_qa：普通闲聊、模型身份、解释类问题，不需要查库和规划。
+   - category_recommend：只要求推荐某一类地点，例如餐厅、KTV、按摩。
+   - poi_search：查找某类地点或附近地点，但不要求排时间线。
+   - full_trip_plan：需要把多个活动或一个时间窗口组织成可执行安排。
+2. 如果本轮输入是“你是什么模型/你支持什么功能/怎么使用”，必须输出 simple_qa 或 capability，不要沿用历史规划。
+3. 如果用户说“环球影城然后唱歌”“吃饭再看电影”这类多个活动组合，通常是 full_trip_plan。
+4. 如果用户已经说明同行对象或人数、日期/时间线索、活动偏好，就不要追问。
+5. 预算和出发区域可以缺省，不要只因为缺预算或缺位置追问。
+6. start_time 和 duration_hours 只有用户明确说了钟点、上午/下午/晚上、几小时、半天、一天或起止时间时才填写；不要自行补 14:00 或 6 小时。
+7. 历史画像里的室内、低预算、常去区域只能影响后续排序，不得写入 preferences，除非本轮用户明确提到。
 
-可选 target_categories：
+target_categories 可选：
 - poi_restaurant
 - poi_activity
 - poi_attraction
@@ -123,7 +131,7 @@ def _build_prompt(query: str, user_profile: dict[str, Any]) -> str:
 - poi_entertainment
 - poi_beauty
 
-可选 planning_template：
+planning_template 可选：
 - meal_only
 - meal_plus_activity
 - family_half_day
@@ -134,24 +142,19 @@ def _build_prompt(query: str, user_profile: dict[str, Any]) -> str:
 - shopping_leisure
 - category_recommendation
 
-追问判断：
-- 如果用户已经说明同行对象/人数、时间窗口或时长、活动偏好，则 need_clarification=false。
-- 预算和位置缺失可以使用默认值，不要只因为缺预算或位置就追问。
-- 只有缺少导致无法执行规划的核心信息时才追问。
-
 请输出这些字段：
 {{
   "intent_type": "full_trip_plan",
-  "target_categories": ["poi_entertainment"],
-  "scenario": "friends",
+  "target_categories": ["poi_attraction", "poi_entertainment"],
+  "scenario": "couple",
   "people_count": 2,
-  "preferences": ["麻将", "唱歌"],
+  "preferences": ["环球影城", "唱歌"],
   "location_area": null,
-  "start_time": "10:00",
-  "duration_hours": 4,
-  "budget": 200,
-  "planning_template": "entertainment_gathering",
-  "required_slots": ["entertainment", "optional_entertainment"],
+  "start_time": null,
+  "duration_hours": null,
+  "budget": 1000,
+  "planning_template": "couple_date",
+  "required_slots": ["attraction", "entertainment"],
   "need_clarification": false,
   "missing_constraints": [],
   "clarify_question": ""

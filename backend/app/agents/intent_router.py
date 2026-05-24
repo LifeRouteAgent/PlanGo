@@ -43,7 +43,7 @@ CATEGORY_KEYWORDS: tuple[tuple[str, tuple[str, ...]], ...] = (
     (POI_FITNESS, ("健身", "运动", "瑜伽", "普拉提", "羽毛球", "爬山", "攀岩", "游泳")),
     (POI_BEAUTY, ("按摩", "足疗", "美容", "养生", "洗浴", "SPA", "spa", "美甲", "护理")),
     (POI_SHOPPING, ("购物", "商场", "逛街", "生活广场", "商圈", "买东西")),
-    (POI_ATTRACTION, ("景点", "公园", "citywalk", "城市漫步", "观光", "散步", "露营")),
+    (POI_ATTRACTION, ("环球影城", "景点", "乐园", "主题公园", "公园", "citywalk", "城市漫步", "观光", "散步", "露营")),
 )
 
 CAPABILITY_KEYWORDS = (
@@ -66,21 +66,14 @@ MODEL_QA_KEYWORDS = (
     "你是谁",
 )
 
-SIMPLE_QA_KEYWORDS = (
-    "你好",
-    "hello",
-    "谢谢",
-    "hi",
-    "早上好",
-    "晚上好",
-)
+SIMPLE_QA_KEYWORDS = ("你好", "hello", "谢谢", "hi", "早上好", "晚上好")
 
 
 def intent_router_node(state: PlanState) -> PlanStatePatch:
     """前置意图路由节点。
 
-    大模型负责自然语言理解；规则负责兜底和护栏。模型身份、能力说明、普通问答这类请求
-    不应该进入本地生活规划链路，因此先用硬规则拦截。
+    大模型负责自然语言理解，规则负责兜底和护栏。模型身份、能力说明、普通问答
+    这类请求必须直接回答，不能因为 session 里有旧方案就继续触发行程规划。
     """
 
     query = state["user_query"].strip()
@@ -98,10 +91,7 @@ def intent_router_node(state: PlanState) -> PlanStatePatch:
             llm_intent_type = llm_understanding["intent_type"]
             intent_type = _guard_llm_intent(llm_intent_type, rule_intent_type)
             categories = llm_understanding.get("target_categories", []) or rule_categories
-            constraints = {
-                **state.get("constraints", {}),
-                "llm_understanding": llm_understanding,
-            }
+            constraints = {**state.get("constraints", {}), "llm_understanding": llm_understanding}
             logs = [
                 "Intent Router: used LLM understanding "
                 f"intent_type={intent_type}, target_categories={','.join(categories) or 'none'}"
@@ -145,9 +135,11 @@ def intent_router_route(state: PlanState) -> str:
 
 
 def _detect_intent_type(query: str) -> str:
-    """基于规则的轻量意图识别，用于 LLM 调用前护栏和失败时兜底。"""
+    """规则意图识别，用于 LLM 调用前护栏和失败兜底。"""
 
     lowered = query.lower()
+    if _looks_like_full_plan_zh(query):
+        return "full_trip_plan"
     if any(keyword in query for keyword in CAPABILITY_KEYWORDS):
         return "capability"
     if any(keyword in query for keyword in MODEL_QA_KEYWORDS) or any(
@@ -186,11 +178,7 @@ def _detect_intent_type(query: str) -> str:
 
 
 def _is_direct_answer_query(query: str, rule_intent_type: str) -> bool:
-    """判断是否应跳过 LLM 和规划链路，直接回答。
-
-    只有能力说明、模型身份、寒暄感谢这类确定性问答才直接截断。其他被规则兜底成
-    simple_qa 的模糊句子仍交给 LLM 判断，例如“朋友聚会 4 小时”可能其实是完整规划。
-    """
+    """判断是否应该跳过 LLM 和规划链路，直接回答。"""
 
     lowered = query.lower()
     return (
@@ -207,14 +195,31 @@ def _detect_target_categories(query: str) -> list[str]:
     for category, keywords in CATEGORY_KEYWORDS:
         if any(keyword in query for keyword in keywords):
             categories.append(category)
-    return categories
+    return list(dict.fromkeys(categories))
+
+
+def _looks_like_full_plan_zh(query: str) -> bool:
+    """识别中文完整规划请求，避免 LLM 暂不可用时误判成简单问答。"""
+
+    has_time = any(
+        keyword in query
+        for keyword in ("明天", "今天", "周末", "周六", "周日", "上午", "下午", "晚上")
+    )
+    has_company = any(
+        keyword in query
+        for keyword in ("对象", "情侣", "女朋友", "男朋友", "朋友", "家人", "同事")
+    )
+    has_actions = sum(
+        1
+        for keyword in ("环球影城", "唱歌", "看电影", "吃饭", "逛街", "按摩", "打牌", "麻将")
+        if keyword in query
+    )
+    asks_plan = any(keyword in query for keyword in ("规划", "安排", "行程", "帮我"))
+    return asks_plan and has_time and (has_company or has_actions >= 2)
 
 
 def _guard_llm_intent(llm_intent_type: str, rule_intent_type: str) -> str:
-    """给大模型意图增加确定性护栏。
-
-    模型不能把明确的规划、推荐或 POI 查询降级成闲聊；规则直接命中的问答也不能被升级成规划。
-    """
+    """给大模型意图增加确定性护栏。"""
 
     if rule_intent_type == "capability":
         return rule_intent_type

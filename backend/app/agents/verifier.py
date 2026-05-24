@@ -26,9 +26,12 @@ def verifier_node(state: PlanState) -> PlanStatePatch:
 
     upstream_issues = normalize_issues(state.get("errors", []))
     constraints = state.get("constraints", {})
-    max_route_minutes = int(constraints.get("max_route_minutes", 45))
-    duration_limit = int(float(constraints.get("duration_hours", 6))) * 60
+    max_route_minutes = int(constraints.get("max_route_minutes", 90))
+    duration_limit = int(float(constraints.get("duration_hours", 10))) * 60
     budget = int(float(constraints.get("budget", 600)))
+    route_limit_is_hard = bool(constraints.get("route_limit_is_hard"))
+    duration_is_hard = bool(constraints.get("duration_is_hard"))
+    budget_is_hard = bool(constraints.get("budget_is_hard", True))
     verified: list[dict[str, Any]] = []
     current_issues: list[dict[str, Any]] = []
 
@@ -37,7 +40,15 @@ def verifier_node(state: PlanState) -> PlanStatePatch:
         current_issues.append(make_issue("candidate_empty", source="verifier"))
 
     for plan in candidate_plans:
-        plan_issues = _issues_for_plan(plan, max_route_minutes, duration_limit, budget)
+        plan_issues = _issues_for_plan(
+            plan,
+            max_route_minutes,
+            duration_limit,
+            budget,
+            route_limit_is_hard=route_limit_is_hard,
+            duration_is_hard=duration_is_hard,
+            budget_is_hard=budget_is_hard,
+        )
         blocking = [issue for issue in plan_issues if issue.get("severity") == "error"]
         if blocking:
             current_issues.extend(blocking)
@@ -78,6 +89,10 @@ def _issues_for_plan(
     max_route_minutes: int,
     duration_limit: int,
     budget: int,
+    *,
+    route_limit_is_hard: bool,
+    duration_is_hard: bool,
+    budget_is_hard: bool,
 ) -> list[dict[str, Any]]:
     """对单个候选方案执行完整可行性校验。"""
 
@@ -90,6 +105,7 @@ def _issues_for_plan(
         issues.append(
             make_issue(
                 "route_timeout",
+                severity="error" if route_limit_is_hard else "warning",
                 source="verifier",
                 target_plan_id=str(plan.get("id", "")),
                 details={
@@ -103,6 +119,7 @@ def _issues_for_plan(
         issues.append(
             make_issue(
                 "total_duration_exceeded",
+                severity="error" if duration_is_hard else "warning",
                 source="verifier",
                 target_plan_id=str(plan.get("id", "")),
                 details={
@@ -116,6 +133,7 @@ def _issues_for_plan(
         issues.append(
             make_issue(
                 "budget_exceeded",
+                severity="error" if budget_is_hard else "warning",
                 source="verifier",
                 target_plan_id=str(plan.get("id", "")),
                 details={
@@ -127,7 +145,7 @@ def _issues_for_plan(
         )
 
     issues.extend(_category_duplication_issues(plan))
-    issues.extend(_route_segment_issues(plan))
+    issues.extend(_route_segment_issues(plan, max_route_minutes, route_limit_is_hard))
     issues.extend(_item_risk_issues(plan))
     issues.extend(_plan_level_risk_issues(plan))
     return dedupe_issues(issues)
@@ -150,7 +168,11 @@ def _category_duplication_issues(plan: dict[str, Any]) -> list[dict[str, Any]]:
     ]
 
 
-def _route_segment_issues(plan: dict[str, Any]) -> list[dict[str, Any]]:
+def _route_segment_issues(
+    plan: dict[str, Any],
+    max_route_minutes: int,
+    route_limit_is_hard: bool,
+) -> list[dict[str, Any]]:
     """检查跨区移动和单段交通过长。"""
 
     issues: list[dict[str, Any]] = []
@@ -173,10 +195,11 @@ def _route_segment_issues(plan: dict[str, Any]) -> list[dict[str, Any]]:
                     },
                 )
             )
-        if duration_minutes > 45:
+        if duration_minutes > max_route_minutes:
             issues.append(
                 make_issue(
                     "route_timeout",
+                    severity="error" if route_limit_is_hard else "warning",
                     source="verifier",
                     target_plan_id=str(plan.get("id", "")),
                     details={
@@ -186,6 +209,7 @@ def _route_segment_issues(plan: dict[str, Any]) -> list[dict[str, Any]]:
                         "from": segment.get("from"),
                         "to": segment.get("to"),
                         "duration_minutes": duration_minutes,
+                        "max_route_minutes": max_route_minutes,
                     },
                 )
             )

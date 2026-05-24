@@ -78,6 +78,9 @@ export interface RouteSegment {
   title: string;
   color: string;
   polyline: Array<{ lat: number; lng: number }>;
+  distance_km?: number;
+  duration_min?: number;
+  transport_mode?: string;
 }
 
 export interface PlanAlternative {
@@ -86,9 +89,15 @@ export interface PlanAlternative {
   rating: number;
   distance_km: number;
   duration_min: number;
+  total_cost?: number;
   tags: string[];
   image_url?: string | null;
   description?: string;
+  steps?: PlanStep[];
+  route?: Plan["route"];
+  recommendation_reason?: string;
+  pros?: string[];
+  cons?: string[];
 }
 
 export interface WeatherHour {
@@ -185,4 +194,5 @@ export interface StreamRequest {
   execute: boolean;
   fail_next_restaurant_booking: boolean;
   history?: ChatHistoryItem[];
+  session_id?: string;
 }
