@@ -28,20 +28,23 @@ def poi_activity_recommend_node(state: PlanState) -> PlanStatePatch:
     per_person_budget = _per_person_budget(constraints)
     scenario = str(constraints.get("scenario", "unknown"))
     items = [
-        attach_memory_fields(recommend_poi(
-            item,
-            score_boost=_score_boost(item, duration_limit, per_person_budget, scenario),
-            reason=_reason_for_activity(item, scenario),
-            estimated_duration_minutes=_estimated_activity_duration(item),
-            reservation_required=True,
-            crowd_risk=_crowd_risk(item),
-            budget_fit=price_level_budget_fit(
-                str(item.get("price_level", "unknown")), per_person_budget
+        attach_memory_fields(
+            recommend_poi(
+                item,
+                score_boost=_score_boost(item, duration_limit, per_person_budget, scenario),
+                reason=_reason_for_activity(item, scenario),
+                estimated_duration_minutes=_estimated_activity_duration(item),
+                reservation_required=True,
+                crowd_risk=_crowd_risk(item),
+                budget_fit=price_level_budget_fit(
+                    str(item.get("price_level", "unknown")), per_person_budget
+                ),
+                scene_fit=_scene_fit(item, scenario),
+                distance_sensitive=True,
+                risk_flags=_risk_flags(item, duration_limit, per_person_budget),
             ),
-            scene_fit=_scene_fit(item, scenario),
-            distance_sensitive=True,
-            risk_flags=_risk_flags(item, duration_limit, per_person_budget),
-        ), state.get("user_profile", {}))
+            state.get("user_profile", {}),
+        )
         for item in state.get("candidate_pois", {}).get(POI_ACTIVITY, [])
     ]
     return {

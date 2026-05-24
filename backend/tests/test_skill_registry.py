@@ -55,21 +55,19 @@ def test_disabled_skill_returns_only_skip_log() -> None:
     state = create_initial_state("推荐一个 KTV")
     state["dag_plan"] = {"enabled_skills": ["poi_lifestyle_recommend"]}
     state["candidate_pois"] = {
-        POI_RESTAURANT: [
-            {
-                "id": "r1",
-                "name": "测试餐厅",
-                "category": POI_RESTAURANT,
-                "subcategory": "hotpot",
-                "lat": 39.9,
-                "lon": 116.4,
-                "address": "测试地址",
-                "rating": 4.7,
-                "price_level": "medium",
-                "open_status": "open",
-                "tags": ["聚餐"],
-            }
-        ]
+        POI_RESTAURANT: [{
+            "id": "r1",
+            "name": "测试餐厅",
+            "category": POI_RESTAURANT,
+            "subcategory": "hotpot",
+            "lat": 39.9,
+            "lon": 116.4,
+            "address": "测试地址",
+            "rating": 4.7,
+            "price_level": "medium",
+            "open_status": "open",
+            "tags": ["聚餐"],
+        }]
     }
 
     patch = poi_restaurant_recommend_node(state)

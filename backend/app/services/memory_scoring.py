@@ -10,7 +10,9 @@ def memory_score_adjustment(item: dict[str, Any], user_profile: dict[str, Any] |
     """
 
     profile = user_profile or {}
-    memory_profile = profile.get("memory_profile", {}) if isinstance(profile.get("memory_profile"), dict) else {}
+    memory_profile = (
+        profile.get("memory_profile", {}) if isinstance(profile.get("memory_profile"), dict) else {}
+    )
     favorite_categories = memory_profile.get("favorite_categories", {})
     disliked_keywords = set(str(v) for v in profile.get("disliked_keywords", []) or [])
     memory_tags = set(str(v) for v in profile.get("memory_fit_tags", []) or [])
@@ -18,7 +20,9 @@ def memory_score_adjustment(item: dict[str, Any], user_profile: dict[str, Any] |
     score = 0.0
     if isinstance(favorite_categories, dict):
         score += min(0.35, int(favorite_categories.get(str(item.get("category")), 0) or 0) * 0.05)
-    if profile.get("indoor_preference") and any(tag in item_text for tag in ("室内", "商场", "KTV", "影院", "桌游", "棋牌")):
+    if profile.get("indoor_preference") and any(
+        tag in item_text for tag in ("室内", "商场", "KTV", "影院", "桌游", "棋牌")
+    ):
         score += 0.18
     if profile.get("budget_level") == "low" and str(item.get("price_level")) == "low":
         score += 0.12
@@ -29,7 +33,9 @@ def memory_score_adjustment(item: dict[str, Any], user_profile: dict[str, Any] |
     return round(max(-1.0, min(0.8, score)), 3)
 
 
-def attach_memory_fields(item: dict[str, Any], user_profile: dict[str, Any] | None) -> dict[str, Any]:
+def attach_memory_fields(
+    item: dict[str, Any], user_profile: dict[str, Any] | None
+) -> dict[str, Any]:
     """把 memory 加权结果写回推荐项，方便 Ranker 和前端解释。"""
 
     adjustment = memory_score_adjustment(item, user_profile)
@@ -59,7 +65,9 @@ def _matched_memory_tags(item: dict[str, Any], user_profile: dict[str, Any]) -> 
     for tag in user_profile.get("memory_fit_tags", []) or []:
         if str(tag) in text:
             tags.append(str(tag))
-    if user_profile.get("indoor_preference") and any(word in text for word in ("室内", "商场", "KTV", "影院")):
+    if user_profile.get("indoor_preference") and any(
+        word in text for word in ("室内", "商场", "KTV", "影院")
+    ):
         tags.append("室内偏好")
     return list(dict.fromkeys(tags))[:5]
 

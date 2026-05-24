@@ -23,12 +23,14 @@ def build_plan_ics(plan: dict[str, Any]) -> str:
         end = _parse_time(base_date, str(item.get("end_time") or "")) or (
             start + timedelta(minutes=int(item.get("stay_minutes", 60) or 60))
         )
-        events.append(_event_block(
-            summary=f"{index}. {item.get('title') or item.get('category') or '行程'}",
-            description=item.get("address") or "",
-            start=start,
-            end=end,
-        ))
+        events.append(
+            _event_block(
+                summary=f"{index}. {item.get('title') or item.get('category') or '行程'}",
+                description=item.get("address") or "",
+                start=start,
+                end=end,
+            )
+        )
     if not events:
         start = datetime.now() + timedelta(hours=1)
         events.append(_event_block(title, "LifeRoute 方案", start, start + timedelta(hours=2)))

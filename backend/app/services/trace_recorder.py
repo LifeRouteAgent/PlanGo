@@ -179,20 +179,28 @@ def summarize_state_patch(value: Any) -> dict[str, Any]:
         return {"type": type(value).__name__}
     return {
         "keys": sorted(value.keys()),
-        "candidate_categories": list(value.get("candidate_pois", {}).keys())
-        if isinstance(value.get("candidate_pois"), dict)
-        else [],
-        "recommended_categories": list(value.get("recommended_pois", {}).keys())
-        if isinstance(value.get("recommended_pois"), dict)
-        else [],
-        "candidate_plan_count": len(value.get("candidate_plans", []))
-        if isinstance(value.get("candidate_plans"), list)
-        else 0,
-        "verified_plan_count": len(value.get("verified_plans", []))
-        if isinstance(value.get("verified_plans"), list)
-        else 0,
-        "ranked_plan_count": len(value.get("ranked_plans", []))
-        if isinstance(value.get("ranked_plans"), list)
-        else 0,
+        "candidate_categories": (
+            list(value.get("candidate_pois", {}).keys())
+            if isinstance(value.get("candidate_pois"), dict)
+            else []
+        ),
+        "recommended_categories": (
+            list(value.get("recommended_pois", {}).keys())
+            if isinstance(value.get("recommended_pois"), dict)
+            else []
+        ),
+        "candidate_plan_count": (
+            len(value.get("candidate_plans", []))
+            if isinstance(value.get("candidate_plans"), list)
+            else 0
+        ),
+        "verified_plan_count": (
+            len(value.get("verified_plans", []))
+            if isinstance(value.get("verified_plans"), list)
+            else 0
+        ),
+        "ranked_plan_count": (
+            len(value.get("ranked_plans", [])) if isinstance(value.get("ranked_plans"), list) else 0
+        ),
         "error_count": len(value.get("errors", [])) if isinstance(value.get("errors"), list) else 0,
     }

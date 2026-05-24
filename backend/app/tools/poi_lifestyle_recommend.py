@@ -34,22 +34,25 @@ def poi_lifestyle_recommend_node(state: PlanState) -> PlanStatePatch:
     for category in categories:
         for item in state.get("candidate_pois", {}).get(category, []):
             items.append(
-                attach_memory_fields(recommend_poi(
-                    item,
-                    score_boost=_score_boost(
-                        item, state["user_query"], scenario, per_person_budget
+                attach_memory_fields(
+                    recommend_poi(
+                        item,
+                        score_boost=_score_boost(
+                            item, state["user_query"], scenario, per_person_budget
+                        ),
+                        reason=_reason_for_lifestyle(item, scenario),
+                        estimated_duration_minutes=_estimated_duration(item),
+                        reservation_required=_reservation_required(item),
+                        crowd_risk=_crowd_risk(item),
+                        budget_fit=price_level_budget_fit(
+                            str(item.get("price_level", "unknown")), per_person_budget
+                        ),
+                        scene_fit=_scene_fit(item, state["user_query"], scenario),
+                        distance_sensitive=True,
+                        risk_flags=_risk_flags(item, state["user_query"], per_person_budget),
                     ),
-                    reason=_reason_for_lifestyle(item, scenario),
-                    estimated_duration_minutes=_estimated_duration(item),
-                    reservation_required=_reservation_required(item),
-                    crowd_risk=_crowd_risk(item),
-                    budget_fit=price_level_budget_fit(
-                        str(item.get("price_level", "unknown")), per_person_budget
-                    ),
-                    scene_fit=_scene_fit(item, state["user_query"], scenario),
-                    distance_sensitive=True,
-                    risk_flags=_risk_flags(item, state["user_query"], per_person_budget),
-                ), state.get("user_profile", {}))
+                    state.get("user_profile", {}),
+                )
             )
     return {
         "recommended_pois": {"lifestyle": items},

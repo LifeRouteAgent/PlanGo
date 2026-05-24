@@ -33,10 +33,13 @@ def export_plan_pdf(request: ExportPlanRequest) -> Response:
             run_id="export_pdf",
             session_id=request.session_id or "export_session",
         )
-    record_trace_event("user_action", {
-        "action": "plan_exported_pdf",
-        "plan_id": request.plan.get("id"),
-    })
+    record_trace_event(
+        "user_action",
+        {
+            "action": "plan_exported_pdf",
+            "plan_id": request.plan.get("id"),
+        },
+    )
     if request.session_id:
         MemoryService().observe_selected_plan(request.plan, user_id=request.session_id)
     pdf_bytes = _build_minimal_pdf(_plan_to_pdf_lines(request.plan))

@@ -204,7 +204,9 @@ def _llm_plan_enrichment(
                             for key, value in state.get("constraints", {}).items()
                             if key != "llm_understanding"
                         },
-                        "memory_context": ContextBuilder().build_state_context(state).get("memory_context"),
+                        "memory_context": (
+                            ContextBuilder().build_state_context(state).get("memory_context")
+                        ),
                         "plans": compact_plans,
                         "required_schema": {
                             "plans": [{
@@ -392,7 +394,11 @@ def _merge_plan_actions(plan: dict[str, Any], llm_actions: Any) -> list[dict[str
             dynamic.append({
                 "id": action_id[:40],
                 "label": label[:24],
-                "type": action_type if action_type in {"execute", "export", "calendar", "refine"} else "refine",
+                "type": (
+                    action_type
+                    if action_type in {"execute", "export", "calendar", "refine"}
+                    else "refine"
+                ),
                 "prompt": prompt[:80],
             })
 

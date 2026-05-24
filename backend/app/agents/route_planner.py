@@ -220,9 +220,7 @@ def _top_candidates_for_slot(
     """为某个 slot 取 Top N 候选，先按槽位适配，再按推荐分排序。"""
 
     matched = [
-        item
-        for item in candidates
-        if _category_matches_slot(str(item.get("category", "")), slot)
+        item for item in candidates if _category_matches_slot(str(item.get("category", "")), slot)
     ]
     return sorted(
         matched,
@@ -800,7 +798,7 @@ def _origin_from_user_profile(user_profile: dict[str, Any]) -> dict[str, Any] | 
     try:
         lat = float(raw.get("lat"))
         lon = float(raw.get("lon"))
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return None
     return {
         "id": str(raw.get("id") or "origin"),

@@ -51,7 +51,9 @@ class MemoryService:
         profile.setdefault("favorite_categories", memory_profile.get("favorite_categories", {}))
         return profile
 
-    def build_memory_context(self, *, query: str, user_id: str = "default", limit: int = 5) -> dict[str, Any]:
+    def build_memory_context(
+        self, *, query: str, user_id: str = "default", limit: int = 5
+    ) -> dict[str, Any]:
         """构建给上下文层使用的压缩记忆，只返回少量摘要。"""
 
         profile = self.read_profile()
@@ -74,7 +76,7 @@ class MemoryService:
         try:
             data = json.loads(self.profile_json.read_text(encoding="utf-8"))
             return data if isinstance(data, dict) else _empty_profile()
-        except (OSError, json.JSONDecodeError):
+        except OSError, json.JSONDecodeError:
             return _empty_profile()
 
     def observe_user_query(self, query: str, *, user_id: str = "default") -> None:
@@ -109,15 +111,17 @@ class MemoryService:
             self._append_memory("用户偏好更新：" + "；".join(changed))
             self._upsert_profile_vector(user_id, profile)
         self._append_history({"type": "user_query", "query": query})
-        self.vector_store.upsert_memory(VectorMemoryRecord(
-            user_id=user_id,
-            memory_type="user_query",
-            text=f"用户输入：{query}",
-            tags=_extract_tags(query),
-            category="query",
-            source_event="user_query",
-            metadata={"query": query, "profile_after": _safe_profile_metadata(profile)},
-        ))
+        self.vector_store.upsert_memory(
+            VectorMemoryRecord(
+                user_id=user_id,
+                memory_type="user_query",
+                text=f"用户输入：{query}",
+                tags=_extract_tags(query),
+                category="query",
+                source_event="user_query",
+                metadata={"query": query, "profile_after": _safe_profile_metadata(profile)},
+            )
+        )
 
     def observe_selected_plan(self, plan: dict[str, Any], *, user_id: str = "default") -> None:
         """用户采纳/执行方案后累计类别偏好和最近选择摘要。"""
@@ -141,18 +145,22 @@ class MemoryService:
         }
         self._write_profile(profile)
         self._append_memory(f"用户采纳方案：{plan.get('title') or plan.get('id')}")
-        self._append_history({"type": "plan_selected", "plan": profile["last_selected_plan_summary"]})
+        self._append_history(
+            {"type": "plan_selected", "plan": profile["last_selected_plan_summary"]}
+        )
         self._upsert_profile_vector(user_id, profile)
-        self.vector_store.upsert_memory(VectorMemoryRecord(
-            user_id=user_id,
-            memory_type="plan_selected",
-            text=_plan_memory_text(plan),
-            tags=_dedupe(selected_tags),
-            category="plan",
-            source_event="plan_selected",
-            weight=1.4,
-            metadata={"plan": profile["last_selected_plan_summary"]},
-        ))
+        self.vector_store.upsert_memory(
+            VectorMemoryRecord(
+                user_id=user_id,
+                memory_type="plan_selected",
+                text=_plan_memory_text(plan),
+                tags=_dedupe(selected_tags),
+                category="plan",
+                source_event="plan_selected",
+                weight=1.4,
+                metadata={"plan": profile["last_selected_plan_summary"]},
+            )
+        )
 
     def search(self, query: str, *, limit: int = 5) -> list[str]:
         """关键词检索 MEMORY.md 和最近历史，不依赖向量库。"""
@@ -166,13 +174,13 @@ class MemoryService:
         if not keywords:
             return [line for line in lines[-limit:] if line.strip()]
         matched = [
-            line
-            for line in lines
-            if any(keyword in line for keyword in keywords) and line.strip()
+            line for line in lines if any(keyword in line for keyword in keywords) and line.strip()
         ]
         return matched[-limit:]
 
-    def semantic_search(self, query: str, *, limit: int = 5, user_id: str = "default") -> list[dict[str, Any]]:
+    def semantic_search(
+        self, query: str, *, limit: int = 5, user_id: str = "default"
+    ) -> list[dict[str, Any]]:
         """语义检索长期记忆，Milvus 不可用时返回文件检索结果。"""
 
         vector_hits = self.vector_store.search_memory(query, limit=limit, user_id=user_id)
@@ -214,14 +222,16 @@ class MemoryService:
         profile = self.read_profile()
         count = 0
         for line in self.search("", limit=200):
-            if self.vector_store.upsert_memory(VectorMemoryRecord(
-                user_id=user_id,
-                memory_type="rebuild",
-                text=line,
-                tags=_extract_tags(line),
-                category="history",
-                source_event="rebuild_index",
-            )):
+            if self.vector_store.upsert_memory(
+                VectorMemoryRecord(
+                    user_id=user_id,
+                    memory_type="rebuild",
+                    text=line,
+                    tags=_extract_tags(line),
+                    category="history",
+                    source_event="rebuild_index",
+                )
+            ):
                 count += 1
         profile_ok = self._upsert_profile_vector(user_id, profile)
         return {
@@ -244,7 +254,9 @@ class MemoryService:
         return {
             "profile": profile,
             "memory_context": self.build_memory_context(query="", user_id=user_id),
-            "similar_user_preferences": self.similar_user_preference_search(profile, user_id=user_id),
+            "similar_user_preferences": self.similar_user_preference_search(
+                profile, user_id=user_id
+            ),
             "profile_cluster": _profile_cluster(profile),
             "vector_store": {
                 "enabled": self.vector_store.enabled,
@@ -368,7 +380,20 @@ def _memory_fit_tags(profile: dict[str, Any], snippets: list[str]) -> list[str]:
 
 
 def _extract_tags(text: str) -> list[str]:
-    candidates = ["室内", "室外", "低预算", "省钱", "KTV", "麻将", "唱歌", "亲子", "朋友", "情侣", "火锅", "按摩"]
+    candidates = [
+        "室内",
+        "室外",
+        "低预算",
+        "省钱",
+        "KTV",
+        "麻将",
+        "唱歌",
+        "亲子",
+        "朋友",
+        "情侣",
+        "火锅",
+        "按摩",
+    ]
     return [tag for tag in candidates if tag.lower() in text.lower()]
 
 

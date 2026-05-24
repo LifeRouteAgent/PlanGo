@@ -51,7 +51,7 @@ def _get_int(config: dict[str, Any], key: str, default: int) -> int:
 
     try:
         return int(config.get(key, default))
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return default
 
 
@@ -75,16 +75,12 @@ class Settings:
     milvus_enabled: bool = _get_bool(_CONFIG, "MILVUS_ENABLED", True)
     milvus_host: str = _get(_CONFIG, "MILVUS_HOST", "127.0.0.1")
     milvus_port: int = _get_int(_CONFIG, "MILVUS_PORT", 19530)
-    milvus_collection_memory: str = _get(
-        _CONFIG, "MILVUS_COLLECTION_MEMORY", "liferoute_memory"
-    )
+    milvus_collection_memory: str = _get(_CONFIG, "MILVUS_COLLECTION_MEMORY", "liferoute_memory")
     milvus_collection_user_profile: str = _get(
         _CONFIG, "MILVUS_COLLECTION_USER_PROFILE", "liferoute_user_profile_vectors"
     )
     embedding_provider: str = _get(_CONFIG, "EMBEDDING_PROVIDER", "local_bge")
-    embedding_model_path: str = _get(
-        _CONFIG, "EMBEDDING_MODEL_PATH", "BAAI/bge-small-zh-v1.5"
-    )
+    embedding_model_path: str = _get(_CONFIG, "EMBEDDING_MODEL_PATH", "BAAI/bge-small-zh-v1.5")
     embedding_dimension: int = _get_int(_CONFIG, "EMBEDDING_DIMENSION", 512)
 
 

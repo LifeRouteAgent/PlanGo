@@ -15,22 +15,30 @@ class ContextBuilder:
         memory_context = user_profile.get("memory_context", {})
         memory_profile = user_profile.get("memory_profile", {})
         return {
-            "preferred_city": user_profile.get("preferred_city") or memory_profile.get("preferred_city"),
-            "preferred_areas": _safe_list(user_profile.get("preferred_areas") or memory_profile.get("preferred_areas")),
+            "preferred_city": (
+                user_profile.get("preferred_city") or memory_profile.get("preferred_city")
+            ),
+            "preferred_areas": _safe_list(
+                user_profile.get("preferred_areas") or memory_profile.get("preferred_areas")
+            ),
             "indoor_preference": bool(
                 user_profile.get("indoor_preference") or memory_profile.get("indoor_preference")
             ),
             "disliked_keywords": _safe_list(
                 user_profile.get("disliked_keywords") or memory_profile.get("disliked_keywords")
             )[:8],
-            "favorite_categories": _top_mapping(memory_profile.get("favorite_categories", {}), limit=6),
+            "favorite_categories": _top_mapping(
+                memory_profile.get("favorite_categories", {}), limit=6
+            ),
             "memory_context": {
                 "profile_summary": memory_context.get("profile_summary", ""),
                 "snippets": _safe_list(memory_context.get("snippets"))[:5],
                 "memory_fit_tags": _safe_list(memory_context.get("memory_fit_tags"))[:12],
                 "source": memory_context.get("source", "none"),
             },
-            "similar_user_preferences": _safe_list(user_profile.get("similar_user_preferences"))[:3],
+            "similar_user_preferences": _safe_list(user_profile.get("similar_user_preferences"))[
+                :3
+            ],
             "profile_cluster": user_profile.get("profile_cluster", {}),
         }
 
@@ -47,8 +55,10 @@ class ContextBuilder:
             "recommended_counts": _count_mapping(state.get("recommended_pois", {})),
             "plan_count": len(state.get("ranked_plans", []) or []),
             "error_count": len(state.get("errors", []) or []),
-            "memory_context": self.build_user_profile_context(state.get("user_profile", {})).get(
-                "memory_context", {}
+            "memory_context": (
+                self.build_user_profile_context(state.get("user_profile", {})).get(
+                    "memory_context", {}
+                )
             ),
         }
 
@@ -67,10 +77,7 @@ def _top_mapping(value: Any, *, limit: int) -> dict[str, Any]:
 def _count_mapping(value: Any) -> dict[str, int]:
     if not isinstance(value, dict):
         return {}
-    return {
-        str(key): len(items) if isinstance(items, list) else 0
-        for key, items in value.items()
-    }
+    return {str(key): len(items) if isinstance(items, list) else 0 for key, items in value.items()}
 
 
 def _public_constraints(value: Any) -> dict[str, Any]:

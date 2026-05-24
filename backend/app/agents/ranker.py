@@ -144,7 +144,9 @@ def _attach_item_rank_score(item: dict[str, Any]) -> dict[str, Any]:
         "high": -0.45,
     }.get(str(item.get("crowd_risk", "medium")), -0.05)
     memory_bonus = float(item.get("memory_score_adjustment", 0) or 0)
-    recommendation_score = round(score + scene_fit * 0.5 + budget_bonus + crowd_penalty + memory_bonus, 2)
+    recommendation_score = round(
+        score + scene_fit * 0.5 + budget_bonus + crowd_penalty + memory_bonus, 2
+    )
     return {**item, "recommendation_score": recommendation_score}
 
 

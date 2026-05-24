@@ -13,9 +13,33 @@ from app.tools.poi_schema import (
 )
 
 CATEGORY_KEYWORDS: tuple[tuple[str, tuple[str, ...]], ...] = (
-    (POI_RESTAURANT, ("餐厅", "吃饭", "美食", "火锅", "咖啡", "饭店", "轻食", "下午茶", "晚餐", "午餐", "夜宵")),
-    (POI_ACTIVITY, ("活动", "体验", "展览", "票券", "博物馆", "手作", "演出", "亲子活动", "体验课")),
-    (POI_ENTERTAINMENT, ("电影", "影院", "KTV", "ktv", "娱乐", "桌游", "棋牌", "麻将", "打牌", "唱歌", "K歌", "k歌", "密室", "剧本杀")),
+    (
+        POI_RESTAURANT,
+        ("餐厅", "吃饭", "美食", "火锅", "咖啡", "饭店", "轻食", "下午茶", "晚餐", "午餐", "夜宵"),
+    ),
+    (
+        POI_ACTIVITY,
+        ("活动", "体验", "展览", "票券", "博物馆", "手作", "演出", "亲子活动", "体验课"),
+    ),
+    (
+        POI_ENTERTAINMENT,
+        (
+            "电影",
+            "影院",
+            "KTV",
+            "ktv",
+            "娱乐",
+            "桌游",
+            "棋牌",
+            "麻将",
+            "打牌",
+            "唱歌",
+            "K歌",
+            "k歌",
+            "密室",
+            "剧本杀",
+        ),
+    ),
     (POI_FITNESS, ("健身", "运动", "瑜伽", "普拉提", "羽毛球", "爬山", "攀岩", "游泳")),
     (POI_BEAUTY, ("按摩", "足疗", "美容", "养生", "洗浴", "SPA", "spa", "美甲", "护理")),
     (POI_SHOPPING, ("购物", "商场", "逛街", "生活广场", "商圈", "买东西")),
@@ -169,9 +193,11 @@ def _is_direct_answer_query(query: str, rule_intent_type: str) -> bool:
     """
 
     lowered = query.lower()
-    return rule_intent_type == "capability" or any(
-        keyword in query for keyword in MODEL_QA_KEYWORDS
-    ) or any(keyword in lowered for keyword in SIMPLE_QA_KEYWORDS)
+    return (
+        rule_intent_type == "capability"
+        or any(keyword in query for keyword in MODEL_QA_KEYWORDS)
+        or any(keyword in lowered for keyword in SIMPLE_QA_KEYWORDS)
+    )
 
 
 def _detect_target_categories(query: str) -> list[str]:

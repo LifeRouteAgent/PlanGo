@@ -344,14 +344,17 @@ def stream_revise_plan(request: RevisePlanRequest) -> StreamingResponse:
             for chunk in _chunk_text(response.response_text):
                 yield _sse_event("response_chunk", {"delta": chunk})
                 time.sleep(0.03)
-            yield _sse_event("metadata", {
-                "session_id": response.session_id,
-                "trace_id": response.trace_id,
-                "run_id": response.run_id,
-                "revision_id": response.revision_id,
-                "is_revision": response.is_revision,
-                "plan_count": len(response.ranked_plans),
-            })
+            yield _sse_event(
+                "metadata",
+                {
+                    "session_id": response.session_id,
+                    "trace_id": response.trace_id,
+                    "run_id": response.run_id,
+                    "revision_id": response.revision_id,
+                    "is_revision": response.is_revision,
+                    "plan_count": len(response.ranked_plans),
+                },
+            )
             yield _sse_event("final", response.model_dump())
             yield _sse_event("done", {"ok": True})
         except Exception as exc:  # noqa: BLE001 - 修正流需要把异常转成 SSE，避免前端一直等待。
@@ -383,10 +386,13 @@ def stream_execute_plan(request: ExecutePlanRequest) -> StreamingResponse:
         run_id = request.run_id or new_id("run")
         set_trace_context(trace_id=trace_id, run_id=run_id, session_id=session_id)
         MemoryService().observe_selected_plan(request.plan, user_id=session_id)
-        record_trace_event("user_action", {
-            "action": "plan_executed",
-            "plan_id": request.plan.get("id"),
-        })
+        record_trace_event(
+            "user_action",
+            {
+                "action": "plan_executed",
+                "plan_id": request.plan.get("id"),
+            },
+        )
         harness = ToolHarness(
             name="execution.mock.build_steps",
             timeout_seconds=3,
@@ -429,11 +435,14 @@ def stream_execute_plan(request: ExecutePlanRequest) -> StreamingResponse:
             }
             yield _sse_event("execution_step", done)
             if step.get("type") == "calendar_export":
-                yield _sse_event("calendar_ready", {
-                    "plan_id": request.plan.get("id"),
-                    "download_url": "/trip/calendar/ics",
-                    "message": "日历文件已准备好，可下载后导入系统日历。",
-                })
+                yield _sse_event(
+                    "calendar_ready",
+                    {
+                        "plan_id": request.plan.get("id"),
+                        "download_url": "/trip/calendar/ics",
+                        "message": "日历文件已准备好，可下载后导入系统日历。",
+                    },
+                )
         yield _sse_event(
             "execution_done",
             {
@@ -480,10 +489,13 @@ def export_calendar_ics(request: ExecutePlanRequest) -> Response:
     trace_id = request.trace_id or new_id("trace")
     run_id = request.run_id or new_id("run")
     set_trace_context(trace_id=trace_id, run_id=run_id, session_id=session_id)
-    record_trace_event("user_action", {
-        "action": "calendar_exported",
-        "plan_id": request.plan.get("id"),
-    })
+    record_trace_event(
+        "user_action",
+        {
+            "action": "calendar_exported",
+            "plan_id": request.plan.get("id"),
+        },
+    )
     if request.session_id:
         MemoryService().observe_selected_plan(request.plan, user_id=request.session_id)
     harness = ToolHarness(
@@ -607,7 +619,10 @@ def _apply_revision_constraints(state: dict[str, Any], user_query: str) -> None:
     state["constraints"] = constraints
     state["logs"] = [
         *state.get("logs", []),
-        f"已把修正需求转成约束：avoid_tags={constraints.get('avoid_tags', [])}, excluded_keywords={constraints.get('excluded_keywords', [])}",
+        (
+            f"已把修正需求转成约束：avoid_tags={constraints.get('avoid_tags', [])},"
+            f" excluded_keywords={constraints.get('excluded_keywords', [])}"
+        ),
     ]
 
 
@@ -751,7 +766,9 @@ def _trace_events_for_node(
                 "stage": "constraints",
                 "title": "整理条件",
                 "message": "已整理人数、时间、预算、位置和移动范围，用于后续筛选。",
-                "constraints": _public_constraints(constraints if isinstance(constraints, dict) else {}),
+                "constraints": _public_constraints(
+                    constraints if isinstance(constraints, dict) else {}
+                ),
             },
         )]
 
@@ -768,7 +785,9 @@ def _trace_events_for_node(
                 "planning_template": dag_plan.get("planning_template", ""),
                 "enabled_skills": _safe_list(dag_plan.get("enabled_skills")),
                 "collector_categories": _safe_list(dag_plan.get("collector_categories")),
-                "slot_sequence": _safe_list(dag_plan.get("slot_sequence") or dag_plan.get("required_slots")),
+                "slot_sequence": _safe_list(
+                    dag_plan.get("slot_sequence") or dag_plan.get("required_slots")
+                ),
                 "movement_policy": dag_plan.get("movement_policy", ""),
                 "candidate_strategy": dag_plan.get("candidate_strategy", ""),
             },
@@ -870,7 +889,10 @@ def _intent_trace_message(patch: dict[str, Any], current_state: dict[str, Any]) 
     if answer_mode == "simple_answer":
         return "判断这是一个简单问答，不需要进入完整行程规划。"
     if answer_mode == "category_recommend":
-        return f"判断用户只需要单类推荐，目标类别：{', '.join(str(item) for item in categories) or '待确认'}。"
+        return (
+            "判断用户只需要单类推荐，"
+            f"目标类别：{', '.join(str(item) for item in categories) or '待确认'}。"
+        )
     return f"判断为 {intent_type or '本地生活'} 需求，需要生成可执行方案。"
 
 
@@ -904,7 +926,11 @@ def _public_constraints(constraints: dict[str, Any]) -> dict[str, Any]:
         "max_route_minutes",
         "transport_preference",
     }
-    return {key: constraints.get(key) for key in allowed_keys if constraints.get(key) not in (None, "", [])}
+    return {
+        key: constraints.get(key)
+        for key in allowed_keys
+        if constraints.get(key) not in (None, "", [])
+    }
 
 
 def _public_issues(issues: Any) -> list[dict[str, Any]]:
@@ -933,11 +959,7 @@ def _count_mapping(value: Any) -> dict[str, int]:
 
     if not isinstance(value, dict):
         return {}
-    return {
-        str(key): len(items)
-        for key, items in value.items()
-        if isinstance(items, list)
-    }
+    return {str(key): len(items) for key, items in value.items() if isinstance(items, list)}
 
 
 def _safe_list(value: Any) -> list[Any]:
@@ -1319,7 +1341,7 @@ def _rough_distance(a: dict[str, Any], b: dict[str, Any]) -> float:
             abs(float(a.get("lat", 0)) - float(b.get("lat", 0))) * 111
             + abs(float(a.get("lon", 0)) - float(b.get("lon", 0))) * 85
         )
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return 99
 
 
@@ -1345,7 +1367,8 @@ def _pick_replacement(
         if any(term and term in joined for term in forbidden_terms):
             value -= 8
         if "室内" in prompt and any(
-            word in joined for word in ["室内", "商场", "影院", "电影", "ktv", "KTV", "棋牌", "桌游"]
+            word in joined
+            for word in ["室内", "商场", "影院", "电影", "ktv", "KTV", "棋牌", "桌游"]
         ):
             value += 1.5
         if "不要火锅" in prompt and "火锅" in joined:
@@ -1379,8 +1402,9 @@ def _apply_replacement(
         **replacement,
         "slot_type": old_slot_type,
         "recommendation_reason": f"根据“{prompt}”替换，保留原槽位类型并优先满足当前调整方向。",
-        "option_prompts": replacement.get("option_prompts")
-        or ["再近一点", "换成室内", "换个更省钱的"],
+        "option_prompts": (
+            replacement.get("option_prompts") or ["再近一点", "换成室内", "换个更省钱的"]
+        ),
     }
     adjusted["items"] = [
         replacement_item if str(item.get("id")) == old_id else item
@@ -1406,25 +1430,29 @@ def _recalculate_adjusted_plan(plan: dict[str, Any]) -> dict[str, Any]:
     total_duration = sum(stay_minutes) + route_minutes
     estimated_budget = _estimate_budget(items)
     timeline = _build_timeline(items, route_segments, start_time, stay_minutes)
-    issues = dedupe_issues(_issues_for_plan(
-        {
-            **adjusted,
-            "items": items,
-            "route_segments": route_segments,
-            "route_minutes": route_minutes,
-            "total_duration_minutes": total_duration,
-            "estimated_budget": estimated_budget,
-        },
-        max_route_minutes=45,
-        duration_limit=duration_limit,
-        budget=budget_limit,
-    ))
+    issues = dedupe_issues(
+        _issues_for_plan(
+            {
+                **adjusted,
+                "items": items,
+                "route_segments": route_segments,
+                "route_minutes": route_minutes,
+                "total_duration_minutes": total_duration,
+                "estimated_budget": estimated_budget,
+            },
+            max_route_minutes=45,
+            duration_limit=duration_limit,
+            budget=budget_limit,
+        )
+    )
     return {
         **adjusted,
         "items": items,
         "timeline": timeline,
         "route_segments": route_segments,
-        "total_distance_km": round(sum(float(s.get("distance_km", 0) or 0) for s in route_segments), 2),
+        "total_distance_km": round(
+            sum(float(s.get("distance_km", 0) or 0) for s in route_segments), 2
+        ),
         "route_minutes": route_minutes,
         "total_duration_minutes": total_duration,
         "estimated_budget": estimated_budget,

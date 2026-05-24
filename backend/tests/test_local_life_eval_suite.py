@@ -133,7 +133,11 @@ EVAL_CASES: list[EvalCase] = [
         budget=500,
         planning_template="family_half_day",
         required_slots=["family_activity", "restaurant", "optional_shopping"],
-        expected_enabled_skills={"poi_activity_recommend", "poi_restaurant_recommend", "poi_mix_recommend"},
+        expected_enabled_skills={
+            "poi_activity_recommend",
+            "poi_restaurant_recommend",
+            "poi_mix_recommend",
+        },
     ),
     EvalCase(
         "周六下午 2 点到 6 点，4 个朋友，想吃饭看电影，预算 600，别太远",
@@ -147,7 +151,11 @@ EVAL_CASES: list[EvalCase] = [
         budget=600,
         planning_template="friends_gathering",
         required_slots=["activity_or_entertainment", "restaurant", "optional_lifestyle"],
-        expected_enabled_skills={"poi_lifestyle_recommend", "poi_restaurant_recommend", "poi_activity_recommend"},
+        expected_enabled_skills={
+            "poi_lifestyle_recommend",
+            "poi_restaurant_recommend",
+            "poi_activity_recommend",
+        },
     ),
     EvalCase(
         "周末上午和朋友出去玩 4 个小时，想去打麻将打牌然后去唱歌，预算 200",
@@ -175,7 +183,11 @@ EVAL_CASES: list[EvalCase] = [
         budget=800,
         planning_template="couple_date",
         required_slots=["activity", "restaurant", "cafe_or_walk"],
-        expected_enabled_skills={"poi_activity_recommend", "poi_restaurant_recommend", "poi_mix_recommend"},
+        expected_enabled_skills={
+            "poi_activity_recommend",
+            "poi_restaurant_recommend",
+            "poi_mix_recommend",
+        },
     ),
     EvalCase(
         "闺蜜周日下午按摩再喝咖啡 3 小时预算 400",
@@ -189,7 +201,11 @@ EVAL_CASES: list[EvalCase] = [
         budget=400,
         planning_template="relaxation",
         required_slots=["lifestyle", "restaurant_or_tea", "optional_shopping"],
-        expected_enabled_skills={"poi_lifestyle_recommend", "poi_restaurant_recommend", "poi_mix_recommend"},
+        expected_enabled_skills={
+            "poi_lifestyle_recommend",
+            "poi_restaurant_recommend",
+            "poi_mix_recommend",
+        },
     ),
     EvalCase(
         "周末下午想运动一下再吃饭 4 小时预算 300",
@@ -203,7 +219,11 @@ EVAL_CASES: list[EvalCase] = [
         budget=300,
         planning_template="meal_plus_activity",
         required_slots=["activity", "restaurant"],
-        expected_enabled_skills={"poi_lifestyle_recommend", "poi_activity_recommend", "poi_restaurant_recommend"},
+        expected_enabled_skills={
+            "poi_lifestyle_recommend",
+            "poi_activity_recommend",
+            "poi_restaurant_recommend",
+        },
     ),
     EvalCase(
         "明天下午 3 小时朋友桌游，然后晚饭预算 500",
@@ -217,7 +237,11 @@ EVAL_CASES: list[EvalCase] = [
         budget=500,
         planning_template="friends_gathering",
         required_slots=["activity_or_entertainment", "restaurant"],
-        expected_enabled_skills={"poi_lifestyle_recommend", "poi_restaurant_recommend", "poi_activity_recommend"},
+        expected_enabled_skills={
+            "poi_lifestyle_recommend",
+            "poi_restaurant_recommend",
+            "poi_activity_recommend",
+        },
     ),
     EvalCase(
         "周六上午老人一起公园散步吃饭 4 小时预算 300",
@@ -231,7 +255,11 @@ EVAL_CASES: list[EvalCase] = [
         budget=300,
         planning_template="family_half_day",
         required_slots=["family_activity", "restaurant"],
-        expected_enabled_skills={"poi_mix_recommend", "poi_activity_recommend", "poi_restaurant_recommend"},
+        expected_enabled_skills={
+            "poi_mix_recommend",
+            "poi_activity_recommend",
+            "poi_restaurant_recommend",
+        },
     ),
     EvalCase(
         "今天太热，不要室外，下午 4 小时朋友聚会",
@@ -244,7 +272,11 @@ EVAL_CASES: list[EvalCase] = [
         duration_hours=4,
         planning_template="friends_gathering",
         required_slots=["activity_or_entertainment", "restaurant"],
-        expected_enabled_skills={"poi_lifestyle_recommend", "poi_restaurant_recommend", "poi_activity_recommend"},
+        expected_enabled_skills={
+            "poi_lifestyle_recommend",
+            "poi_restaurant_recommend",
+            "poi_activity_recommend",
+        },
     ),
     EvalCase(
         "预算只有 100，想和朋友简单吃点再逛逛",
@@ -331,7 +363,9 @@ EVAL_CASES: list[EvalCase] = [
 
 
 @pytest.mark.parametrize("case", EVAL_CASES, ids=lambda case: case.query)
-def test_eval_intent_clarifier_and_skill_selection(monkeypatch: pytest.MonkeyPatch, case: EvalCase) -> None:
+def test_eval_intent_clarifier_and_skill_selection(
+    monkeypatch: pytest.MonkeyPatch, case: EvalCase
+) -> None:
     """典型本地生活输入应稳定产出正确意图、追问状态和 Skill 选择。"""
 
     monkeypatch.setattr(
@@ -367,7 +401,12 @@ def test_eval_full_plan_returns_three_ranked_plans_without_database() -> None:
     """构造推荐候选后，Route/Verifier/Ranker 应能生成 3 个可排序方案。"""
 
     state = create_initial_state("朋友下午打麻将唱歌 4 小时预算 300")
-    state["constraints"] = {"start_time": "14:00", "duration_hours": 4, "budget": 300, "max_route_minutes": 60}
+    state["constraints"] = {
+        "start_time": "14:00",
+        "duration_hours": 4,
+        "budget": 300,
+        "max_route_minutes": 60,
+    }
     state["dag_plan"] = {
         "planning_template": "entertainment_gathering",
         "required_slots": ["entertainment", "optional_entertainment"],
@@ -427,7 +466,12 @@ def test_eval_verifier_flags_route_budget_and_duration_failures() -> None:
     patch = verifier_node(state)
     blocking_codes = {issue["code"] for issue in patch["errors"]}
 
-    assert {"route_timeout", "total_duration_exceeded", "budget_exceeded", "cross_district_move"} <= all_codes
+    assert {
+        "route_timeout",
+        "total_duration_exceeded",
+        "budget_exceeded",
+        "cross_district_move",
+    } <= all_codes
     assert {"route_timeout", "total_duration_exceeded", "budget_exceeded"} <= blocking_codes
     assert all(issue["message"] and issue["suggestion"] for issue in patch["errors"])
 

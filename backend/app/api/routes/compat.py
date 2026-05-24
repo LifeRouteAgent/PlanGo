@@ -72,7 +72,9 @@ def compat_plan_stream(payload: dict[str, Any] = Body(default_factory=dict)) -> 
 
     user_query = _extract_user_query(payload)
     if not user_query:
-        raise HTTPException(status_code=400, detail="请求体缺少用户输入，请传 user_query、query、input 或 message。")
+        raise HTTPException(
+            status_code=400, detail="请求体缺少用户输入，请传 user_query、query、input 或 message。"
+        )
 
     user_profile = payload.get("user_profile") or payload.get("profile") or {}
     if not isinstance(user_profile, dict):
@@ -81,7 +83,7 @@ def compat_plan_stream(payload: dict[str, Any] = Body(default_factory=dict)) -> 
     max_replanning_count = payload.get("max_replanning_count", payload.get("maxReplanningCount", 2))
     try:
         max_replanning_count = int(max_replanning_count)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         max_replanning_count = 2
 
     request = TripPlanRequest(

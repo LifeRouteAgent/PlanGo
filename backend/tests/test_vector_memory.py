@@ -22,11 +22,15 @@ class FakeVectorStore:
         self.memories.append(record)
         return True
 
-    def upsert_user_profile(self, user_id: str, profile_text: str, metadata: dict[str, Any]) -> bool:
+    def upsert_user_profile(
+        self, user_id: str, profile_text: str, metadata: dict[str, Any]
+    ) -> bool:
         self.profiles.append((user_id, profile_text, metadata))
         return True
 
-    def search_memory(self, query: str, *, limit: int = 5, user_id: str | None = None) -> list[dict[str, Any]]:
+    def search_memory(
+        self, query: str, *, limit: int = 5, user_id: str | None = None
+    ) -> list[dict[str, Any]]:
         return [
             {
                 "text": record.text,
@@ -84,13 +88,16 @@ def test_memory_service_writes_file_and_vector_memory() -> None:
     memory.clear(user_id="u1")
 
     memory.observe_user_query("不要室外了，今天太热，预算200", user_id="u1")
-    memory.observe_selected_plan({
-        "id": "p1",
-        "title": "室内娱乐方案",
-        "items": [{"category": "poi_entertainment", "tags": ["KTV", "室内"]}],
-        "estimated_budget": 180,
-        "total_duration_minutes": 240,
-    }, user_id="u1")
+    memory.observe_selected_plan(
+        {
+            "id": "p1",
+            "title": "室内娱乐方案",
+            "items": [{"category": "poi_entertainment", "tags": ["KTV", "室内"]}],
+            "estimated_budget": 180,
+            "total_duration_minutes": 240,
+        },
+        user_id="u1",
+    )
 
     profile = memory.read_profile()
     assert profile["indoor_preference"] is True

@@ -40,9 +40,7 @@ SKILL_REGISTRY: dict[str, SkillSpec] = {
             "用户想逛街、citywalk、公园、景点、商场或需要饭前饭后轻休闲。",
             "规划模板需要 shopping、attraction、cafe_or_walk、optional_shopping 槽位。",
         ),
-        do_not_use_when=(
-            "用户只要求餐厅、KTV、麻将、按摩等明确垂类，且不需要中转商圈。",
-        ),
+        do_not_use_when=("用户只要求餐厅、KTV、麻将、按摩等明确垂类，且不需要中转商圈。",),
         input_categories=(POI_ATTRACTION, POI_SHOPPING),
         output_key="mix",
         required_slots=("attraction", "shopping", "cafe_or_walk", "optional_shopping"),
@@ -84,7 +82,12 @@ SKILL_REGISTRY: dict[str, SkillSpec] = {
         do_not_use_when=("用户只需要景点、商场、餐厅或展览，不涉及娱乐/养生/运动。",),
         input_categories=(POI_FITNESS, POI_ENTERTAINMENT, POI_BEAUTY),
         output_key="lifestyle",
-        required_slots=("entertainment", "optional_entertainment", "lifestyle", "optional_lifestyle"),
+        required_slots=(
+            "entertainment",
+            "optional_entertainment",
+            "lifestyle",
+            "optional_lifestyle",
+        ),
         examples=("打麻将再唱歌", "按摩放松后吃饭", "朋友约羽毛球再聚餐"),
     ),
 }
@@ -142,7 +145,11 @@ def select_skills_for_plan(
         "entertainment_gathering": {"poi_lifestyle_recommend"},
         "couple_date": {"poi_activity_recommend", "poi_restaurant_recommend", "poi_mix_recommend"},
         "relaxation": {"poi_lifestyle_recommend", "poi_restaurant_recommend", "poi_mix_recommend"},
-        "shopping_leisure": {"poi_mix_recommend", "poi_restaurant_recommend", "poi_lifestyle_recommend"},
+        "shopping_leisure": {
+            "poi_mix_recommend",
+            "poi_restaurant_recommend",
+            "poi_lifestyle_recommend",
+        },
     }
     selected.update(template_defaults.get(planning_template, set()))
 

@@ -42,15 +42,21 @@ class EmbeddingService:
         try:
             model = self._get_model()
             raw_vectors = model.encode(cleaned, normalize_embeddings=True)
-            return [_resize_vector([float(value) for value in vector], self.dimension) for vector in raw_vectors]
+            return [
+                _resize_vector([float(value) for value in vector], self.dimension)
+                for vector in raw_vectors
+            ]
         except Exception as exc:  # noqa: BLE001 - embedding 是增强能力，失败必须可降级。
             self._load_error = str(exc)
-            record_trace_event("tool_call", {
-                "tool": "embedding.local_bge",
-                "success": False,
-                "error": str(exc),
-                "fallback": "hash_vector",
-            })
+            record_trace_event(
+                "tool_call",
+                {
+                    "tool": "embedding.local_bge",
+                    "success": False,
+                    "error": str(exc),
+                    "fallback": "hash_vector",
+                },
+            )
             if not self.allow_fallback:
                 raise
             return [self._fallback_vector(text) for text in cleaned]

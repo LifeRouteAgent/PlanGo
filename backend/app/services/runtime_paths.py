@@ -4,7 +4,6 @@ from pathlib import Path
 
 from app.config import BACKEND_DIR
 
-
 RUNTIME_DIR = BACKEND_DIR / "data" / "runtime"
 SESSIONS_DIR = RUNTIME_DIR / "sessions"
 TRACES_DIR = RUNTIME_DIR / "traces"

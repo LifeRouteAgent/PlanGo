@@ -30,20 +30,23 @@ def poi_restaurant_recommend_node(state: PlanState) -> PlanStatePatch:
     scenario = str(constraints.get("scenario", "unknown"))
     per_person_budget = _per_person_budget(constraints)
     items = [
-        attach_memory_fields(recommend_poi(
-            item,
-            score_boost=_score_boost(item, scenario, per_person_budget, state["user_query"]),
-            reason=_reason_for_restaurant(item, scenario),
-            estimated_duration_minutes=_estimated_meal_duration(scenario),
-            reservation_required=_reservation_required(item, state["user_query"]),
-            crowd_risk=_crowd_risk(item, state["user_query"]),
-            budget_fit=price_level_budget_fit(
-                str(item.get("price_level", "unknown")), per_person_budget
+        attach_memory_fields(
+            recommend_poi(
+                item,
+                score_boost=_score_boost(item, scenario, per_person_budget, state["user_query"]),
+                reason=_reason_for_restaurant(item, scenario),
+                estimated_duration_minutes=_estimated_meal_duration(scenario),
+                reservation_required=_reservation_required(item, state["user_query"]),
+                crowd_risk=_crowd_risk(item, state["user_query"]),
+                budget_fit=price_level_budget_fit(
+                    str(item.get("price_level", "unknown")), per_person_budget
+                ),
+                scene_fit=_scene_fit(scenario),
+                distance_sensitive=True,
+                risk_flags=_risk_flags(item, per_person_budget, state["user_query"]),
             ),
-            scene_fit=_scene_fit(scenario),
-            distance_sensitive=True,
-            risk_flags=_risk_flags(item, per_person_budget, state["user_query"]),
-        ), state.get("user_profile", {}))
+            state.get("user_profile", {}),
+        )
         for item in state.get("candidate_pois", {}).get(POI_RESTAURANT, [])
     ]
     return {

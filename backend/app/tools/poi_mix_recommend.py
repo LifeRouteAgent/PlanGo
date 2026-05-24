@@ -33,18 +33,21 @@ def _score_items(state: PlanState, categories: tuple[str, ...]) -> list[dict]:
     for category in categories:
         for item in state.get("candidate_pois", {}).get(category, []):
             result.append(
-                attach_memory_fields(recommend_poi(
-                    item,
-                    score_boost=_score_boost(item, scenario),
-                    reason=_reason_for_mix(item, scenario),
-                    estimated_duration_minutes=_estimated_duration(item),
-                    reservation_required=False,
-                    crowd_risk=_crowd_risk(item),
-                    budget_fit="good" if item.get("category") == POI_SHOPPING else "unknown",
-                    scene_fit=_scene_fit(item, scenario),
-                    distance_sensitive=True,
-                    risk_flags=_risk_flags(item),
-                ), state.get("user_profile", {}))
+                attach_memory_fields(
+                    recommend_poi(
+                        item,
+                        score_boost=_score_boost(item, scenario),
+                        reason=_reason_for_mix(item, scenario),
+                        estimated_duration_minutes=_estimated_duration(item),
+                        reservation_required=False,
+                        crowd_risk=_crowd_risk(item),
+                        budget_fit="good" if item.get("category") == POI_SHOPPING else "unknown",
+                        scene_fit=_scene_fit(item, scenario),
+                        distance_sensitive=True,
+                        risk_flags=_risk_flags(item),
+                    ),
+                    state.get("user_profile", {}),
+                )
             )
     return result
 

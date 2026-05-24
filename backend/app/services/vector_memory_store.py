@@ -68,18 +68,23 @@ class VectorMemoryStore:
                 collection_name=self.memory_collection,
                 data=[self._record_to_row(record, vector)],
             )
-            record_trace_event("tool_call", {
-                "tool": "milvus.memory.upsert",
-                "success": True,
-                "memory_id": record.memory_id,
-                "memory_type": record.memory_type,
-            })
+            record_trace_event(
+                "tool_call",
+                {
+                    "tool": "milvus.memory.upsert",
+                    "success": True,
+                    "memory_id": record.memory_id,
+                    "memory_type": record.memory_type,
+                },
+            )
             return True
         except Exception as exc:  # noqa: BLE001
             self._record_failure("milvus.memory.upsert", exc)
             return False
 
-    def upsert_user_profile(self, user_id: str, profile_text: str, metadata: dict[str, Any]) -> bool:
+    def upsert_user_profile(
+        self, user_id: str, profile_text: str, metadata: dict[str, Any]
+    ) -> bool:
         """写入用户画像向量，用于相似用户偏好检索和聚类。"""
 
         if not self.enabled:
@@ -109,7 +114,9 @@ class VectorMemoryStore:
             self._record_failure("milvus.profile.upsert", exc)
             return False
 
-    def search_memory(self, query: str, *, limit: int = 5, user_id: str | None = None) -> list[dict[str, Any]]:
+    def search_memory(
+        self, query: str, *, limit: int = 5, user_id: str | None = None
+    ) -> list[dict[str, Any]]:
         """按语义检索长期记忆。"""
 
         return self._search(self.memory_collection, query, limit=limit, user_id=user_id)
@@ -286,12 +293,15 @@ class VectorMemoryStore:
 
     def _record_failure(self, tool: str, exc: Exception) -> None:
         self._last_error = str(exc)
-        record_trace_event("tool_call", {
-            "tool": tool,
-            "success": False,
-            "error": str(exc),
-            "fallback": "file_memory",
-        })
+        record_trace_event(
+            "tool_call",
+            {
+                "tool": tool,
+                "success": False,
+                "error": str(exc),
+                "fallback": "file_memory",
+            },
+        )
 
 
 def _hit_to_dict(hit: Any) -> dict[str, Any]:
