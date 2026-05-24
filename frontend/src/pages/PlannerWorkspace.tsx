@@ -36,13 +36,14 @@ import { AmapRouteCard } from "../components/AmapRouteCard";
 import { ChatAssistantPanel } from "../components/ChatAssistantPanel";
 import { MapModal } from "../components/MapModal";
 import { type DetailPayload, PlanDetailModal } from "../components/PlanDetailModal";
-import { usePlanStream } from "../hooks/usePlanStream";
+import { type TimelineEvent, usePlanStream } from "../hooks/usePlanStream";
 import type { ChatHistoryItem, Plan, PlanAlternative, PlanStep } from "../types/agent";
 
 interface PlannerWorkspaceProps {
   city: string;
   onCityChange: (city: string) => void;
   onPlanChange: (plan: Plan | null) => void;
+  onTraceChange: (events: TimelineEvent[]) => void;
 }
 
 const nextActions = [
@@ -90,19 +91,25 @@ function detailFromAlternative(item: PlanAlternative): DetailPayload {
   };
 }
 
-export function PlannerWorkspace({ city, onPlanChange }: PlannerWorkspaceProps) {
+export function PlannerWorkspace({ city, onPlanChange, onTraceChange }: PlannerWorkspaceProps) {
   const [actionStatus, setActionStatus] = useState<string | null>(null);
   const [detail, setDetail] = useState<DetailPayload | null>(null);
   const [isMapOpen, setIsMapOpen] = useState(false);
-  const { isRunning, events, plan, replacePlan, run, cancel } = usePlanStream();
+  const { isRunning, events, plan, assistantText, replacePlan, run, cancel } = usePlanStream();
 
   useEffect(() => {
     onPlanChange(plan);
   }, [onPlanChange, plan]);
 
+  useEffect(() => {
+    onTraceChange(events);
+  }, [events, onTraceChange]);
+
   const activityStep = plan ? getStep(plan, "activity") : null;
   const travelStep = plan ? getStep(plan, "travel") : null;
   const mealStep = plan ? getStep(plan, "meal") : null;
+  const visibleSteps = useMemo(() => plan?.steps ?? [], [plan]);
+  const primaryStep = activityStep ?? mealStep ?? visibleSteps[0] ?? null;
   const tags = plan ? getTags(plan) : [];
   const visibleAlternatives = useMemo(() => plan?.alternatives?.slice(0, 3) ?? [], [plan]);
 
@@ -287,10 +294,10 @@ export function PlannerWorkspace({ city, onPlanChange }: PlannerWorkspaceProps) 
           </section>
         )}
 
-        {plan && activityStep && mealStep && (
-          <>
-            <section className="hero-grid">
-              <article className="recommendation-card" onClick={() => void handleDetails()}>
+        {plan && visibleSteps.length > 0 && primaryStep && (
+            <>
+              <section className="hero-grid">
+                <article className="recommendation-card" onClick={() => void handleDetails()}>
                 <div className="venue-visual">
                   <span className="best-match">最佳匹配</span>
                   <button
@@ -312,11 +319,11 @@ export function PlannerWorkspace({ city, onPlanChange }: PlannerWorkspaceProps) 
                   </div>
                 </div>
 
-                <div className="recommendation-content">
-                  <div className="title-line">
-                    <h2>{plan.recommendation?.title ?? `${activityStep.title} + ${mealStep.title}`}</h2>
-                    <span>
-                      <Star size={18} fill="currentColor" /> {plan.recommendation?.rating ?? 4.8}
+                  <div className="recommendation-content">
+                    <div className="title-line">
+                    <h2>{plan.recommendation?.title ?? visibleSteps.map((step) => step.title).join(" + ")}</h2>
+                      <span>
+                        <Star size={18} fill="currentColor" /> {plan.recommendation?.rating ?? 4.8}
                     </span>
                   </div>
                   <div className="tag-cloud compact">
@@ -376,24 +383,24 @@ export function PlannerWorkspace({ city, onPlanChange }: PlannerWorkspaceProps) 
                     <time>{plan.start_time}</time>
                     <span>从家出发</span>
                   </button>
-                  {[activityStep, travelStep, mealStep].filter(Boolean).map((step) => (
-                    <button
-                      className="itinerary-row"
-                      type="button"
-                      key={`${step!.title}-${step!.start_time}`}
-                      onClick={() => void handleDetails(step!)}
-                    >
-                      <span className={`step-icon is-${step!.type}`}>
-                        {step!.type === "travel" ? <Car size={16} /> : step!.type === "meal" ? <Utensils size={16} /> : <Sparkles size={16} />}
+                  {visibleSteps.map((step) => (
+                      <button
+                        className="itinerary-row"
+                        type="button"
+                        key={`${step.title}-${step.start_time}`}
+                        onClick={() => void handleDetails(step)}
+                      >
+                      <span className={`step-icon is-${step.type}`}>
+                        {step.type === "travel" ? <Car size={16} /> : step.type === "meal" ? <Utensils size={16} /> : <Sparkles size={16} />}
                       </span>
                       <time>
-                        {step!.start_time} - {step!.end_time}
+                        {step.start_time} - {step.end_time}
                       </time>
                       <div>
-                        <strong>{step!.title}</strong>
-                        <p>{step!.reason}</p>
+                        <strong>{step.title}</strong>
+                        <p>{step.reason}</p>
                         <small>
-                          <Car size={13} /> {routeTraffic(step!)}
+                          <Car size={13} /> {routeTraffic(step)}
                         </small>
                       </div>
                     </button>
@@ -504,7 +511,14 @@ export function PlannerWorkspace({ city, onPlanChange }: PlannerWorkspaceProps) 
         )}
       </div>
 
-      <ChatAssistantPanel events={events} isRunning={isRunning} plan={plan} onSend={runPlan} onCancel={cancel} />
+      <ChatAssistantPanel
+        events={events}
+        isRunning={isRunning}
+        plan={plan}
+        assistantText={assistantText}
+        onSend={runPlan}
+        onCancel={cancel}
+      />
       <PlanDetailModal detail={detail} onClose={() => setDetail(null)} onSelectAlternative={(id) => void handleAlternative(id)} />
       <MapModal plan={isMapOpen ? plan : null} onClose={() => setIsMapOpen(false)} />
     </div>

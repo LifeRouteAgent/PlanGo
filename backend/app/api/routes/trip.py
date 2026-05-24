@@ -149,6 +149,7 @@ def stream_plan_trip(request: TripPlanRequest) -> StreamingResponse:
 
         def run_graph() -> None:
             nonlocal current_state
+            set_trace_context(trace_id=trace_id, run_id=run_id, session_id=session_id)
             try:
                 for update in life_route_graph.stream(current_state, stream_mode="updates"):
                     for node_name, patch in update.items():

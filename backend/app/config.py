@@ -65,6 +65,7 @@ class Settings:
     mimo_base_url: str = _get(_CONFIG, "MIMO_BASE_URL", "https://api.xiaomimimo.com/v1")
     mimo_model: str = _get(_CONFIG, "MIMO_MODEL", "mimo-v2.5-pro")
     amap_api_key: str = _get(_CONFIG, "AMAP_API_KEY", "")
+    amap_route_enabled: bool = _get_bool(_CONFIG, "AMAP_ROUTE_ENABLED", False)
     use_database: bool = _get_bool(_CONFIG, "LIFEROUTE_USE_DATABASE", True)
     database_host: str = _get(_CONFIG, "DATABASE_HOST", "127.0.0.1")
     database_port: int = _get_int(_CONFIG, "DATABASE_PORT", 3306)

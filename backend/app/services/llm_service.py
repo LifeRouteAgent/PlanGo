@@ -7,6 +7,7 @@ from typing import Any
 import httpx
 
 from app.config import settings
+from app.services.trace_recorder import record_trace_event
 from app.services.tool_harness import ToolHarness
 
 
@@ -34,6 +35,19 @@ def call_chat_completion(
     """
 
     if not is_llm_enabled():
+        record_trace_event(
+            "llm_result",
+            {
+                "provider": "mimo",
+                "model": settings.mimo_model,
+                "success": False,
+                "source": "disabled",
+                "latency_ms": 0,
+                "attempts": 0,
+                "error": "MIMO_API_KEY is empty",
+                "content_preview": "",
+            },
+        )
         return None
 
     url = settings.mimo_base_url.rstrip("/") + "/chat/completions"
@@ -69,6 +83,19 @@ def call_chat_completion(
         fallback=lambda: None,
     )
     result = harness.run(_request)
+    record_trace_event(
+        "llm_result",
+        {
+            "provider": "mimo",
+            "model": settings.mimo_model,
+            "success": bool(result.success and result.data),
+            "source": result.source,
+            "latency_ms": result.latency_ms,
+            "attempts": result.attempts,
+            "error": result.error,
+            "content_preview": str(result.data)[:600] if result.data else "",
+        },
+    )
     return str(result.data) if result.success and result.data else None
 
 

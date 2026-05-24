@@ -4,6 +4,7 @@ from typing import Any
 
 from app.services.context_builder import ContextBuilder
 from app.services.llm_service import call_chat_completion, extract_json_object
+from app.services.trace_recorder import record_trace_event
 from app.tools.poi_schema import (
     POI_ACTIVITY,
     POI_ATTRACTION,
@@ -82,7 +83,16 @@ def build_llm_understanding(
         messages, temperature=0.0, timeout_seconds=60, max_completion_tokens=2048
     )
     parsed = extract_json_object(raw)
-    return _normalize_understanding(parsed) if parsed else None
+    normalized = _normalize_understanding(parsed) if parsed else None
+    record_trace_event(
+        "llm_understanding",
+        {
+            "success": bool(normalized),
+            "raw_preview": raw[:600] if raw else "",
+            "understanding": normalized or {},
+        },
+    )
+    return normalized
 
 
 def _build_prompt(query: str, user_profile: dict[str, Any]) -> str:

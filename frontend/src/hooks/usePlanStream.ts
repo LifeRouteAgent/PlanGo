@@ -67,6 +67,7 @@ export function usePlanStream() {
   const [intent, setIntent] = useState<UserIntent | null>(null);
   const [plan, setPlan] = useState<Plan | null>(null);
   const [trace, setTrace] = useState<string[]>([]);
+  const [assistantText, setAssistantText] = useState("");
   const abortRef = useRef<AbortController | null>(null);
 
   function append(
@@ -149,9 +150,17 @@ export function usePlanStream() {
       return;
     }
 
+    if (message.event === "response_chunk") {
+      setAssistantText((current) => `${current}${message.data.delta}`);
+      return;
+    }
+
     if (message.event === "done") {
       setPlan(message.data.plan);
       setTrace(message.data.trace);
+      if (!assistantText && message.data.plan.share_message) {
+        setAssistantText(message.data.plan.share_message);
+      }
       append("规划过程已完成", "最终方案已生成，可继续导航、保存、分享或预订。", "success", "done");
       setIsRunning(false);
       return;
@@ -171,6 +180,7 @@ export function usePlanStream() {
     setIntent(null);
     setPlan(null);
     setTrace([]);
+    setAssistantText("");
     append("请求创建", "已向 Agent 发送流式规划请求。", "info", "request");
 
     try {
@@ -195,6 +205,7 @@ export function usePlanStream() {
     intent,
     plan,
     trace,
+    assistantText,
     replacePlan: setPlan,
     run,
     cancel

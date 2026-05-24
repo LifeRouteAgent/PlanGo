@@ -142,6 +142,9 @@ function buildPlanFromLifeRouteResponse(payload: unknown): Plan {
 
   const plan: Plan = {
     id: planId,
+    trace_id: asString(response.trace_id),
+    run_id: asString(response.run_id),
+    session_id: asString(response.session_id),
     scenario: scenarioFromIntent(response.intent_type),
     start_time: firstStep?.start_time ?? "14:00",
     end_time: lastStep?.end_time ?? "18:00",

@@ -39,9 +39,14 @@ class AmapRouteService:
 
     @property
     def enabled(self) -> bool:
-        """只有配置了 key 时才尝试调用高德，避免本地测试误触发网络请求。"""
+        """只有显式开启路线修正且配置 key 时才调用高德。
 
-        return bool(self._api_key)
+        前端地图展示只需要 AMAP_API_KEY；路线修正属于外部工具调用，默认关闭可以让单元测试和 demo
+        在无网络或高德限流时保持稳定。需要真实路线时，在 config.local.json 里设置
+        AMAP_ROUTE_ENABLED=true。
+        """
+
+        return bool(self._api_key) and settings.amap_route_enabled
 
     def estimate_segment(
         self,

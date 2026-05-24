@@ -4,7 +4,7 @@ import { getUserSection } from "../api/streamClient";
 import type { AppView } from "../App";
 
 interface UserSectionPageProps {
-  section: Exclude<AppView, "planner" | "plans">;
+  section: Exclude<AppView, "planner" | "plans" | "observability">;
 }
 
 const sectionMeta = {

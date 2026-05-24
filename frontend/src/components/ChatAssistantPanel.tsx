@@ -16,6 +16,7 @@ interface ChatAssistantPanelProps {
   events: TimelineEvent[];
   isRunning: boolean;
   plan: Plan | null;
+  assistantText: string;
   onSend: (goal: string, history: ChatHistoryItem[]) => Promise<void>;
   onCancel: () => void;
 }
@@ -35,7 +36,7 @@ function toHistory(messages: ChatMessage[]): ChatHistoryItem[] {
     .map((message) => ({ role: message.role as "user" | "assistant", content: message.content }));
 }
 
-export function ChatAssistantPanel({ events, isRunning, plan, onSend, onCancel }: ChatAssistantPanelProps) {
+export function ChatAssistantPanel({ events, isRunning, plan, assistantText, onSend, onCancel }: ChatAssistantPanelProps) {
   const [input, setInput] = useState("");
   const [progressCollapsed, setProgressCollapsed] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([
@@ -74,14 +75,16 @@ export function ChatAssistantPanel({ events, isRunning, plan, onSend, onCancel }
       {
         id: crypto.randomUUID(),
         role: "assistant",
-        content: plan?.recommendation?.title
-          ? `已为你生成「${plan.recommendation.title}」。你可以查看详情、打开完整地图，或直接使用底部操作栏继续导航、预约和保存。`
-          : "规划已完成，你可以查看推荐方案、地图路线、行程安排和后续操作。",
+        content:
+          assistantText.trim() ||
+          (plan?.recommendation?.title
+            ? `已为你生成「${plan.recommendation.title}」。你可以查看详情、打开完整地图，或直接使用底部操作栏继续导航、预约和保存。`
+            : "我已经处理完这次请求。"),
         timestamp: nowTime(),
         status: "done"
       }
     ]);
-  }, [events, plan]);
+  }, [assistantText, events, plan]);
 
   async function submit() {
     const goal = input.trim();

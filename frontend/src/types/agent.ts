@@ -110,6 +110,9 @@ export interface WeatherInfo {
 
 export interface Plan {
   id?: string;
+  trace_id?: string;
+  run_id?: string;
+  session_id?: string;
   scenario: Scenario;
   start_time: string;
   end_time: string;
@@ -172,6 +175,7 @@ export type StreamEvent =
       data: { ok: boolean; errors: string[]; warnings: string[]; trace: string[] };
     }
   | { event: "execution"; data: { actions: BookingAction[]; risk_flags: string[] } }
+  | { event: "response_chunk"; data: { delta: string } }
   | { event: "done"; data: { plan: Plan; trace: string[] } }
   | { event: "error"; data: { message: string; errors?: string[] } };
 

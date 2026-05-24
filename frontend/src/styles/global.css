@@ -1429,6 +1429,55 @@ dd {
   font-weight: 900;
 }
 
+.observability-list {
+  display: grid;
+  gap: 10px;
+}
+
+.observability-row {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 0;
+  border-bottom: 1px solid #eef2fa;
+}
+
+.observability-row:last-child {
+  border-bottom: 0;
+}
+
+.observability-row svg {
+  color: #6c46ea;
+}
+
+.observability-row strong {
+  color: var(--ink);
+}
+
+.observability-row p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.observability-row > span {
+  min-width: 56px;
+  padding: 6px 10px;
+  text-align: center;
+  color: #2f63f2;
+  background: #edf4ff;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.observability-row.is-warning > span,
+.observability-row.is-error > span {
+  color: #a54500;
+  background: #fff0dc;
+}
+
 @media (prefers-reduced-motion: no-preference) {
   .nav-item,
   .quick-tile,
