@@ -262,7 +262,7 @@ export function PlannerWorkspace({ city, onPlanChange, onTraceChange }: PlannerW
 
   return (
     <div className="workspace-shell">
-      <div className={`planner-page ${plan ? "has-plan" : "is-empty"}`}>
+      <div className={`planner-page ${plan && visibleSteps.length > 0 ? "has-plan" : "is-empty"}`}>
         <section className="recommendation-heading">
           <div>
             <p className="eyebrow">为你推荐的最佳方案</p>
@@ -286,11 +286,19 @@ export function PlannerWorkspace({ city, onPlanChange, onTraceChange }: PlannerW
           </div>
         </section>
 
-        {!plan && (
+        {(!plan || visibleSteps.length === 0) && (
           <section className="empty-planner">
-            <p className="eyebrow">从右侧对话开始</p>
-            <h2>告诉我人数、时间、预算和偏好，我会实时生成路线、行程和可执行操作。</h2>
-            <p>当前只支持北京。生成前不会展示默认方案，推荐卡片、地图路线和底部操作栏都会在规划完成后出现。</p>
+            <p className="eyebrow">{plan ? "文本问答" : "从右侧对话开始"}</p>
+            <h2>
+              {plan
+                ? "本轮是问答或说明类请求，回复已显示在右侧对话框。"
+                : "告诉我人数、时间、预算和偏好，我会实时生成路线、行程和可执行操作。"}
+            </h2>
+            <p>
+              {plan
+                ? "如果你希望生成左侧行程，请输入包含时间、人数和活动偏好的本地生活规划需求。"
+                : "当前只支持北京。生成前不会展示默认方案，推荐卡片、地图路线和底部操作栏都会在规划完成后出现。"}
+            </p>
           </section>
         )}
 

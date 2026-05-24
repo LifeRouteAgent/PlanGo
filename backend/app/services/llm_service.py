@@ -72,8 +72,24 @@ def call_chat_completion(
         """实际 HTTP 调用放进闭包，交给 ToolHarness 做 timeout/retry/fallback。"""
 
         response = httpx.post(url, json=payload, headers=headers, timeout=timeout_seconds)
-        response.raise_for_status()
-        data = response.json()
+        if response.status_code >= 400:
+            content_type = response.headers.get("content-type", "")
+            body_preview = response.text[:800].replace("\n", " ")
+            raise ValueError(
+                "LLM HTTP error "
+                f"status={response.status_code} content_type={content_type} "
+                f"url={url} body_preview={body_preview!r}"
+            )
+        try:
+            data = response.json()
+        except json.JSONDecodeError as exc:
+            content_type = response.headers.get("content-type", "")
+            body_preview = response.text[:500].replace("\n", " ")
+            raise ValueError(
+                "LLM response is not JSON "
+                f"status={response.status_code} content_type={content_type} "
+                f"url={url} body_preview={body_preview!r}"
+            ) from exc
         return str(data["choices"][0]["message"]["content"])
 
     harness = ToolHarness(

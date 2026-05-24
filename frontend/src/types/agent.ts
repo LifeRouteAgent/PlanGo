@@ -176,7 +176,7 @@ export type StreamEvent =
     }
   | { event: "execution"; data: { actions: BookingAction[]; risk_flags: string[] } }
   | { event: "response_chunk"; data: { delta: string } }
-  | { event: "done"; data: { plan: Plan; trace: string[] } }
+  | { event: "done"; data: { plan: Plan | null; trace: string[] } }
   | { event: "error"; data: { message: string; errors?: string[] } };
 
 export interface StreamRequest {

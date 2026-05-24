@@ -23,7 +23,7 @@ def _load_config() -> dict[str, Any]:
     for path in (CONFIG_LOCAL_PATH, CONFIG_EXAMPLE_PATH):
         if not path.exists():
             continue
-        with path.open("r", encoding="utf-8") as file:
+        with path.open("r", encoding="utf-8-sig") as file:
             data = json.load(file)
         if isinstance(data, dict):
             return data

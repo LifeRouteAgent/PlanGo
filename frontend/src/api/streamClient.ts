@@ -235,7 +235,9 @@ function buildPlanFromLifeRouteResponse(payload: unknown): Plan {
 
 function normalizeSseEvent(raw: { event: string; data: unknown }): StreamEvent | null {
   if (raw.event === "final") {
-    const plan = buildPlanFromLifeRouteResponse(raw.data);
+    const response = asRecord(raw.data);
+    const hasPlan = asArray(response.ranked_plans).length > 0 || Object.keys(asRecord(response.selected_plan)).length > 0;
+    const plan = hasPlan ? buildPlanFromLifeRouteResponse(raw.data) : null;
     const trace = asArray<string>(asRecord(raw.data).logs);
     return { event: "done", data: { plan, trace } };
   }

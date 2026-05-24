@@ -158,10 +158,17 @@ export function usePlanStream() {
     if (message.event === "done") {
       setPlan(message.data.plan);
       setTrace(message.data.trace);
-      if (!assistantText && message.data.plan.share_message) {
+      if (!assistantText && message.data.plan?.share_message) {
         setAssistantText(message.data.plan.share_message);
       }
-      append("规划过程已完成", "最终方案已生成，可继续导航、保存、分享或预订。", "success", "done");
+      append(
+        "请求处理完成",
+        message.data.plan
+          ? "最终方案已生成，可继续导航、保存、分享或预订。"
+          : "文本回复已生成，本轮不需要展示行程方案。",
+        "success",
+        "done"
+      );
       setIsRunning(false);
       return;
     }
