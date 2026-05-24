@@ -12,16 +12,13 @@ from app.services.runtime_paths import TRACES_DIR, ensure_runtime_dirs
 T = TypeVar("T")
 
 _current_trace_id: contextvars.ContextVar[str | None] = contextvars.ContextVar(
-    "liferoute_trace_id",
-    default=None,
+    "liferoute_trace_id", default=None
 )
 _current_run_id: contextvars.ContextVar[str | None] = contextvars.ContextVar(
-    "liferoute_run_id",
-    default=None,
+    "liferoute_run_id", default=None
 )
 _current_session_id: contextvars.ContextVar[str | None] = contextvars.ContextVar(
-    "liferoute_session_id",
-    default=None,
+    "liferoute_session_id", default=None
 )
 
 
@@ -61,20 +58,14 @@ class TraceRecorder:
     也方便后续迁移到 OpenTelemetry、数据库或日志系统。
     """
 
-    def __init__(
-        self,
-        *,
-        trace_id: str,
-        run_id: str,
-        session_id: str,
-    ) -> None:
+    def __init__(self, *, trace_id: str, run_id: str, session_id: str):
         ensure_runtime_dirs()
         self.trace_id = trace_id
         self.run_id = run_id
         self.session_id = session_id
         self.path = TRACES_DIR / f"{trace_id}.jsonl"
 
-    def record(self, event_type: str, payload: dict[str, Any]) -> None:
+    def record(self, event_type: str, payload: dict[str, Any]):
         """写入一条 trace 事件。"""
 
         event = {
@@ -89,11 +80,7 @@ class TraceRecorder:
             file.write(json.dumps(event, ensure_ascii=False, default=str) + "\n")
 
     def time_node(
-        self,
-        node_name: str,
-        fn: Callable[[], T],
-        *,
-        input_summary: dict[str, Any] | None = None,
+        self, node_name: str, fn: Callable[[], T], *, input_summary: dict[str, Any] | None = None
     ) -> T:
         """记录 LangGraph 节点耗时，并把异常也写入 trace。"""
 
@@ -101,6 +88,7 @@ class TraceRecorder:
         try:
             result = fn()
             ended = time.time()
+            # todo: 这个函数调用参数和 expect 里面的基本一致, 能否优化一下呢?
             self.record(
                 "node_run",
                 {
@@ -156,8 +144,8 @@ class TraceRecorder:
             },
         }
 
-
-def record_trace_event(event_type: str, payload: dict[str, Any]) -> None:
+# todo: 如果把这个函数作为 `TraceRecorder` 的静态方法是不是更好一些?
+def record_trace_event(event_type: str, payload: dict[str, Any]):
     """供 ToolHarness 等底层服务在不知道 recorder 实例时写 trace。"""
 
     context = current_trace_context()
@@ -167,8 +155,7 @@ def record_trace_event(event_type: str, payload: dict[str, Any]) -> None:
     if not trace_id or not run_id or not session_id:
         return
     TraceRecorder(trace_id=trace_id, run_id=run_id, session_id=session_id).record(
-        event_type,
-        payload,
+        event_type, payload
     )
 
 

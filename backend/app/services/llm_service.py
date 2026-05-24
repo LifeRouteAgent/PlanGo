@@ -35,6 +35,7 @@ def call_chat_completion(
     """
 
     if not is_llm_enabled():
+        # 启动一个记录器, 但是因为没能调用大模型, 所以什么线程 id 都是不存在的, 所以啥也没记录
         record_trace_event(
             "llm_result",
             {
@@ -49,7 +50,7 @@ def call_chat_completion(
             },
         )
         return None
-
+    # todo: 这里面这些量是否也应该在调用函数之前就确定好了, 写到函数外面比较好?
     url = settings.mimo_base_url.rstrip("/") + "/chat/completions"
     payload = {
         "model": settings.mimo_model,

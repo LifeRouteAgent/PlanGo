@@ -9,6 +9,7 @@ from typing import Any, TypeVar
 
 from app.services.trace_recorder import record_trace_event
 
+# todo: 这个类放在 services 文件夹下面是否合适呢?
 logger = logging.getLogger("liferoute.tool_harness")
 
 T = TypeVar("T")
@@ -42,6 +43,7 @@ class ToolHarness:
     - 后续高德：路线/POI/地理编码 API
 
     设计目标是 Demo 稳定：每个外部或慢调用都有 timeout、retry、fallback 和日志。
+    # todo: 感觉这个类的名字不是很好, 和 harness 有啥关系呢? 让 gpt 重新取一个?
     """
 
     name: str
@@ -49,6 +51,7 @@ class ToolHarness:
     max_retries: int = 1
     retry_backoff_seconds: float = 0.2
     fallback: Callable[..., T] | None = None
+    # todo: 问一下 gpt 这个的含义
     call_log: list[dict[str, Any]] = field(default_factory=list)
 
     def run(self, fn: Callable[..., T], *args: Any, **kwargs: Any) -> HarnessResult:
@@ -56,6 +59,7 @@ class ToolHarness:
 
         last_error: str | None = None
         for attempt in range(1, self.max_retries + 2):
+            # todo: 有意思, 这里记录延迟的方式使用的是 `time.perf_counter()` 而不像 trace 里面似的, 用的是 time.time
             started = time.perf_counter()
             try:
                 data = self._run_with_timeout(fn, *args, **kwargs)
@@ -103,7 +107,8 @@ class ToolHarness:
 
     def _run_with_timeout(self, fn: Callable[..., T], *args: Any, **kwargs: Any) -> T:
         """用线程池为同步函数加超时控制。"""
-
+        # todo: 这个线程池, 每次调用都新启动一个线程池吗? 还是说底层共用的?
+        #   能否用异步的方式呢? 也不知道 Python 异步支持得如何
         with ThreadPoolExecutor(max_workers=1) as executor:
             future = executor.submit(fn, *args, **kwargs)
             try:
@@ -113,12 +118,7 @@ class ToolHarness:
                 raise TimeoutError(f"{self.name} timeout after {self.timeout_seconds}s") from exc
 
     def _record(
-        self,
-        success: bool,
-        latency_ms: int,
-        attempt: int,
-        source: str,
-        error: str | None,
+        self, success: bool, latency_ms: int, attempt: int, source: str, error: str | None,
     ) -> None:
         """记录工具调用日志，方便后续接入 Trace 或前端 Thinking 面板。"""
 
@@ -132,6 +132,7 @@ class ToolHarness:
             "timestamp": time.time(),
         }
         self.call_log.append(entry)
+        # 底层还是调用的 `TraceRecorder`
         record_trace_event("tool_call", entry)
         if success:
             logger.info("%s success source=%s latency=%sms", self.name, source, latency_ms)

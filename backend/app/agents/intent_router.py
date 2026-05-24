@@ -84,6 +84,8 @@ def intent_router_node(state: PlanState) -> PlanStatePatch:
     """
 
     query = state["user_query"].strip()
+    # todo: `_detect_intent_type` 里面本身就调用了 `_detect_target_categories`, 结果紧接着他又调用了
+    #   _detect_target_categories, 能否优化一下这里面的逻辑
     rule_intent_type = _detect_intent_type(query)
     rule_categories = _detect_target_categories(query)
 
@@ -195,6 +197,8 @@ def _is_direct_answer_query(query: str, rule_intent_type: str) -> bool:
     lowered = query.lower()
     return (
         rule_intent_type == "capability"
+        # todo: 这里的逻辑和 `_detect_intent_type` 里面的逻辑重复了啊,
+        #  直接改成 `rule_intent_type==simple_qa` 不就可以了吗?
         or any(keyword in query for keyword in MODEL_QA_KEYWORDS)
         or any(keyword in lowered for keyword in SIMPLE_QA_KEYWORDS)
     )
