@@ -230,10 +230,7 @@ class PoiRepository:
         )
 
     def fetch_by_name_keywords(
-        self,
-        keywords: Iterable[str],
-        *,
-        categories: Iterable[str] | None = None,
+        self, keywords: Iterable[str], *, categories: Iterable[str] | None = None
     ) -> dict[str, list[PoiRecord]]:
         """按用户明确点名的地点关键词检索 POI。
 

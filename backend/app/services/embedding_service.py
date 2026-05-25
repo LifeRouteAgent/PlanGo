@@ -75,6 +75,8 @@ class EmbeddingService:
     def load_error(self) -> str | None:
         return self._load_error
 
+    # todo: codex 说这里有多线程访问冲突的问题, codex 还说可以用 `@cached_property` 来替代这个函数,
+    #   但是并没说这个东西是否有线程安全的问题
     def _get_model(self) -> Any:
         """延迟加载 sentence-transformers 模型。"""
 
@@ -112,6 +114,7 @@ def _resize_vector(vector: list[float], dimension: int) -> list[float]:
     return [*vector, *([0.0] * (dimension - len(vector)))]
 
 
+# todo: 这么一个轻量的 tokenizer 是否合适? 为什么不用第三方提供的 tokenizer 呢?
 def _tokenize(text: str) -> list[str]:
     """轻量 tokenizer：中文按字，英文/数字按连续片段。"""
 

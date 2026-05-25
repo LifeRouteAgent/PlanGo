@@ -28,12 +28,7 @@ def new_id(prefix: str) -> str:
     return f"{prefix}_{uuid.uuid4().hex[:12]}"
 
 
-def set_trace_context(
-    *,
-    trace_id: str | None,
-    run_id: str | None,
-    session_id: str | None,
-) -> None:
+def set_trace_context(*, trace_id: str | None, run_id: str | None, session_id: str | None) -> None:
     """把当前请求的 trace 上下文绑定到 contextvars，供 ToolHarness 自动读取。"""
 
     _current_trace_id.set(trace_id)
@@ -146,6 +141,7 @@ class TraceRecorder:
 
 
 # todo: 如果把这个函数作为 `TraceRecorder` 的静态方法是不是更好一些?
+# todo: 为什么自己去维护日志记录等功能呢? 有没有第三方库可以用?
 def record_trace_event(event_type: str, payload: dict[str, Any]):
     """供 ToolHarness 等底层服务在不知道 recorder 实例时写 trace。"""
 

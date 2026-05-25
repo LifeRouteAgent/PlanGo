@@ -55,7 +55,8 @@ class MemoryService:
         self, *, query: str, user_id: str = "default", limit: int = 5
     ) -> dict[str, Any]:
         """构建给上下文层使用的压缩记忆，只返回少量摘要。"""
-
+        # todo: `enrich_user_profile` 这里面调用了 `self.read_profile()`, 结果这里面有调用卡一下
+        #   完全不对啊,
         profile = self.read_profile()
         vector_hits = self.vector_store.search_memory(query, limit=limit, user_id=user_id)
         snippets = [str(hit.get("text", "")) for hit in vector_hits if hit.get("text")]
@@ -79,12 +80,15 @@ class MemoryService:
         except OSError, json.JSONDecodeError:
             return _empty_profile()
 
+    # todo: 不是, 这东西就是看关键字吗? 不需要综合上下文理解吗?
+    #   换一个表述方式不就立刻不行了, 比如说 "室外不要", "要不要室外呢? 要" 这不完蛋了!
     def observe_user_query(self, query: str, *, user_id: str = "default") -> None:
         """从用户自然语言里沉淀显式偏好，并同步写入向量记忆。"""
 
         profile = self.read_profile()
         changed: list[str] = []
         disliked_keywords = profile.get("disliked_keywords", [])
+        # todo: 还需要做类型检查吗??? 也许这也算 python 一个不好的地方?
         if not isinstance(disliked_keywords, list):
             disliked_keywords = []
 
@@ -302,6 +306,7 @@ class MemoryService:
             file.write(json.dumps(payload, ensure_ascii=False, default=str) + "\n")
 
 
+# todo: 为什么这个不叫做默认画像? 而且这个应该变成一个常量
 def _empty_profile() -> dict[str, Any]:
     return {
         "preferred_city": "北京",

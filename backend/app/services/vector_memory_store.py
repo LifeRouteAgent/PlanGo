@@ -192,12 +192,7 @@ class VectorMemoryStore:
                 self._record_failure("milvus.clear", exc)
 
     def _search(
-        self,
-        collection: str,
-        query: str,
-        *,
-        limit: int,
-        user_id: str | None = None,
+        self, collection: str, query: str, *, limit: int, user_id: str | None = None
     ) -> list[dict[str, Any]]:
         client = self._connect()
         if client is None or not query.strip():
@@ -212,24 +207,20 @@ class VectorMemoryStore:
                 limit=limit,
                 filter=filter_expr,
                 output_fields=[
-                    "memory_id",
-                    "user_id",
-                    "memory_type",
-                    "text",
-                    "tags",
-                    "category",
-                    "source_event",
-                    "timestamp",
-                    "weight",
-                    "metadata",
+                    # fmt: off
+                    "memory_id", "user_id", "memory_type", "text", "tags", "category",
+                    "source_event", "timestamp", "weight", "metadata"
+                    # fmt: on
                 ],
             )
+            # todo: 只返回查询到的第一条数据吗?
             hits = raw[0] if raw else []
             return [_hit_to_dict(hit) for hit in hits]
         except Exception as exc:  # noqa: BLE001
             self._record_failure("milvus.memory.search", exc)
             return []
 
+    # todo: 这东西可以像 spring boot 的 mapper 一样, 让框架自动管理吗?
     def _connect(self) -> Any | None:
         if not self.enabled:
             return None
@@ -244,6 +235,7 @@ class VectorMemoryStore:
             self._record_failure("milvus.connect", exc)
             return None
 
+    # todo: 有意思, 这个东西就不应该存在吧, 应该提前就创建好对应的 schema 才对
     def _ensure_collection(self, collection_name: str) -> None:
         client = self._connect()
         if client is None:
@@ -265,15 +257,9 @@ class VectorMemoryStore:
         schema.add_field("weight", DataType.DOUBLE)
         schema.add_field("metadata", DataType.VARCHAR, max_length=4096)
         index_params = client.prepare_index_params()
-        index_params.add_index(
-            field_name="embedding",
-            index_type="AUTOINDEX",
-            metric_type="COSINE",
-        )
+        index_params.add_index(field_name="embedding", index_type="AUTOINDEX", metric_type="COSINE")
         client.create_collection(
-            collection_name=collection_name,
-            schema=schema,
-            index_params=index_params,
+            collection_name=collection_name, schema=schema, index_params=index_params
         )
 
     def _record_to_row(self, record: VectorMemoryRecord, vector: list[float]) -> dict[str, Any]:
@@ -305,13 +291,20 @@ class VectorMemoryStore:
 
 
 def _hit_to_dict(hit: Any) -> dict[str, Any]:
+    """
+    把 Milvus 搜索返回的单条 hit 转成项目内部统一的 Python dict
+    也就是 Milvus 返回的 hit 可能是对象，也可能是 dict，_hit_to_dict() 负责屏蔽这种返回格式差异，让上层只拿统一结构。
+    """
+    # 取出实体字段, Milvus 搜索结果里真正的业务字段在 entity 里，比如 memory_id、text、metadata。
     if isinstance(hit, dict):
         entity = hit.get("entity", {})
     else:
         entity = getattr(hit, "entity", None) or {}
+    # 取出相似度/距离分数. 不同版本/返回形式可能叫 distance 或 score，这里统一成返回 dict 里的 "score"。
     distance = getattr(hit, "distance", None)
     if distance is None and isinstance(hit, dict):
         distance = hit.get("distance") or hit.get("score")
+
     return {
         "memory_id": entity.get("memory_id"),
         "user_id": entity.get("user_id"),

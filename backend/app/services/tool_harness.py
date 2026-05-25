@@ -44,6 +44,7 @@ class ToolHarness:
 
     设计目标是 Demo 稳定：每个外部或慢调用都有 timeout、retry、fallback 和日志。
     # todo: 感觉这个类的名字不是很好, 和 harness 有啥关系呢? 让 gpt 重新取一个?
+        能否通过 python 的注解或者叫函数装饰器实现这一点呢? 这样就不用每次新建一个对象
     """
 
     name: str

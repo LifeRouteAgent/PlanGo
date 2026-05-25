@@ -133,14 +133,18 @@ def stream_plan_trip(request: TripPlanRequest) -> StreamingResponse:
     立即收到状态；当 Response Generator 产出文本后，再逐段推送 `response_chunk`。
     """
 
+    # todo: 根据写 java 的经验来说, 这个 api 或者叫 controller 部分不应该怎么复杂才对
+    #   直接调用某一个 service 就可以
     def event_stream() -> Iterator[str]:
         event_queue: queue.Queue[tuple[str, dict[str, Any]] | None] = queue.Queue()
         session_store = SessionStore()
         memory = MemoryService()
+        # 确定三种不同类型的 id
         session_id = session_store.ensure_session_id(request.session_id)
         trace_id = request.trace_id or new_id("trace")
         run_id = request.run_id or new_id("run")
         set_trace_context(trace_id=trace_id, run_id=run_id, session_id=session_id)
+        # 加载之前保存的请求信息, 也有可能为 None
         saved_session = session_store.load(session_id)
         effective_query = _effective_query_for_request(saved_session, request.user_query)
         is_clarification_followup = effective_query != request.user_query
@@ -622,9 +626,11 @@ def _latest_pending_clarification_state(
     saved_session: dict[str, Any] | None,
 ) -> dict[str, Any] | None:
     """读取上一轮是否处于等待澄清状态。"""
-
+    # todo: 这里为什么不直接换成 if saved_session is None: return None?
     if not isinstance(saved_session, dict):
         return None
+    # python 最烦人的一点就是这个, 你根本不知道 `saved_session` 里面都保存着哪些东西
+    # 特别是在文档不全的时候, 你完全不知道
     latest_state = saved_session.get("latest_state")
     latest_response = saved_session.get("latest_response")
     if not isinstance(latest_state, dict):
