@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
 from typing import Any
@@ -565,6 +565,12 @@ def _capability_text() -> str:
 def _simple_answer_text(query: str) -> str:
     """简单问答兜底文本。"""
 
+    if any(word in query for word in ("你是什么模型", "你用的什么模型", "当前模型", "什么大模型")):
+        return (
+            "我是 LifeRouteAgent 的本地生活规划助手。当前后端配置使用 DeepSeek "
+            "OpenAI-compatible 接口做意图理解和文案生成；如果 LLM 调用失败，系统会退回规则兜底，"
+            "但不会启动行程规划。"
+        )
     return (
         "我理解这是一个简单询问，不需要启动完整行程规划。\n"
         f"你的问题是：{query}\n"

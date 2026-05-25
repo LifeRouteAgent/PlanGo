@@ -37,6 +37,25 @@ function toLngLat(point: { lat: number; lng: number }) {
   return [point.lng, point.lat];
 }
 
+function escapeHtml(value: string) {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+function markerTimeText(start?: string, end?: string) {
+  if (start && end && start !== "--:--" && end !== "--:--") {
+    return `${start}-${end}`;
+  }
+  if (start && start !== "--:--") {
+    return start;
+  }
+  return "时间待确认";
+}
+
 export function AmapRouteCard({ plan, large = false, onOpenFullMap }: AmapRouteCardProps) {
   const mapRef = useRef<HTMLDivElement | null>(null);
   const mapInstanceRef = useRef<AMapAny>(null);
@@ -72,6 +91,8 @@ export function AmapRouteCard({ plan, large = false, onOpenFullMap }: AmapRouteC
           zoom: 13,
           center: firstPoint ? [firstPoint.lng, firstPoint.lat] : [116.480, 39.996],
           viewMode: "2D",
+          mapStyle: "amap://styles/normal",
+          features: ["bg", "road", "building", "point"],
           resizeEnable: true
         });
         mapInstanceRef.current = map;
@@ -100,17 +121,42 @@ export function AmapRouteCard({ plan, large = false, onOpenFullMap }: AmapRouteC
           }
         });
 
+        const infoWindow = new AMap.InfoWindow({
+          offset: new AMap.Pixel(0, -36),
+          closeWhenClickMap: true
+        });
+
         plan.route?.stops.forEach((stop) => {
           if (!stop.location) {
             return;
           }
+          const safeTitle = escapeHtml(stop.title);
+          const safeAddress = escapeHtml(stop.location.address ?? "");
+          const safeTime = escapeHtml(markerTimeText(stop.start_time, stop.end_time));
           const marker = new AMap.Marker({
             position: [stop.location.lng, stop.location.lat],
             title: stop.title,
-            label: {
-              content: `<div class="amap-marker-label">${stop.order}</div>`,
-              direction: "top"
-            }
+            zIndex: 100 + stop.order,
+            content: `
+              <div class="amap-stop-marker">
+                <div class="amap-stop-index">${stop.order}</div>
+                <div class="amap-stop-bubble">
+                  <strong>${safeTitle}</strong>
+                  <span>${safeTime}</span>
+                </div>
+              </div>
+            `,
+            offset: new AMap.Pixel(-16, -36)
+          });
+          marker.on("click", () => {
+            infoWindow.setContent(`
+              <div class="amap-info-window">
+                <strong>${safeTitle}</strong>
+                <span>${safeTime}</span>
+                <small>${safeAddress}</small>
+              </div>
+            `);
+            infoWindow.open(map, [stop.location!.lng, stop.location!.lat]);
           });
           map.add(marker);
           bounds.push([stop.location.lng, stop.location.lat]);
@@ -139,7 +185,7 @@ export function AmapRouteCard({ plan, large = false, onOpenFullMap }: AmapRouteC
       <div className="panel-title-row">
         <div>
           <h2>路线概览</h2>
-          <p>家、活动、餐厅、返回家</p>
+          <p>真实地图、地点标注与高德路线</p>
         </div>
         {onOpenFullMap && (
           <button type="button" onClick={onOpenFullMap}>

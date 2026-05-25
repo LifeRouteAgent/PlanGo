@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import math
 from itertools import product
@@ -35,12 +35,18 @@ def route_time_planner_node(state: PlanState) -> PlanStatePatch:
 
     dag_plan = state.get("dag_plan", {})
     constraints = state.get("constraints", {})
-    duration_limit = int(float(constraints.get("duration_hours", 6))) * 60
-    max_route_minutes = int(constraints.get("max_route_minutes", 45))
-    start_time = str(constraints.get("start_time", "14:00"))
+    duration_limit = int(float(constraints.get("duration_hours", 10))) * 60
+    max_route_minutes = int(constraints.get("max_route_minutes", 90))
+    duration_is_hard = bool(constraints.get("duration_is_hard"))
+    route_limit_is_hard = bool(constraints.get("route_limit_is_hard"))
+    start_time = str(constraints.get("start_time", "10:00"))
     origin_item = _origin_from_user_profile(state.get("user_profile", {}))
 
-    candidate_item_sets = _build_candidate_item_sets(all_candidates, dag_plan)
+    candidate_item_sets = _build_candidate_item_sets(
+        all_candidates,
+        dag_plan,
+        user_query=state.get("user_query", ""),
+    )
     candidate_plans: list[dict[str, Any]] = []
     routes: list[dict[str, Any]] = []
     route_service = AmapRouteService()
@@ -118,6 +124,8 @@ def route_time_planner_node(state: PlanState) -> PlanStatePatch:
         routes,
         max_route_minutes,
         duration_limit,
+        route_limit_is_hard=route_limit_is_hard,
+        duration_is_hard=duration_is_hard,
         force_keep_all=bool(
             state.get("force_route_timeout") and state.get("replanning_count", 0) <= 1
         )
@@ -137,6 +145,8 @@ def route_time_planner_node(state: PlanState) -> PlanStatePatch:
 def _build_candidate_item_sets(
     candidates: list[dict[str, Any]],
     dag_plan: dict[str, Any],
+    *,
+    user_query: str = "",
 ) -> list[list[dict[str, Any]]]:
     """生成多个候选 POI 组合。
 
@@ -150,7 +160,11 @@ def _build_candidate_item_sets(
     required_slots = list(dag_plan.get("slot_sequence") or dag_plan.get("required_slots") or [])
     desired_count = _desired_item_count(required_slots)
 
-    slot_search_sets = _build_slot_combination_sets(sorted_candidates, required_slots)
+    slot_search_sets = _build_slot_combination_sets(
+        sorted_candidates,
+        required_slots,
+        user_query=user_query,
+    )
     variants: list[list[dict[str, Any]]] = list(slot_search_sets)
     slot_based = _select_slot_based(sorted_candidates, required_slots, desired_count)
     if slot_based:
@@ -168,15 +182,25 @@ def _build_candidate_item_sets(
     if offset_score_based:
         variants.append(offset_score_based)
 
-    return sorted(
+    must_items = [item for item in sorted_candidates if item.get("must_include")]
+    if must_items:
+        variants = [_ensure_must_items(variant, must_items, desired_count) for variant in variants]
+
+    ranked_variants = sorted(
         _dedupe_item_sets(variants),
         key=lambda items: _combination_rank_key(items, required_slots),
-    )[:3]
+    )
+    preferred_variants = _filter_variants_by_explicit_preference(ranked_variants, user_query)
+    if preferred_variants:
+        ranked_variants = preferred_variants
+    return _select_diverse_item_sets(ranked_variants, limit=3)
 
 
 def _build_slot_combination_sets(
     candidates: list[dict[str, Any]],
     required_slots: list[str],
+    *,
+    user_query: str = "",
 ) -> list[list[dict[str, Any]]]:
     """把每个规划槽位映射为候选池，并枚举最多 12 个高质量组合。
 
@@ -189,7 +213,7 @@ def _build_slot_combination_sets(
 
     slot_pools: list[list[dict[str, Any] | None]] = []
     for slot in required_slots:
-        pool = _top_candidates_for_slot(candidates, slot, top_n=12)
+        pool = _top_candidates_for_slot(candidates, slot, top_n=12, user_query=user_query)
         if slot.startswith("optional"):
             slot_pools.append([None, *pool[:6]])
         elif pool:
@@ -216,12 +240,16 @@ def _top_candidates_for_slot(
     slot: str,
     *,
     top_n: int,
+    user_query: str = "",
 ) -> list[dict[str, Any]]:
     """为某个 slot 取 Top N 候选，先按槽位适配，再按推荐分排序。"""
 
     matched = [
         item for item in candidates if _category_matches_slot(str(item.get("category", "")), slot)
     ]
+    preferred = _filter_by_slot_preference(matched, slot, user_query)
+    if preferred:
+        matched = preferred
     return sorted(
         matched,
         key=lambda item: (
@@ -232,11 +260,128 @@ def _top_candidates_for_slot(
     )[:top_n]
 
 
+def _filter_by_slot_preference(
+    candidates: list[dict[str, Any]],
+    slot: str,
+    user_query: str,
+) -> list[dict[str, Any]]:
+    """按用户明确表达的垂类偏好收窄 slot 候选。
+
+    例如用户说“唱歌”，entertainment slot 应优先在 KTV/量贩式/歌厅里换地点，
+    而不是把电影城当成“娱乐”备选。只有存在足够候选时才过滤，避免候选为空。
+    """
+
+    keyword_groups: list[tuple[tuple[str, ...], tuple[str, ...]]] = [
+        (("唱歌", "KTV", "ktv", "K歌", "k歌"), ("ktv", "KTV", "唱歌", "K歌", "量贩", "歌厅")),
+        (("麻将", "打牌", "棋牌"), ("麻将", "棋牌", "桌游", "牌")),
+        (("电影", "影院", "看电影"), ("电影", "影院", "影城")),
+        (("密室",), ("密室",)),
+        (("剧本杀",), ("剧本杀",)),
+    ]
+    if "entertainment" not in slot:
+        return []
+    for query_keywords, poi_keywords in keyword_groups:
+        if not any(keyword in user_query for keyword in query_keywords):
+            continue
+        filtered = [item for item in candidates if _poi_matches_keywords(item, poi_keywords)]
+        if len(filtered) >= 2:
+            return filtered
+    return []
+
+
+def _poi_matches_keywords(item: dict[str, Any], keywords: tuple[str, ...]) -> bool:
+    """判断 POI 名称、子类、标签或推荐理由是否命中关键词。"""
+
+    fields = [
+        str(item.get("name", "")),
+        str(item.get("subcategory", "")),
+        str(item.get("reason", "")),
+        str(item.get("recommendation_reason", "")),
+        " ".join(str(tag) for tag in item.get("tags", []) if tag),
+    ]
+    text = " ".join(fields)
+    return any(keyword in text for keyword in keywords)
+
+
+def _filter_variants_by_explicit_preference(
+    variants: list[list[dict[str, Any]]],
+    user_query: str,
+) -> list[list[dict[str, Any]]]:
+    """当用户明确给出娱乐垂类时，过滤掉语义不匹配的备选组合。
+
+    例如“唱歌”不能用电影城凑数；“打麻将”不能用普通影院凑数。
+    如果过滤后没有候选，则保留原结果，避免候选池过窄导致完全无方案。
+    """
+
+    preference_keywords: tuple[str, ...] = ()
+    if any(keyword in user_query for keyword in ("唱歌", "KTV", "ktv", "K歌", "k歌")):
+        preference_keywords = ("ktv", "KTV", "唱歌", "K歌", "量贩", "歌厅")
+    elif any(keyword in user_query for keyword in ("麻将", "打牌", "棋牌")):
+        preference_keywords = ("麻将", "棋牌", "桌游", "牌")
+    elif any(keyword in user_query for keyword in ("电影", "影院", "看电影")):
+        preference_keywords = ("电影", "影院", "影城")
+    if not preference_keywords:
+        return []
+
+    filtered: list[list[dict[str, Any]]] = []
+    for variant in variants:
+        entertainment_items = [
+            item for item in variant if item.get("category") == "poi_entertainment"
+        ]
+        if entertainment_items and all(
+            _poi_matches_keywords(item, preference_keywords) for item in entertainment_items
+        ):
+            filtered.append(variant)
+    return filtered
+
+
 def _has_duplicate_items(items: list[dict[str, Any]]) -> bool:
     """同一个 POI 不能在一个方案中重复出现。"""
 
     ids = [str(item.get("id")) for item in items]
     return len(ids) != len(set(ids))
+
+
+def _ensure_must_items(
+    items: list[dict[str, Any]],
+    must_items: list[dict[str, Any]],
+    desired_count: int,
+) -> list[dict[str, Any]]:
+    """确保用户明确点名的 POI 进入每个候选方案。
+
+    must POI 的优先级高于普通高分候选；如果槽位已满，会优先替换同类普通 POI，
+    再替换最低分普通 POI，避免“环球影城”被影院/KTV高分候选挤掉。
+    """
+
+    result = list(items)
+    for must in must_items:
+        must_id = str(must.get("id"))
+        if any(str(item.get("id")) == must_id for item in result):
+            continue
+        same_category_index = next(
+            (
+                index
+                for index, item in enumerate(result)
+                if item.get("category") == must.get("category") and not item.get("must_include")
+            ),
+            None,
+        )
+        if same_category_index is not None:
+            result[same_category_index] = must
+            continue
+        if len(result) < max(desired_count, len(must_items)):
+            result.insert(0, must)
+            continue
+        replaceable_indexes = [
+            index for index, item in enumerate(result) if not item.get("must_include")
+        ]
+        if replaceable_indexes:
+            worst_index = min(
+                replaceable_indexes,
+                key=lambda index: float(result[index].get("score", 0) or 0),
+            )
+            result[worst_index] = must
+    return result
 
 
 def _combination_rank_key(
@@ -396,6 +541,7 @@ def _category_matches_slot(category: str, slot: str) -> bool:
     slot_map = {
         "restaurant": {"poi_restaurant"},
         "restaurant_or_tea": {"poi_restaurant", "poi_beauty"},
+        "attraction": {"poi_attraction"},
         "activity": {"poi_activity", "poi_attraction"},
         "family_activity": {"poi_activity", "poi_attraction", "poi_shopping"},
         "activity_or_entertainment": {"poi_activity", "poi_entertainment", "poi_attraction"},
@@ -489,12 +635,78 @@ def _dedupe_item_sets(variants: list[list[dict[str, Any]]]) -> list[list[dict[st
     return result
 
 
+def _select_diverse_item_sets(
+    ranked_variants: list[list[dict[str, Any]]],
+    *,
+    limit: int,
+) -> list[list[dict[str, Any]]]:
+    """从已排序组合中挑选地点差异更明显的方案。
+
+    “更多备选方案”的价值应该是给用户不同地点组合，而不是同一批 POI 换一个时间线。
+    因此这里会优先保留非 must POI 差异足够大的组合；用户点名的 must POI
+    允许在所有方案中重复，例如“环球影城”必须一直保留。
+    """
+
+    selected: list[list[dict[str, Any]]] = []
+    for variant in ranked_variants:
+        if not variant:
+            continue
+        if not selected:
+            selected.append(variant)
+            continue
+        if all(_non_must_jaccard_distance(variant, existing) >= 0.45 for existing in selected):
+            selected.append(variant)
+        if len(selected) >= limit:
+            return selected
+
+    # 候选池不足时再放宽阈值，但仍避免完全相同的 POI 组合。
+    for variant in ranked_variants:
+        if len(selected) >= limit:
+            break
+        key = _item_set_key(variant)
+        if key and all(_item_set_key(existing) != key for existing in selected):
+            selected.append(variant)
+    return selected[:limit]
+
+
+def _item_set_key(items: list[dict[str, Any]]) -> tuple[str, ...]:
+    """用 POI ID 集合判断两个方案是否完全相同，忽略时间顺序差异。"""
+
+    return tuple(sorted(str(item.get("id")) for item in items if item.get("id")))
+
+
+def _non_must_jaccard_distance(
+    left: list[dict[str, Any]],
+    right: list[dict[str, Any]],
+) -> float:
+    """计算两个组合在非 must POI 上的差异度。"""
+
+    left_ids = {
+        str(item.get("id"))
+        for item in left
+        if item.get("id") and not item.get("must_include")
+    }
+    right_ids = {
+        str(item.get("id"))
+        for item in right
+        if item.get("id") and not item.get("must_include")
+    }
+    if not left_ids and not right_ids:
+        return 0.0
+    union = left_ids | right_ids
+    if not union:
+        return 0.0
+    return 1 - len(left_ids & right_ids) / len(union)
+
+
 def _prefer_feasible_plans(
     plans: list[dict[str, Any]],
     routes: list[dict[str, Any]],
     max_route_minutes: int,
     duration_limit: int,
     *,
+    route_limit_is_hard: bool,
+    duration_is_hard: bool,
     force_keep_all: bool,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """优先返回路线和总时长可行的候选。
@@ -505,12 +717,14 @@ def _prefer_feasible_plans(
 
     if force_keep_all:
         return plans, routes
+    if not route_limit_is_hard and not duration_is_hard:
+        return plans, routes
 
     feasible_pairs = [
         (plan, route)
         for plan, route in zip(plans, routes)
-        if plan.get("route_minutes", 0) <= max_route_minutes
-        and plan.get("total_duration_minutes", 0) <= duration_limit
+        if (not route_limit_is_hard or plan.get("route_minutes", 0) <= max_route_minutes)
+        and (not duration_is_hard or plan.get("total_duration_minutes", 0) <= duration_limit)
     ]
     if not feasible_pairs:
         return plans[:1], routes[:1]
@@ -579,6 +793,9 @@ def _estimate_transport_segment(
         distance_km = amap_estimate.distance_km
         duration = amap_estimate.duration_minutes
         source = amap_estimate.source
+        polyline = amap_estimate.polyline
+    else:
+        polyline = []
 
     return {
         "from": previous["name"],
@@ -591,6 +808,7 @@ def _estimate_transport_segment(
         "transport_mode": mode,
         "duration_minutes": int(duration),
         "source": source,
+        "polyline": polyline,
         "fallback_distance_km": round(haversine_distance_km, 2),
     }
 
@@ -837,6 +1055,13 @@ def _movement_level(route_minutes: int) -> str:
 def _estimate_item_budget(item: dict[str, Any]) -> int:
     """按类别和价格等级估算单点预算。"""
 
+    avg_price = item.get("avg_price")
+    try:
+        if avg_price not in (None, "") and float(avg_price) > 0:
+            return round(float(avg_price))
+    except (TypeError, ValueError):
+        pass
+
     category = str(item.get("category", ""))
     price_level = str(item.get("price_level", "unknown"))
     table = {
@@ -863,3 +1088,4 @@ def _title_for_template(planning_template: str) -> str:
         "shopping_leisure": "购物休闲本地生活方案",
     }
     return titles.get(planning_template, "周末本地生活轻量方案")
+

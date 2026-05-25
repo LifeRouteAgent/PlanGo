@@ -108,6 +108,96 @@ CATEGORY_QUERY_MAP: dict[str, str] = {
     ),
 }
 
+NAME_QUERY_MAP: dict[str, str] = {
+    POI_RESTAURANT: (
+        """
+        SELECT source_id AS id, name, 'poi_restaurant' AS category,
+               COALESCE(NULLIF(biz_category, ''), 'restaurant') AS subcategory,
+               lat, lng AS lon, address, rating, cost AS price,
+               open_time, cuisine_tag AS tag_text
+        FROM poi_restaurant
+        WHERE name <> '' AND lat IS NOT NULL AND lng IS NOT NULL AND name LIKE %(keyword)s
+        ORDER BY COALESCE(rating, 0) DESC, COALESCE(favorite_num, 0) DESC
+        LIMIT %(limit)s
+    """
+    ),
+    POI_ACTIVITY: (
+        """
+        SELECT CAST(activity_id AS CHAR) AS id, title AS name, 'poi_activity' AS category,
+               'activity' AS subcategory, location, address_desc AS address,
+               NULL AS rating, price, available_date AS open_time,
+               subtitle AS tag_text
+        FROM poi_activities
+        WHERE title <> '' AND location IS NOT NULL AND location <> '' AND title LIKE %(keyword)s
+        ORDER BY updated_time DESC
+        LIMIT %(limit)s
+    """
+    ),
+    POI_ATTRACTION: (
+        """
+        SELECT CAST(id AS CHAR) AS id, name, 'poi_attraction' AS category,
+               'attraction' AS subcategory, lat, lng AS lon, address,
+               score AS rating, NULL AS price, JSON_EXTRACT(open_time, '$') AS open_time,
+               tags AS tag_text
+        FROM poi_attractions
+        WHERE name <> '' AND lat IS NOT NULL AND lng IS NOT NULL AND name LIKE %(keyword)s
+        ORDER BY
+            CASE WHEN name = %(exact_keyword)s THEN 0 ELSE 1 END,
+            COALESCE(score, 0) DESC,
+            COALESCE(hot_score, 0) DESC
+        LIMIT %(limit)s
+    """
+    ),
+    POI_SHOPPING: (
+        """
+        SELECT source_id AS id, name, 'poi_shopping' AS category,
+               COALESCE(NULLIF(categories, ''), 'shopping') AS subcategory,
+               lat, lng AS lon, address, comment_score AS rating, NULL AS price,
+               open_time_tips AS open_time, tags AS tag_text
+        FROM poi_shoppings
+        WHERE name <> '' AND lat IS NOT NULL AND lng IS NOT NULL AND name LIKE %(keyword)s
+        ORDER BY COALESCE(comment_score, 0) DESC, COALESCE(comment_num, 0) DESC
+        LIMIT %(limit)s
+    """
+    ),
+    POI_FITNESS: (
+        """
+        SELECT source_id AS id, name, 'poi_fitness' AS category,
+               COALESCE(NULLIF(fitness_tag, ''), 'fitness') AS subcategory,
+               lat, lng AS lon, address, rating, cost AS price,
+               open_time, fitness_tag AS tag_text
+        FROM poi_fitness
+        WHERE name <> '' AND lat IS NOT NULL AND lng IS NOT NULL AND name LIKE %(keyword)s
+        ORDER BY COALESCE(rating, 0) DESC, COALESCE(favorite_num, 0) DESC
+        LIMIT %(limit)s
+    """
+    ),
+    POI_ENTERTAINMENT: (
+        """
+        SELECT source_id AS id, name, 'poi_entertainment' AS category,
+               COALESCE(NULLIF(entertainment_type, ''), 'entertainment') AS subcategory,
+               lat, lng AS lon, address, rating, cost AS price,
+               open_time, entertainment_type AS tag_text
+        FROM poi_entertainment
+        WHERE name <> '' AND lat IS NOT NULL AND lng IS NOT NULL AND name LIKE %(keyword)s
+        ORDER BY COALESCE(rating, 0) DESC, COALESCE(groupbuy_num, 0) DESC
+        LIMIT %(limit)s
+    """
+    ),
+    POI_BEAUTY: (
+        """
+        SELECT source_id AS id, name, 'poi_beauty' AS category,
+               COALESCE(NULLIF(beauty_type, ''), 'beauty') AS subcategory,
+               lat, lng AS lon, address, rating, cost AS price,
+               open_time, COALESCE(service_tag, beauty_type) AS tag_text
+        FROM poi_beauty
+        WHERE name <> '' AND lat IS NOT NULL AND lng IS NOT NULL AND name LIKE %(keyword)s
+        ORDER BY COALESCE(rating, 0) DESC, COALESCE(favorite_num, 0) DESC
+        LIMIT %(limit)s
+    """
+    ),
+}
+
 
 class PoiRepository:
     """本地 MySQL POI 仓储。
@@ -139,6 +229,33 @@ class PoiRepository:
             else {category: [] for category in category_list}
         )
 
+    def fetch_by_name_keywords(
+        self,
+        keywords: Iterable[str],
+        *,
+        categories: Iterable[str] | None = None,
+    ) -> dict[str, list[PoiRecord]]:
+        """按用户明确点名的地点关键词检索 POI。
+
+        只使用固定 SQL 模板和参数化 LIKE，避免把用户输入拼进表名或 SQL 结构。
+        返回仍按统一 POI category 分组，方便 Collector 合并到候选池。
+        """
+
+        keyword_list = [keyword.strip() for keyword in keywords if keyword and keyword.strip()]
+        category_list = list(categories or NAME_QUERY_MAP.keys())
+        harness = ToolHarness(
+            name="database.poi.fetch_by_name_keywords",
+            timeout_seconds=8,
+            max_retries=1,
+            fallback=lambda: {category: [] for category in category_list},
+        )
+        result = harness.run(self._fetch_by_name_keywords_once, keyword_list, category_list)
+        return (
+            result.data
+            if result.success and isinstance(result.data, dict)
+            else {category: [] for category in category_list}
+        )
+
     def _fetch_by_categories_once(self, categories: Iterable[str]) -> dict[str, list[PoiRecord]]:
         """执行一次真实数据库读取，外层由 ToolHarness 负责 timeout/retry/fallback。"""
 
@@ -154,6 +271,41 @@ class PoiRepository:
                     result[category] = [
                         self._row_to_poi(category, row) for row in cursor.fetchall()
                     ]
+        return result
+
+    def _fetch_by_name_keywords_once(
+        self,
+        keywords: Iterable[str],
+        categories: Iterable[str],
+    ) -> dict[str, list[PoiRecord]]:
+        """执行一次按名称关键词检索。"""
+
+        result: dict[str, list[PoiRecord]] = {category: [] for category in categories}
+        if not keywords:
+            return result
+        seen_ids: set[tuple[str, str]] = set()
+        with self._connect() as connection:
+            with connection.cursor() as cursor:
+                for category in categories:
+                    sql = NAME_QUERY_MAP.get(category)
+                    if not sql:
+                        continue
+                    for keyword in keywords:
+                        cursor.execute(
+                            sql,
+                            {
+                                "keyword": f"%{keyword}%",
+                                "exact_keyword": keyword,
+                                "limit": max(3, min(self._limit_per_category, 10)),
+                            },
+                        )
+                        for row in cursor.fetchall():
+                            poi = self._row_to_poi(category, row)
+                            key = (category, poi["id"])
+                            if key in seen_ids:
+                                continue
+                            seen_ids.add(key)
+                            result.setdefault(category, []).append(poi)
         return result
 
     def table_counts(self) -> dict[str, int]:
@@ -214,7 +366,7 @@ class PoiRepository:
         """把不同表的查询结果规范化成统一 POI 字段。"""
 
         lat, lon = self._parse_coordinates(row)
-        return make_poi_record(
+        record = make_poi_record(
             id=str(row.get("id") or ""),
             name=str(row.get("name") or ""),
             category=category,
@@ -227,6 +379,10 @@ class PoiRepository:
             open_status=self._open_status(row.get("open_time")),
             tags=self._split_tags(row.get("tag_text")),
         )
+        price = self._safe_float(row.get("price"), default=0)
+        if price > 0:
+            record["avg_price"] = price
+        return record
 
     def _parse_coordinates(self, row: dict[str, Any]) -> tuple[float, float]:
         """兼容活动表的 `location=lat,lng` 和高德 POI 表的 lat/lon 字段。"""

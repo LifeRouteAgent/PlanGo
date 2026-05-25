@@ -41,6 +41,18 @@ const validationLabel: Record<string, string> = {
   timeline_overlap: "时间线存在重叠"
 };
 
+const SESSION_STORAGE_KEY = "liferoute_agent_session_id";
+
+function getOrCreateSessionId() {
+  const cached = window.localStorage.getItem(SESSION_STORAGE_KEY);
+  if (cached) {
+    return cached;
+  }
+  const sessionId = crypto.randomUUID();
+  window.localStorage.setItem(SESSION_STORAGE_KEY, sessionId);
+  return sessionId;
+}
+
 function translateList(values: string[], dictionary: Record<string, string>) {
   return values.map((value) => dictionary[value] ?? value).join(" / ");
 }
@@ -191,7 +203,11 @@ export function usePlanStream() {
     append("请求创建", "已向 Agent 发送流式规划请求。", "info", "request");
 
     try {
-      await streamPlan(request, handleStreamEvent, abortRef.current.signal);
+      await streamPlan(
+        { ...request, session_id: request.session_id ?? getOrCreateSessionId() },
+        handleStreamEvent,
+        abortRef.current.signal
+      );
     } catch (error) {
       if ((error as Error).name !== "AbortError") {
         append("网络错误", (error as Error).message, "error", "error");

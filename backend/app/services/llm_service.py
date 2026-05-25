@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
 import re
@@ -12,13 +12,14 @@ from app.services.tool_harness import ToolHarness
 
 
 def is_llm_enabled() -> bool:
-    """判断当前环境是否具备调用大模型的条件。
+    """判断当前是否具备调用大模型的条件。
 
-    项目默认使用 MiMo 的 OpenAI-compatible 接口。测试环境或本地未配置 key 时，
-    上层 Agent 会自动走规则兜底，不影响 DAG 的可执行性。
+    项目当前默认使用 DeepSeek 的 OpenAI-compatible Chat Completions 接口。
+    如果本地没有配置 DEEPSEEK_API_KEY，上层 Agent 会自动走规则/模板兜底，
+    保证 DAG 和 Demo 不因为模型不可用而中断。
     """
 
-    return bool(settings.mimo_api_key)
+    return bool(_active_api_key())
 
 
 def call_chat_completion(
@@ -30,47 +31,53 @@ def call_chat_completion(
 ) -> str | None:
     """调用 OpenAI-compatible chat completions 接口并返回文本内容。
 
-    这里刻意只封装项目需要的最小能力，避免引入额外 SDK。任何网络错误、
-    服务端错误或响应格式异常都会返回 None，由上层使用确定性规则兜底。
+    DeepSeek 官方 OpenAI 示例使用 base_url=https://api.deepseek.com；对应 HTTP
+    地址就是 https://api.deepseek.com/chat/completions，不需要额外拼 /v1。
+    这里继续用轻量 httpx 封装，便于 ToolHarness 统一记录 timeout、retry、fallback。
     """
 
-    if not is_llm_enabled():
-        # 启动一个记录器, 但是因为没能调用大模型, 所以什么线程 id 都是不存在的, 所以啥也没记录
+    provider = _active_provider()
+    model = _active_model()
+    api_key = _active_api_key()
+    base_url = _active_base_url()
+
+    if not api_key:
         record_trace_event(
             "llm_result",
             {
-                "provider": "mimo",
-                "model": settings.mimo_model,
+                "provider": provider,
+                "model": model,
                 "success": False,
                 "source": "disabled",
                 "latency_ms": 0,
                 "attempts": 0,
-                "error": "MIMO_API_KEY is empty",
+                "error": f"{provider.upper()} API key is empty",
                 "content_preview": "",
             },
         )
         return None
-    # todo: 这里面这些量是否也应该在调用函数之前就确定好了, 写到函数外面比较好?
-    url = settings.mimo_base_url.rstrip("/") + "/chat/completions"
-    payload = {
-        "model": settings.mimo_model,
+
+    url = _chat_completions_url(base_url)
+    payload: dict[str, Any] = {
+        "model": model,
         "messages": messages,
-        # 按 MiMo 官方 OpenAI-compatible 示例传参，避免兼容层因为缺少生成参数而拒绝请求。
-        "max_completion_tokens": max_completion_tokens,
         "temperature": temperature,
         "top_p": 0.95,
         "stream": False,
-        "stop": None,
-        "frequency_penalty": 0,
-        "presence_penalty": 0,
+        "max_tokens": max_completion_tokens,
     }
+    if provider == "deepseek":
+        payload["reasoning_effort"] = settings.deepseek_reasoning_effort
+        if settings.deepseek_thinking_enabled:
+            payload["thinking"] = {"type": "enabled"}
+
     headers = {
-        "Authorization": f"Bearer {settings.mimo_api_key}",
+        "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
     }
 
     def _request() -> str | None:
-        """实际 HTTP 调用放进闭包，交给 ToolHarness 做 timeout/retry/fallback。"""
+        """实际 HTTP 调用交给 ToolHarness 处理 timeout/retry/fallback。"""
 
         response = httpx.post(url, json=payload, headers=headers, timeout=timeout_seconds)
         if response.status_code >= 400:
@@ -94,7 +101,7 @@ def call_chat_completion(
         return str(data["choices"][0]["message"]["content"])
 
     harness = ToolHarness(
-        name="llm.mimo.chat_completion",
+        name=f"llm.{provider}.chat_completion",
         timeout_seconds=timeout_seconds + 2,
         max_retries=1,
         fallback=lambda: None,
@@ -103,8 +110,8 @@ def call_chat_completion(
     record_trace_event(
         "llm_result",
         {
-            "provider": "mimo",
-            "model": settings.mimo_model,
+            "provider": provider,
+            "model": model,
             "success": bool(result.success and result.data),
             "source": result.source,
             "latency_ms": result.latency_ms,
@@ -116,11 +123,54 @@ def call_chat_completion(
     return str(result.data) if result.success and result.data else None
 
 
+def _active_provider() -> str:
+    """返回当前启用的大模型供应商名称。"""
+
+    return (settings.llm_provider or "deepseek").strip().lower()
+
+
+def _active_api_key() -> str:
+    """读取当前供应商的 key；DeepSeek 优先，MiMo 字段仅作为旧配置兼容。"""
+
+    if _active_provider() == "deepseek":
+        return settings.deepseek_api_key or settings.mimo_api_key
+    return settings.mimo_api_key
+
+
+def _active_base_url() -> str:
+    """读取当前供应商的 base_url。"""
+
+    if _active_provider() == "deepseek":
+        return settings.deepseek_base_url or "https://api.deepseek.com"
+    return settings.mimo_base_url
+
+
+def _active_model() -> str:
+    """读取当前供应商的模型名。"""
+
+    if _active_provider() == "deepseek":
+        return settings.deepseek_model or "deepseek-v4-pro"
+    return settings.mimo_model
+
+
+def _chat_completions_url(base_url: str) -> str:
+    """把 OpenAI-compatible base_url 转为 chat completions URL。
+
+    如果用户已经把完整 /chat/completions 写进配置，就直接使用；否则只拼接一次。
+    DeepSeek 官方 base_url 不带 /v1，因此这里不会强行补 /v1。
+    """
+
+    cleaned = base_url.rstrip("/")
+    if cleaned.endswith("/chat/completions"):
+        return cleaned
+    return f"{cleaned}/chat/completions"
+
+
 def extract_json_object(text: str | None) -> dict[str, Any] | None:
     """从模型输出中提取 JSON 对象。
 
     即使 prompt 要求只输出 JSON，模型仍可能包一层 Markdown 代码块。
-    因此这里做一次宽松解析：先直接解析，失败后再截取第一个 `{...}`。
+    因此这里先直接解析，失败后再截取第一个 `{...}` 做宽松解析。
     """
 
     if not text:

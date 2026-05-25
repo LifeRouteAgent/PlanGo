@@ -86,8 +86,8 @@ def _attach_plan_score(plan: dict[str, Any], state: PlanState) -> dict[str, Any]
     required_slots = list(
         plan.get("required_slots") or state.get("dag_plan", {}).get("required_slots") or []
     )
-    max_route_minutes = int(constraints.get("max_route_minutes", 45))
-    duration_limit = int(float(constraints.get("duration_hours", 6))) * 60
+    max_route_minutes = int(constraints.get("max_route_minutes", 90))
+    duration_limit = int(float(constraints.get("duration_hours", 10))) * 60
     budget = int(float(constraints.get("budget", 600)))
     issues = normalize_issues(plan.get("issues", []))
 

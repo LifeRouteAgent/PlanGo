@@ -24,7 +24,7 @@ def poi_activity_recommend_node(state: PlanState) -> PlanStatePatch:
         return skipped_skill_patch("poi_activity_recommend")
 
     constraints = state.get("constraints", {})
-    duration_limit = int(float(constraints.get("duration_hours", 6))) * 60
+    duration_limit = int(float(constraints.get("duration_hours", 10))) * 60
     per_person_budget = _per_person_budget(constraints)
     scenario = str(constraints.get("scenario", "unknown"))
     items = [

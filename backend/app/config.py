@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
 from dataclasses import dataclass
@@ -37,6 +37,16 @@ def _get(config: dict[str, Any], key: str, default: Any) -> Any:
     return default if value == "" or value is None else value
 
 
+def _get_alias(config: dict[str, Any], keys: tuple[str, ...], default: Any) -> Any:
+    """按顺序读取多个兼容配置名，便于从 MiMo 平滑迁移到 DeepSeek。"""
+
+    for key in keys:
+        value = config.get(key)
+        if value != "" and value is not None:
+            return value
+    return default
+
+
 def _get_bool(config: dict[str, Any], key: str, default: bool) -> bool:
     """读取 bool 配置，兼容 JSON bool 和字符串形式。"""
 
@@ -61,9 +71,16 @@ _CONFIG = _load_config()
 @dataclass(frozen=True)
 class Settings:
     app_env: str = _get(_CONFIG, "APP_ENV", "local")
-    mimo_api_key: str = _get(_CONFIG, "MIMO_API_KEY", "")
-    mimo_base_url: str = _get(_CONFIG, "MIMO_BASE_URL", "https://api.xiaomimimo.com/v1")
-    mimo_model: str = _get(_CONFIG, "MIMO_MODEL", "mimo-v2.5-pro")
+    llm_provider: str = _get(_CONFIG, "LLM_PROVIDER", "deepseek")
+    deepseek_api_key: str = _get(_CONFIG, "DEEPSEEK_API_KEY", "")
+    deepseek_base_url: str = _get(_CONFIG, "DEEPSEEK_BASE_URL", "https://api.deepseek.com")
+    deepseek_model: str = _get(_CONFIG, "DEEPSEEK_MODEL", "deepseek-v4-pro")
+    deepseek_reasoning_effort: str = _get(_CONFIG, "DEEPSEEK_REASONING_EFFORT", "high")
+    deepseek_thinking_enabled: bool = _get_bool(_CONFIG, "DEEPSEEK_THINKING_ENABLED", True)
+    # 兼容历史字段：旧代码和旧本地配置仍可读取 mimo_*，但默认值已经切换到 DeepSeek。
+    mimo_api_key: str = _get_alias(_CONFIG, ("MIMO_API_KEY", "DEEPSEEK_API_KEY"), "")
+    mimo_base_url: str = _get_alias(_CONFIG, ("MIMO_BASE_URL", "DEEPSEEK_BASE_URL"), "https://api.deepseek.com")
+    mimo_model: str = _get_alias(_CONFIG, ("MIMO_MODEL", "DEEPSEEK_MODEL"), "deepseek-v4-pro")
     amap_api_key: str = _get(_CONFIG, "AMAP_API_KEY", "")
     amap_route_enabled: bool = _get_bool(_CONFIG, "AMAP_ROUTE_ENABLED", False)
     use_database: bool = _get_bool(_CONFIG, "LIFEROUTE_USE_DATABASE", True)

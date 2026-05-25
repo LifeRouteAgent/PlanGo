@@ -825,6 +825,80 @@ dd {
   font-weight: 900;
 }
 
+.amap-stop-marker {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 154px;
+  pointer-events: auto;
+}
+
+.amap-stop-index {
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  color: #ffffff;
+  background: linear-gradient(135deg, #ff6b35, #ff9f43);
+  border: 2px solid #ffffff;
+  border-radius: 999px;
+  box-shadow: 0 10px 24px rgba(240, 91, 44, 0.34);
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.amap-stop-bubble {
+  display: grid;
+  max-width: 180px;
+  padding: 7px 10px;
+  color: #1f2a44;
+  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid rgba(231, 237, 248, 0.96);
+  border-radius: 12px;
+  box-shadow: 0 12px 28px rgba(40, 58, 92, 0.18);
+  line-height: 1.25;
+}
+
+.amap-stop-bubble strong {
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.amap-stop-bubble span {
+  color: #69758f;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.amap-info-window {
+  display: grid;
+  gap: 5px;
+  max-width: 240px;
+  padding: 3px;
+  color: #1f2a44;
+}
+
+.amap-info-window strong {
+  font-size: 14px;
+  font-weight: 900;
+}
+
+.amap-info-window span {
+  color: #ff6b35;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.amap-info-window small {
+  color: #69758f;
+  line-height: 1.45;
+}
+
 .details-grid {
   display: grid;
   grid-template-columns: minmax(0, 1.25fr) minmax(280px, 0.75fr) minmax(320px, 0.82fr);

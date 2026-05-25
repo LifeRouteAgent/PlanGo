@@ -36,14 +36,33 @@ def poi_collector_node(state: PlanState) -> PlanStatePatch:
     use_database = settings.use_database
     if use_database:
         try:
-            candidate_pois = _filter_candidates(
-                PoiRepository().fetch_by_categories(categories),
-                state.get("constraints", {}),
+            repository = PoiRepository()
+            constraints = state.get("constraints", {})
+            candidate_pois = repository.fetch_by_categories(categories)
+            preference_pois = repository.fetch_by_name_keywords(
+                constraints.get("preference_keywords", []),
+                categories=categories or None,
             )
+            must_pois = repository.fetch_by_name_keywords(
+                constraints.get("must_keywords", []),
+                categories=categories or None,
+            )
+            must_pois = _select_best_must_pois(must_pois)
+            candidate_pois = _merge_preference_pois(candidate_pois, preference_pois)
+            candidate_pois = _merge_must_pois(candidate_pois, must_pois, constraints)
+            candidate_pois = _filter_candidates(candidate_pois, constraints)
             total = sum(len(items) for items in candidate_pois.values())
+            must_total = sum(len(items) for items in must_pois.values())
             return {
                 "candidate_pois": candidate_pois,
-                "logs": [f"POI Collector: loaded {total} candidates from MySQL database"],
+                "constraints": {
+                    **constraints,
+                    "must_pois": _flatten_must_pois(must_pois),
+                },
+                "logs": [
+                    f"POI Collector: loaded {total} candidates from MySQL database"
+                    + (f", must_pois={must_total}" if constraints.get("must_keywords") else "")
+                ],
             }
         except MySQLError as exc:
             # 数据库不可用时降级到 mock，保证 DAG 本身仍可运行；错误细节进入 logs 供排查。
@@ -132,3 +151,122 @@ def _filter_candidates(
             kept.append(item)
         filtered[category] = kept
     return filtered
+
+
+def _merge_must_pois(
+    candidate_pois: dict[str, list[dict]],
+    must_pois: dict[str, list[dict]],
+    constraints: dict,
+) -> dict[str, list[dict]]:
+    """把明确点名地点合并到普通候选池，并打上 must_include 标记。"""
+
+    must_keywords = [str(keyword) for keyword in constraints.get("must_keywords", [])]
+    merged = {category: list(items) for category, items in candidate_pois.items()}
+    for category, items in must_pois.items():
+        bucket = merged.setdefault(category, [])
+        seen = {str(item.get("id")) for item in bucket}
+        for item in items:
+            item = {
+                **item,
+                "must_include": True,
+                "must_keyword": _matched_keyword(item, must_keywords),
+            }
+            if str(item.get("id")) in seen:
+                for index, existing in enumerate(bucket):
+                    if str(existing.get("id")) == str(item.get("id")):
+                        bucket[index] = {**existing, **item}
+                        break
+                continue
+            bucket.insert(0, item)
+            seen.add(str(item.get("id")))
+    return merged
+
+
+def _merge_preference_pois(
+    candidate_pois: dict[str, list[dict]],
+    preference_pois: dict[str, list[dict]],
+) -> dict[str, list[dict]]:
+    """把偏好关键词召回的 POI 合并到候选池。
+
+    这类 POI 只表示“更符合用户想唱歌/打牌/看电影的方向”，不代表必须进入方案。
+    插入到候选池前部可以让 Skill 和 Route Planner 更容易生成不同地点备选。
+    """
+
+    merged = {category: list(items) for category, items in candidate_pois.items()}
+    for category, items in preference_pois.items():
+        bucket = merged.setdefault(category, [])
+        seen = {str(item.get("id")) for item in bucket}
+        insert_at = 0
+        for item in items:
+            item_id = str(item.get("id"))
+            if item_id in seen:
+                continue
+            bucket.insert(insert_at, {**item, "preference_keyword_match": True})
+            insert_at += 1
+            seen.add(item_id)
+    return merged
+
+
+def _select_best_must_pois(must_pois: dict[str, list[dict]]) -> dict[str, list[dict]]:
+    """从名称召回结果里选真正要强制包含的地点。
+
+    名称 LIKE 可能召回“环球影城店”这类周边商家。v1 先按 exact/高评分做保守选择：
+    如果存在“北京环球度假区”，只强制它一个；否则每个类别最多保留一个最相关结果。
+    """
+
+    all_items = [item for items in must_pois.values() for item in items]
+    universal = [
+        item
+        for item in all_items
+        if str(item.get("name")) in {"北京环球度假区", "北京环球城市大道"}
+    ]
+    if universal:
+        best = sorted(
+            universal,
+            key=lambda item: (
+                0 if str(item.get("name")) == "北京环球度假区" else 1,
+                -float(item.get("rating", 0) or 0),
+            ),
+        )[0]
+        return {str(best.get("category")): [best]}
+
+    selected: dict[str, list[dict]] = {}
+    for category, items in must_pois.items():
+        if not items:
+            selected[category] = []
+            continue
+        selected[category] = [
+            sorted(
+                items,
+                key=lambda item: (
+                    0 if "店" not in str(item.get("name", "")) else 1,
+                    -float(item.get("rating", 0) or 0),
+                ),
+            )[0]
+        ]
+    return selected
+
+
+def _flatten_must_pois(must_pois: dict[str, list[dict]]) -> list[dict]:
+    """压缩 must POI 信息，写回 constraints 供 Trace、Response 和调试面板展示。"""
+
+    result: list[dict] = []
+    for items in must_pois.values():
+        for item in items:
+            result.append({
+                "id": item.get("id"),
+                "name": item.get("name"),
+                "category": item.get("category"),
+                "lat": item.get("lat"),
+                "lon": item.get("lon"),
+                "address": item.get("address"),
+            })
+    return result
+
+
+def _matched_keyword(item: dict, keywords: list[str]) -> str:
+    text = str(item.get("name", ""))
+    for keyword in keywords:
+        if keyword in text or text in keyword:
+            return keyword
+    return keywords[0] if keywords else ""

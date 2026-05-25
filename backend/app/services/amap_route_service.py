@@ -19,6 +19,7 @@ class AmapRouteEstimate:
     distance_km: float
     duration_minutes: int
     source: str
+    polyline: list[dict[str, float]]
 
 
 class AmapRouteService:
@@ -110,6 +111,7 @@ class AmapRouteService:
             first.get("distance"),
             first.get("duration"),
             source="amap_walking",
+            polyline=_polyline_from_path(first),
         )
 
     def _driving(self, origin: str, destination: str) -> AmapRouteEstimate | None:
@@ -132,6 +134,7 @@ class AmapRouteService:
             first.get("distance"),
             first.get("duration"),
             source="amap_driving",
+            polyline=_polyline_from_path(first),
         )
 
     def _get(self, url: str, params: dict[str, str]) -> dict[str, Any]:
@@ -160,6 +163,7 @@ def _estimate_from_meters_seconds(
     duration: Any,
     *,
     source: str,
+    polyline: list[dict[str, float]] | None = None,
 ) -> AmapRouteEstimate | None:
     """把高德米/秒字段归一成公里/分钟。"""
 
@@ -171,7 +175,25 @@ def _estimate_from_meters_seconds(
         distance_km=round(distance_meters / 1000, 2),
         duration_minutes=max(1, round(duration_seconds / 60)),
         source=source,
+        polyline=polyline or [],
     )
+
+
+def _polyline_from_path(path: dict[str, Any]) -> list[dict[str, float]]:
+    """从高德路径 steps 中提取前端可绘制的经纬度折线。"""
+
+    points: list[dict[str, float]] = []
+    for step in path.get("steps", []) or []:
+        polyline = str(step.get("polyline") or "")
+        for raw_point in polyline.split(";"):
+            if "," not in raw_point:
+                continue
+            lon_text, lat_text = raw_point.split(",", 1)
+            try:
+                points.append({"lng": float(lon_text), "lat": float(lat_text)})
+            except ValueError:
+                continue
+    return points
 
 
 def _fallback_estimate(distance_km: float) -> AmapRouteEstimate:
@@ -189,4 +211,5 @@ def _fallback_estimate(distance_km: float) -> AmapRouteEstimate:
         distance_km=round(distance_km, 2),
         duration_minutes=int(duration),
         source="fallback_haversine",
+        polyline=[],
     )
