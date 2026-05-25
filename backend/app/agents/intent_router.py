@@ -43,7 +43,21 @@ CATEGORY_KEYWORDS: tuple[tuple[str, tuple[str, ...]], ...] = (
     (POI_FITNESS, ("健身", "运动", "瑜伽", "普拉提", "羽毛球", "爬山", "攀岩", "游泳")),
     (POI_BEAUTY, ("按摩", "足疗", "美容", "养生", "洗浴", "SPA", "spa", "美甲", "护理")),
     (POI_SHOPPING, ("购物", "商场", "逛街", "生活广场", "商圈", "买东西")),
-    (POI_ATTRACTION, ("环球影城", "景点", "乐园", "主题公园", "公园", "citywalk", "城市漫步", "观光", "散步", "露营")),
+    (
+        POI_ATTRACTION,
+        (
+            "环球影城",
+            "景点",
+            "乐园",
+            "主题公园",
+            "公园",
+            "citywalk",
+            "城市漫步",
+            "观光",
+            "散步",
+            "露营",
+        ),
+    ),
 )
 
 CAPABILITY_KEYWORDS = (
@@ -210,8 +224,7 @@ def _looks_like_full_plan_zh(query: str) -> bool:
         for keyword in ("明天", "今天", "周末", "周六", "周日", "上午", "下午", "晚上")
     )
     has_company = any(
-        keyword in query
-        for keyword in ("对象", "情侣", "女朋友", "男朋友", "朋友", "家人", "同事")
+        keyword in query for keyword in ("对象", "情侣", "女朋友", "男朋友", "朋友", "家人", "同事")
     )
     has_actions = sum(
         1

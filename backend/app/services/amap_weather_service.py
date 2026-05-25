@@ -39,7 +39,11 @@ class AmapWeatherService:
             return result.data
         result = harness.run(self._current_weather_live, city_code)
         self.call_log.extend(harness.call_log)
-        return result.data if result.success and isinstance(result.data, dict) else _fallback_weather("error")
+        return (
+            result.data
+            if result.success and isinstance(result.data, dict)
+            else _fallback_weather("error")
+        )
 
     def _current_weather_live(self, city_code: str) -> dict[str, Any]:
         response = httpx.get(
@@ -68,9 +72,11 @@ class AmapWeatherService:
             "temperature_c": temperature,
             "condition": weather,
             "icon": _weather_icon(weather),
-            "summary": f"{live.get('province', '')}{live.get('city', '')}实时天气：{weather}"
-            + (f"，{temperature}°C" if temperature is not None else "")
-            + (f"，{wind}风，湿度 {humidity}%" if humidity else ""),
+            "summary": (
+                f"{live.get('province', '')}{live.get('city', '')}实时天气：{weather}"
+                + (f"，{temperature}°C" if temperature is not None else "")
+                + (f"，{wind}风，湿度 {humidity}%" if humidity else "")
+            ),
             "source": "amap",
             "hourly": [],
             "message": str(live.get("reporttime") or ""),
@@ -87,7 +93,7 @@ def _city_code(city: str | None) -> str:
 def _safe_int(value: Any) -> int | None:
     try:
         return int(float(value))
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return None
 
 

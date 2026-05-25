@@ -21,7 +21,9 @@ def constraint_builder_node(state: PlanState) -> PlanStatePatch:
     constraints = dict(state.get("constraints", {}))
     user_profile = state.get("user_profile", {})
 
-    constraints.setdefault("city", user_profile.get("city") or user_profile.get("preferred_city") or "北京")
+    constraints.setdefault(
+        "city", user_profile.get("city") or user_profile.get("preferred_city") or "北京"
+    )
 
     start_time, start_source = _resolve_start_time(query, llm_understanding)
     constraints.setdefault("start_time", start_time)
@@ -63,14 +65,16 @@ def constraint_builder_node(state: PlanState) -> PlanStatePatch:
     }
 
 
-def _resolve_start_time(
-    query: str, llm_understanding: dict[str, Any] | None
-) -> tuple[str, str]:
+def _resolve_start_time(query: str, llm_understanding: dict[str, Any] | None) -> tuple[str, str]:
     parsed = _parse_start_time(query)
     if parsed:
         return parsed, "user"
     # 只有用户明确给出钟点/上午/下午/晚上时，才接受 LLM 抽出的 start_time。
-    if _has_explicit_start_time(query) and llm_understanding and llm_understanding.get("start_time"):
+    if (
+        _has_explicit_start_time(query)
+        and llm_understanding
+        and llm_understanding.get("start_time")
+    ):
         return str(llm_understanding["start_time"]), "llm"
     if any(word in query for word in ("上午", "早上")):
         return "10:00", "user"
@@ -91,9 +95,7 @@ def _resolve_duration_hours(
     return 10, "default"
 
 
-def _resolve_budget(
-    query: str, llm_understanding: dict[str, Any] | None
-) -> tuple[int, str]:
+def _resolve_budget(query: str, llm_understanding: dict[str, Any] | None) -> tuple[int, str]:
     parsed = _parse_budget(query)
     if parsed is not None:
         return parsed, "user"
@@ -151,7 +153,9 @@ def _parse_route_minutes(text: str) -> int | None:
     match = re.search(r"(\d+)\s*(?:分钟|分)[^\n，。]{0,8}(?:路程|交通|移动|车程|通勤|路上)", text)
     if match:
         return int(match.group(1))
-    if "半小时" in text and any(word in text for word in ("路程", "交通", "移动", "车程", "通勤", "路上")):
+    if "半小时" in text and any(
+        word in text for word in ("路程", "交通", "移动", "车程", "通勤", "路上")
+    ):
         return 30
     return None
 

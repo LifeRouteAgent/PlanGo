@@ -144,6 +144,7 @@ class TraceRecorder:
             },
         }
 
+
 # todo: 如果把这个函数作为 `TraceRecorder` 的静态方法是不是更好一些?
 def record_trace_event(event_type: str, payload: dict[str, Any]):
     """供 ToolHarness 等底层服务在不知道 recorder 实例时写 trace。"""

@@ -682,14 +682,10 @@ def _non_must_jaccard_distance(
     """计算两个组合在非 must POI 上的差异度。"""
 
     left_ids = {
-        str(item.get("id"))
-        for item in left
-        if item.get("id") and not item.get("must_include")
+        str(item.get("id")) for item in left if item.get("id") and not item.get("must_include")
     }
     right_ids = {
-        str(item.get("id"))
-        for item in right
-        if item.get("id") and not item.get("must_include")
+        str(item.get("id")) for item in right if item.get("id") and not item.get("must_include")
     }
     if not left_ids and not right_ids:
         return 0.0
@@ -1059,7 +1055,7 @@ def _estimate_item_budget(item: dict[str, Any]) -> int:
     try:
         if avg_price not in (None, "") and float(avg_price) > 0:
             return round(float(avg_price))
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         pass
 
     category = str(item.get("category", ""))
@@ -1088,4 +1084,3 @@ def _title_for_template(planning_template: str) -> str:
         "shopping_leisure": "购物休闲本地生活方案",
     }
     return titles.get(planning_template, "周末本地生活轻量方案")
-

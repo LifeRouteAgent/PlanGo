@@ -118,7 +118,12 @@ class ToolHarness:
                 raise TimeoutError(f"{self.name} timeout after {self.timeout_seconds}s") from exc
 
     def _record(
-        self, success: bool, latency_ms: int, attempt: int, source: str, error: str | None,
+        self,
+        success: bool,
+        latency_ms: int,
+        attempt: int,
+        source: str,
+        error: str | None,
     ) -> None:
         """记录工具调用日志，方便后续接入 Trace 或前端 Thinking 面板。"""
 

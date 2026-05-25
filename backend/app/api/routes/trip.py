@@ -101,7 +101,10 @@ def plan_trip(request: TripPlanRequest) -> TripPlanResponse:
     if effective_query != request.user_query:
         initial_state["logs"] = [
             *initial_state.get("logs", []),
-            f"Clarification Follow-up: merged user reply into previous pending request: {request.user_query}",
+            (
+                "Clarification Follow-up: merged user reply into previous pending request:"
+                f" {request.user_query}"
+            ),
         ]
     recorder = TraceRecorder(trace_id=trace_id, run_id=run_id, session_id=session_id)
     result = recorder.time_node(
@@ -160,7 +163,10 @@ def stream_plan_trip(request: TripPlanRequest) -> StreamingResponse:
         if is_clarification_followup:
             current_state["logs"] = [
                 *current_state.get("logs", []),
-                f"Clarification Follow-up: merged user reply into previous pending request: {request.user_query}",
+                (
+                    "Clarification Follow-up: merged user reply into previous pending request:"
+                    f" {request.user_query}"
+                ),
             ]
 
         def run_graph() -> None:
@@ -221,7 +227,9 @@ def stream_plan_trip(request: TripPlanRequest) -> StreamingResponse:
                 "status",
                 {
                     "stage": "clarification_followup",
-                    "message": "\u5df2\u63a5\u4e0a\u4e0a\u4e00\u8f6e\u8ffd\u95ee\uff0c\u628a\u4f60\u7684\u8865\u5145\u4fe1\u606f\u5408\u5e76\u8fdb\u539f\u59cb\u89c4\u5212\u9700\u6c42\u3002",
+                    "message": (
+                        "\u5df2\u63a5\u4e0a\u4e0a\u4e00\u8f6e\u8ffd\u95ee\uff0c\u628a\u4f60\u7684\u8865\u5145\u4fe1\u606f\u5408\u5e76\u8fdb\u539f\u59cb\u89c4\u5212\u9700\u6c42\u3002"
+                    ),
                 },
             )
         else:
@@ -622,13 +630,13 @@ def _latest_pending_clarification_state(
     if not isinstance(latest_state, dict):
         return None
     state_waiting = bool(latest_state.get("need_clarification"))
-    response_waiting = (
-        isinstance(latest_response, dict)
-        and bool(latest_response.get("need_clarification"))
+    response_waiting = isinstance(latest_response, dict) and bool(
+        latest_response.get("need_clarification")
     )
     if state_waiting or response_waiting:
         return latest_state
     return None
+
 
 def _build_revision_state(
     previous_state: dict[str, Any],
@@ -768,7 +776,6 @@ def _build_trip_response(result: dict[str, Any]) -> TripPlanResponse:
     )
 
 
-
 def _attach_weather_to_result(result: dict[str, Any]) -> dict[str, Any]:
     """把高德实时天气挂到最终方案，供前端天气卡片直接展示。"""
 
@@ -785,7 +792,12 @@ def _attach_weather_to_result(result: dict[str, Any]) -> dict[str, Any]:
     selected_plan = dict(result.get("selected_plan", {}) or {})
     if selected_plan:
         selected_plan["weather"] = weather
-    return {**result, "ranked_plans": ranked_plans, "selected_plan": selected_plan, "weather": weather}
+    return {
+        **result,
+        "ranked_plans": ranked_plans,
+        "selected_plan": selected_plan,
+        "weather": weather,
+    }
 
 
 def _sse_event(event: str, data: dict[str, Any]) -> str:
@@ -1651,4 +1663,3 @@ def data_source_status() -> DataSourceStatusResponse:
             database_name=settings.database_name,
             error=str(exc),
         )
-

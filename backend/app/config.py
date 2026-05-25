@@ -79,7 +79,9 @@ class Settings:
     deepseek_thinking_enabled: bool = _get_bool(_CONFIG, "DEEPSEEK_THINKING_ENABLED", True)
     # 兼容历史字段：旧代码和旧本地配置仍可读取 mimo_*，但默认值已经切换到 DeepSeek。
     mimo_api_key: str = _get_alias(_CONFIG, ("MIMO_API_KEY", "DEEPSEEK_API_KEY"), "")
-    mimo_base_url: str = _get_alias(_CONFIG, ("MIMO_BASE_URL", "DEEPSEEK_BASE_URL"), "https://api.deepseek.com")
+    mimo_base_url: str = _get_alias(
+        _CONFIG, ("MIMO_BASE_URL", "DEEPSEEK_BASE_URL"), "https://api.deepseek.com"
+    )
     mimo_model: str = _get_alias(_CONFIG, ("MIMO_MODEL", "DEEPSEEK_MODEL"), "deepseek-v4-pro")
     amap_api_key: str = _get(_CONFIG, "AMAP_API_KEY", "")
     amap_route_enabled: bool = _get_bool(_CONFIG, "AMAP_ROUTE_ENABLED", False)
