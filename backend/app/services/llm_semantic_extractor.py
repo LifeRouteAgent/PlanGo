@@ -2,7 +2,13 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.services.context_builder import ContextBuilder
 from app.services.llm_service import call_chat_completion, extract_json_object
+from app.services.llm_output_schemas import (
+    MemoryExtractionOutput,
+    RevisionConstraintOutput,
+    validate_llm_output,
+)
 from app.services.trace_recorder import record_trace_event
 
 
@@ -13,6 +19,10 @@ def extract_memory_updates(query: str, *, user_profile: dict[str, Any] | None = 
     因此 Memory 写入优先走 LLM 结构化抽取，失败时调用方再走保守规则兜底。
     """
 
+    context_snapshot = ContextBuilder().build_for(
+        "memory_extractor",
+        _state_for_context(query=query, user_profile=user_profile or {}),
+    )
     prompt = f"""
 你是本地生活 Agent 的长期记忆抽取器。请判断用户本轮输入是否应该写入长期画像。
 只输出 JSON，不要 Markdown，不要编造用户没说过的信息。
@@ -22,6 +32,9 @@ def extract_memory_updates(query: str, *, user_profile: dict[str, Any] | None = 
 
 当前画像：
 {user_profile or {}}
+
+结构化上下文快照：
+{context_snapshot}
 
 判断规则：
 1. 长期画像只写稳定偏好，例如长期偏室内、长期低预算、常去区域、长期不喜欢某类。
@@ -45,7 +58,12 @@ def extract_memory_updates(query: str, *, user_profile: dict[str, Any] | None = 
   "tags": []
 }}
 """
-    return _call_json_extractor("llm.memory_extractor", prompt, max_tokens=900)
+    return _call_json_extractor(
+        "llm.memory_extractor",
+        prompt,
+        max_tokens=900,
+        schema=MemoryExtractionOutput,
+    )
 
 
 def extract_revision_constraints(
@@ -56,6 +74,14 @@ def extract_revision_constraints(
 ) -> dict[str, Any] | None:
     """用 LLM 把中途修改需求转成结构化约束。"""
 
+    context_snapshot = ContextBuilder().build_for(
+        "revision_parser",
+        _state_for_context(
+            query=query,
+            user_profile=user_profile or {},
+            constraints=previous_constraints or {},
+        ),
+    )
     prompt = f"""
 你是本地生活规划 Agent 的需求修正解析器。请把用户中途修改需求转成结构化约束。
 只输出 JSON，不要 Markdown。不要重新规划，不要推荐具体 POI。
@@ -68,6 +94,9 @@ def extract_revision_constraints(
 
 用户画像（只能作为软参考）：
 {user_profile or {}}
+
+结构化上下文快照：
+{context_snapshot}
 
 输出格式：
 {{
@@ -92,10 +121,42 @@ def extract_revision_constraints(
 - max_route_minutes 只有用户明确说更近、少走路、别太远时才填。
 - activity_intents 用来表达唱歌=ktv、麻将=chess_cards、电影=cinema 等语义垂类。
 """
-    return _call_json_extractor("llm.revision_parser", prompt, max_tokens=1000)
+    return _call_json_extractor(
+        "llm.revision_parser",
+        prompt,
+        max_tokens=1000,
+        schema=RevisionConstraintOutput,
+    )
 
 
-def _call_json_extractor(tool_name: str, prompt: str, *, max_tokens: int) -> dict[str, Any] | None:
+def _state_for_context(
+    *,
+    query: str,
+    user_profile: dict[str, Any],
+    constraints: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """为语义抽取器构造最小 PlanState，避免直接拼完整会话历史。"""
+
+    return {
+        "user_query": query,
+        "user_profile": user_profile,
+        "constraints": constraints or {},
+        "dag_plan": {},
+        "candidate_pois": {},
+        "recommended_pois": {},
+        "ranked_plans": [],
+        "errors": [],
+        "logs": [],
+    }
+
+
+def _call_json_extractor(
+    tool_name: str,
+    prompt: str,
+    *,
+    max_tokens: int,
+    schema: type[Any] | None = None,
+) -> dict[str, Any] | None:
     """统一调用 LLM 并记录结构化抽取 trace。"""
 
     raw = call_chat_completion(
@@ -109,6 +170,8 @@ def _call_json_extractor(tool_name: str, prompt: str, *, max_tokens: int) -> dic
         temperature=0.0,
         timeout_seconds=30,
         max_completion_tokens=max_tokens,
+        prompt_name=tool_name.removeprefix("llm.").replace("_parser", "_parser"),
+        schema_name=schema.__name__ if schema else None,
     )
     parsed = extract_json_object(raw)
     record_trace_event(
@@ -120,4 +183,9 @@ def _call_json_extractor(tool_name: str, prompt: str, *, max_tokens: int) -> dic
             "parsed": parsed or {},
         },
     )
-    return parsed if isinstance(parsed, dict) else None
+    if not isinstance(parsed, dict):
+        return None
+    if schema is None:
+        return parsed
+    validation = validate_llm_output(schema, parsed, source=tool_name)
+    return validation.data if validation.ok else None

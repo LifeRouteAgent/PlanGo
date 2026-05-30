@@ -110,7 +110,7 @@ def test_memory_service_writes_file_and_vector_memory(monkeypatch) -> None:
         user_id="u1",
     )
 
-    profile = memory.read_profile()
+    profile = memory.read_profile(user_id="u1")
     assert profile["indoor_preference"] is False
     assert "室外" not in profile["disliked_keywords"]
     assert fake_store.memories
@@ -141,7 +141,7 @@ def test_memory_service_writes_long_term_profile_with_llm(monkeypatch) -> None:
 
     memory.observe_user_query("我以后都不喜欢室外，优先室内娱乐", user_id="u_long")
 
-    profile = memory.read_profile()
+    profile = memory.read_profile(user_id="u_long")
     assert profile["indoor_preference"] is True
     assert "室外" in profile["disliked_keywords"]
     assert "poi_entertainment" in profile["favorite_categories"]

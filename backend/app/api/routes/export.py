@@ -7,6 +7,7 @@ from fastapi.responses import Response
 
 from app.models.schemas import ExportPlanRequest
 from app.services.memory_service import MemoryService
+from app.services.tool_harness import ToolHarness
 from app.services.trace_recorder import record_trace_event, set_trace_context
 
 router = APIRouter(prefix="/export", tags=["export"])
@@ -42,7 +43,25 @@ def export_plan_pdf(request: ExportPlanRequest) -> Response:
     )
     if request.session_id:
         MemoryService().observe_selected_plan(request.plan, user_id=request.session_id)
-    pdf_bytes = _build_minimal_pdf(_plan_to_pdf_lines(request.plan))
+    harness = ToolHarness(name="pdf.export.plan", timeout_seconds=3, max_retries=1)
+    result = harness.run_request(
+        {
+            "tool_name": "pdf.export.plan",
+            "risk_level": 2,
+            "session_id": request.session_id or "export_session",
+            "params": {
+                "plan_id": request.plan.get("id"),
+                "confirmed": True,
+                "confirmed_source": "export_pdf_button",
+            },
+            "confirmed_source": "export_pdf_button",
+        },
+        lambda: _build_minimal_pdf(_plan_to_pdf_lines(request.plan)),
+    )
+    data = result.get("data") if isinstance(result.get("data"), dict) else {}
+    pdf_bytes = data.get("value") if isinstance(data, dict) else None
+    if not isinstance(pdf_bytes, bytes):
+        pdf_bytes = _build_minimal_pdf(_plan_to_pdf_lines(request.plan))
     return Response(
         pdf_bytes,
         media_type="application/pdf",

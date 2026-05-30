@@ -48,6 +48,7 @@ class ToolCallRequest(TypedDict, total=False):
     params: dict[str, Any]
     requires_confirmation: bool
     confirmed: bool
+    confirmed_source: str
 
 
 class ToolCallResult(TypedDict, total=False):
@@ -89,9 +90,17 @@ class ToolPolicy:
         risk_level = int(request.get("risk_level", RiskLevel.QUERY))
         params = request.get("params", {}) or {}
         confirmed = bool(request.get("confirmed") or params.get("confirmed"))
+        confirmed_source = str(
+            request.get("confirmed_source")
+            or params.get("confirmed_source")
+            or params.get("confirmation_source")
+            or ""
+        )
 
         if risk_level >= RiskLevel.LIGHT_MUTATION and not confirmed:
             issues.append(_issue("permission_denied", "高风险工具缺少用户确认。"))
+        if risk_level >= RiskLevel.LIGHT_MUTATION and confirmed and not confirmed_source:
+            issues.append(_issue("validation_failed", "Level 2+ 工具必须记录确认来源。"))
         if risk_level == RiskLevel.PAYMENT:
             issues.append(_issue("payment_required", "支付/退款工具 v1 不允许自动执行。"))
         if risk_level >= RiskLevel.TRANSACTION and not request.get("idempotency_key"):

@@ -5,6 +5,7 @@ from typing import Any
 
 from app.services.context_builder import ContextBuilder
 from app.services.llm_service import call_chat_completion, extract_json_object
+from app.services.llm_output_schemas import IntentUnderstandingOutput, validate_llm_output
 from app.services.trace_recorder import record_trace_event
 from app.tools.poi_schema import (
     POI_ACTIVITY,
@@ -103,14 +104,25 @@ def build_llm_understanding(
         {"role": "user", "content": _build_prompt(query, profile)},
     ]
     raw = call_chat_completion(
-        messages, temperature=0.0, timeout_seconds=60, max_completion_tokens=2048
+        messages,
+        temperature=0.0,
+        timeout_seconds=60,
+        max_completion_tokens=2048,
+        prompt_name="intent_understanding",
+        schema_name="IntentUnderstandingOutput",
     )
     parsed = extract_json_object(raw)
-    normalized = _normalize_understanding(parsed) if parsed else None
+    validation = (
+        validate_llm_output(IntentUnderstandingOutput, parsed, source="intent_understanding")
+        if isinstance(parsed, dict)
+        else None
+    )
+    normalized = _normalize_understanding(validation.data) if validation and validation.ok else None
     record_trace_event(
         "llm_understanding",
         {
             "success": bool(normalized),
+            "schema_valid": bool(validation and validation.ok),
             "raw_preview": raw[:600] if raw else "",
             "understanding": normalized or {},
         },

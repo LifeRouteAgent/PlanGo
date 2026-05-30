@@ -8,6 +8,7 @@ from typing import Any
 import httpx
 
 from app.config import settings
+from app.services.prompt_registry import get_prompt_spec
 from app.services.trace_recorder import record_trace_event
 from app.services.tool_harness import ToolHarness
 
@@ -29,6 +30,8 @@ def call_chat_completion(
     temperature: float = 0.1,
     timeout_seconds: int = 20,
     max_completion_tokens: int = 1024,
+    prompt_name: str | None = None,
+    schema_name: str | None = None,
 ) -> str | None:
     """调用 OpenAI-compatible chat completions 接口并返回文本内容。
 
@@ -41,6 +44,13 @@ def call_chat_completion(
     model = _active_model()
     api_key = _active_api_key()
     base_url = _active_base_url()
+    prompt_spec = get_prompt_spec(prompt_name)
+    prompt_meta = {
+        "prompt_name": prompt_spec.prompt_name,
+        "prompt_version": prompt_spec.prompt_version,
+        "schema_name": schema_name or prompt_spec.schema_name,
+        "schema_version": prompt_spec.schema_version,
+    }
 
     if os.environ.get("PYTEST_CURRENT_TEST"):
         record_trace_event(
@@ -48,6 +58,7 @@ def call_chat_completion(
             {
                 "provider": provider,
                 "model": model,
+                **prompt_meta,
                 "success": False,
                 "source": "pytest_disabled",
                 "latency_ms": 0,
@@ -64,6 +75,7 @@ def call_chat_completion(
             {
                 "provider": provider,
                 "model": model,
+                **prompt_meta,
                 "success": False,
                 "source": "disabled",
                 "latency_ms": 0,
@@ -123,21 +135,38 @@ def call_chat_completion(
         max_retries=1,
         fallback=lambda: None,
     )
-    result = harness.run(_request)
+    result = harness.run_request(
+        {
+            "tool_name": f"llm.{provider}.chat_completion",
+            "risk_level": 1,
+            "user_id": "system",
+            "session_id": "",
+            "task_id": "",
+            "params": {
+                "provider": provider,
+                "model": model,
+                **prompt_meta,
+            },
+        },
+        _request,
+    )
+    data = result.get("data") if isinstance(result.get("data"), dict) else {}
+    content = data.get("value") if isinstance(data, dict) else None
     record_trace_event(
         "llm_result",
         {
             "provider": provider,
             "model": model,
-            "success": bool(result.success and result.data),
-            "source": result.source,
-            "latency_ms": result.latency_ms,
-            "attempts": result.attempts,
-            "error": result.error,
-            "content_preview": str(result.data)[:600] if result.data else "",
+            **prompt_meta,
+            "success": bool(result.get("success") and content),
+            "source": result.get("source"),
+            "latency_ms": result.get("latency_ms"),
+            "attempts": result.get("attempts"),
+            "error": result.get("error_code"),
+            "content_preview": str(content)[:600] if content else "",
         },
     )
-    return str(result.data) if result.success and result.data else None
+    return str(content) if result.get("success") and content else None
 
 
 def _active_provider() -> str:

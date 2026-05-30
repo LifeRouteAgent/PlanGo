@@ -175,7 +175,7 @@ class ToolHarness:
             "error_code": error_code,
             "source": result.source,
             "fetched_at": _now_iso(),
-            "expires_at": None,
+            "expires_at": expires_at_from_ttl(ttl_seconds_for_tool(self.name)),
             "confidence": 1.0 if result.success else 0.0,
             "fallback_used": result.source == "fallback",
             "attempts": result.attempts,

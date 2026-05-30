@@ -6,6 +6,10 @@ from typing import Any
 from app.agents.issue_utils import normalize_issues
 from app.services.context_builder import ContextBuilder
 from app.services.llm_service import call_chat_completion, extract_json_object
+from app.services.llm_output_schemas import (
+    ResponsePlansEnrichmentOutput,
+    validate_llm_output,
+)
 from app.services.trace_recorder import record_trace_event
 from app.state.plan_state import PlanState, PlanStatePatch
 
@@ -236,13 +240,25 @@ def _llm_plan_enrichment(
         ],
         temperature=0.35,
         max_completion_tokens=1800,
+        prompt_name="response_plan_enrichment",
+        schema_name="ResponsePlansEnrichmentOutput",
     )
     parsed = extract_json_object(raw)
-    plans = parsed.get("plans") if parsed else None
+    validation = (
+        validate_llm_output(
+            ResponsePlansEnrichmentOutput,
+            parsed,
+            source="response_plan_enrichment",
+        )
+        if isinstance(parsed, dict)
+        else None
+    )
+    plans = validation.data.get("plans") if validation and validation.ok else None
     record_trace_event(
         "response_plan_enrichment",
         {
             "success": isinstance(plans, list),
+            "schema_valid": bool(validation and validation.ok),
             "raw_preview": raw[:600] if raw else "",
             "plan_count": len(plans) if isinstance(plans, list) else 0,
         },
@@ -519,6 +535,8 @@ def _llm_response_text(
         ],
         temperature=0.2,
         max_completion_tokens=1600,
+        prompt_name="response_generator",
+        schema_name="ResponseEnrichmentOutput",
     )
     record_trace_event(
         "response_llm_preview",

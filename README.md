@@ -1,392 +1,252 @@
-﻿# LifeRouteAgent
+# LifeRouteAgent
 
-LifeRouteAgent 是一个面向本地生活出行决策的多 Agent 路线规划系统。项目目标是把用户的一句自然语言需求，例如“周末和朋友出去玩 4 个小时，想吃饭看电影，预算 600 元”，拆解成可执行的本地生活计划：理解意图、抽取约束、召回 POI、并行推荐餐饮/活动/休闲服务、规划时间路线、校验可行性、生成最终方案，并预留后续预订执行入口。
+LifeRouteAgent 是一个面向本地生活周末活动的 Agentic Planning 项目。它不是简单的 POI 搜索或聊天机器人，而是通过 **FastAPI + LangGraph + MySQL + React**，把自然语言需求拆解成可执行的本地生活方案：召回地点、推荐组合、规划路线、校验预算和时长、生成用户可读解释，并提供 mock 执行、Memory、Trace 和评测能力。
 
-当前版本是 Hackathon 原型到工程化项目的迁移版本。后端采用 Python + FastAPI + LangGraph，前端采用 Vue + TypeScript + Vite，POI 数据优先支持本地 MySQL 自建库，也保留 Mock 模式用于无数据库环境下演示 DAG 流程。
+完整项目介绍、代码讲解、答辩稿和 Mermaid 图见：[docs/PROJECT_INTRODUCTION.md](docs/PROJECT_INTRODUCTION.md)。
 
-## 核心能力
+## 当前能力
 
-- 自然语言需求解析：识别人数、时间、预算、偏好、出行场景等约束。
-- 多源 POI 召回：支持景点、购物、Klook 活动、餐饮、健身、休闲娱乐、美容养生等自建表。
-- 多 Agent 编排：通过 LangGraph DAG 串联解析、约束构建、候选召回、并行推荐、路线规划、校验、排序和执行。
-- 本地生活分表存储：不同业务域独立建表，方便后续让不同 Agent 使用不同召回策略。
-- 数据库/Mock 双模式：`LIFEROUTE_USE_DATABASE=1` 时读取 MySQL；否则使用内置 Mock 数据。
-- 路线耗时修正：默认使用 Haversine 估算；配置 `AMAP_API_KEY` 后优先调用高德步行/驾车路线接口，失败自动回退估算结果。
-- 混合长期记忆：保留 `MEMORY.md / user_profile.json / history.jsonl` 可读审计层，并可选接入 Milvus + 本地 BGE embedding 做语义检索、相似画像召回和画像聚类。
-- 上下文分层：LLM 只接收当前任务摘要、少量相关记忆和候选统计，不把完整历史、Trace 或大批 POI 原始数据塞进 prompt。
-- 可扩展履约入口：保留可用性检查、用户确认和执行 Agent，后续可接入订座、购票、下单、退款等真实接口。
+- 自然语言理解：区分简单问答、单类推荐和完整规划。
+- LangGraph DAG：Intent、Constraint、Planner、Collector、并行 Skill、Route Planner、Verifier、LLM Critic、Ranker、Response。
+- 七类 POI：景点、购物、活动、餐厅、健身、娱乐、美容养生。
+- 本地 MySQL 数据源：`database/sql` 提供 POI 表 SQL。
+- 多 Skill 推荐：活动、餐厅、生活娱乐、景点/商场混合推荐。
+- 路线与时间线：生成 `timeline`、`route_segments`、预算和总时长。
+- 高德增强：路线和天气接口已接入，失败回退 Haversine/默认天气。
+- 流式输出：后端 SSE 推送节点进度、文本片段和最终方案。
+- 执行入口：预约、购票、打车为 mock；日历 ICS 和 PDF 导出已实现。
+- Memory：文件画像 + 会话记忆 + 可选 Milvus 向量记忆。
+- 运行治理：ToolHarness、ToolPolicy、Checkpoint、RuntimeStore、TraceRecorder、Node Metrics。
+- 评测：后端测试覆盖 intent、planner、route、verifier、memory、runtime、eval 等模块。
 
-## Agent 架构
+## 当前边界
 
-当前 LangGraph DAG 位于 `backend/app/dag/langgraph_dag_config.py`。
+- 真实订座、购票、打车、支付未接入，当前是 mock。
+- PDF 是最小可打开版本，中文排版不是产品级。
+- Milvus 是可选增强；Python 3.13 下 `pymilvus` 依赖不会安装，会回退文件记忆。
+- 前端部分中文文案和部分 Python 注释存在编码乱码，需要优先修复。
+- `backend/app/models/db_models.py` 当前为空，没有 ORM 模型。
+- API 层已拆 service，但 `trip.py` 仍保留较多兼容与 mock 辅助逻辑。
+- 前端仍有部分 `/api/plans/{planId}/{action}` 风格调用，后端接口需要继续对齐。
 
-```text
-START
-  -> Intent Parser
-  -> Constraint Builder
-  -> Planner Agent
-  -> POI Collector
-      -> POI Mix Recommend
-      -> POI Activity Recommend
-      -> POI Restaurant Recommend
-      -> POI Lifestyle Recommend
-  -> Route & Time Planner
-  -> Availability Checker
-  -> Verifier
-      -> Ranker
-      -> Planner Agent       # 需要重规划时回退
-      -> Response Generator  # 无法满足时直接响应
-  -> Response Generator
-  -> User Confirm
-  -> Execution Agent
-END
+## 技术栈
+
+后端：
+
+- Python
+- FastAPI
+- LangGraph
+- Pydantic
+- PyMySQL
+- HTTPX
+- Milvus / sentence-transformers 可选
+
+前端：
+
+- React
+- TypeScript
+- Vite
+- lucide-react
+- 原生 CSS
+
+## 后端启动
+
+```powershell
+cd C:\Users\dengp\project\LifeRouteAgent
+python -m venv .venv
+.\.venv\Scripts\pip.exe install -r backend\requirements.txt
+
+cd backend
+..\.venv\Scripts\python.exe -m uvicorn app.api.main:app --host 127.0.0.1 --port 8000
 ```
 
-各节点职责：
-
-- `Intent Parser`：把用户自然语言转成结构化意图。
-- `Constraint Builder`：归一化时间、人数、预算、距离、偏好和硬约束。
-- `Planner Agent`：根据意图决定需要哪些 POI 类别与推荐路径。
-- `POI Collector`：从 MySQL 或 Mock 数据中按类别召回候选 POI。
-- `POI Mix Recommend`：处理跨类型组合推荐，例如吃饭 + 电影 + 商场。
-- `POI Activity Recommend`：推荐 Klook 活动、体验项目和可预约活动。
-- `POI Restaurant Recommend`：推荐餐饮 POI。
-- `POI Lifestyle Recommend`：推荐健身、娱乐、美容养生等生活服务。
-- `Route & Time Planner`：把候选点位组合成时间顺序和路线结构。
-- `Availability Checker`：校验营业时间、可用性和基础风险。
-- `Verifier`：判断方案是否满足约束，不满足则回退重规划。
-- `Ranker`：对可行方案进行排序。
-- `Response Generator`：生成面向用户的最终解释。
-- `User Confirm`：预留用户确认节点。
-- `Execution Agent`：预留真实履约执行节点。
-
-## 系统架构
+健康检查：
 
 ```text
-Frontend (Vue + Vite)
-  -> FastAPI REST API
-    -> LangGraph DAG
-      -> Agent Nodes
-      -> Recommendation Skills
-      -> POI Repository
-        -> MySQL life_route_agent
-          -> poi_attractions
-          -> poi_shoppings
-          -> poi_activities
-          -> poi_restaurant
-          -> poi_fitness
-          -> poi_entertainment
-          -> poi_beauty
+GET http://127.0.0.1:8000/health
 ```
 
-分层说明：
+## 前端启动
 
-- `frontend`：用户输入、方案展示、执行状态和导出入口。
-- `backend/app/api`：FastAPI 路由层，提供 `/health`、`/trip/plan`、导出接口。
-- `backend/app/dag`：LangGraph DAG 配置。
-- `backend/app/agents`：核心 Agent 节点。
-- `backend/app/tools`：推荐 Skill 和统一 POI schema。
-- `backend/app/services`：数据库仓储、餐厅/活动/生活服务业务服务、导出服务。
-- `backend/app/state`：DAG 中流转的 `PlanState`。
-- `backend/app/models`：API Schema 和数据库模型定义。
-- `database/sql`：本地 POI 自建库 DDL + INSERT SQL。
+```powershell
+cd C:\Users\dengp\project\LifeRouteAgent\frontend
+npm install
+npm run dev -- --host 127.0.0.1 --port 5173
+```
 
-## POI 数据库设计
-
-项目采用“业务域分表 + Collector 统一出口”的设计。分表便于不同 Agent 独立优化召回逻辑，Collector 层再把不同表字段规范化为统一 `PoiRecord`。
-
-已支持的 POI 表：
-
-| 表名 | 数据来源 | 用途 |
-| --- | --- | --- |
-| `poi_attractions` | 景点 TSV | 景点、城市游玩、观光 |
-| `poi_shoppings` | 购物 TSV | 商场、购物中心、生活广场 |
-| `poi_activities` | Klook 活动 TSV | 活动、体验、一日游、票券 |
-| `poi_restaurant` | 高德 POI | 餐厅美食 |
-| `poi_fitness` | 高德 POI | 健身房、瑜伽、普拉提、运动场馆 |
-| `poi_entertainment` | 高德 POI | KTV、棋牌室、电影院 |
-| `poi_beauty` | 高德 POI | 按摩、足疗、洗浴、美容美发 |
-
-高德类表保留了 `raw JSON`，同时清洗出 `rating`、`cost`、`open_time`、`photos`、`head_image`、`typecode`、`keytag` 等高频使用字段。
-
-## 项目代码结构
+访问：
 
 ```text
-LifeRouteAgent/
-  backend/
-    app/
-      agents/              # LangGraph 节点实现
-      api/                 # FastAPI 应用和路由
-      dag/                 # LangGraph DAG 配置
-      models/              # API 与数据库模型
-      services/            # POI 仓储、业务服务、导出服务
-      state/               # PlanState 定义
-      tools/               # 推荐 Skill、POI schema
-      config.py            # 环境变量配置
-    tests/                 # 后端测试
-    requirements.txt       # Python 依赖
-    .env.example           # 后端环境变量模板
-  frontend/
-    src/                   # Vue 前端源码
-    package.json           # 前端依赖和脚本
-    vite.config.ts         # Vite 配置
-  database/
-    sql/                   # 本地 POI 建表和导入 SQL
-  assets/                  # 项目静态资产
-  README.md
-  CHANGELOG.md
+http://127.0.0.1:5173
 ```
 
-## 环境要求
+## 配置
 
-推荐环境：
+后端配置从文件读取，入口是 `backend/app/config.py`。
 
-- Python 3.11+
-- Node.js 18+
-- MySQL 8.0+
-- Windows PowerShell / macOS shell / Linux shell 均可
+读取优先级：
 
-后端依赖见 `backend/requirements.txt`：
+1. `backend/config.local.json`
+2. `backend/config.example.json`
 
-```text
-fastapi
-uvicorn[standard]
-langgraph
-pydantic
-python-dotenv
-httpx
-pytest
-pymysql
-pymilvus
-sentence-transformers
-numpy
-```
-
-前端依赖见 `frontend/package.json`：Vue、TypeScript、Vite。
-
-## 配置文件
-
-后端配置已改为优先读取文件，不再要求把 key 写进系统环境变量。
-
-本机真实配置文件：
+建议复制一份本地配置：
 
 ```powershell
 Copy-Item backend\config.example.json backend\config.local.json
 ```
 
-`backend/config.local.json` 会被 `.gitignore` 排除，用来保存真实 API key、数据库密码等敏感信息。仓库只提交 `backend/config.example.json`，避免把凭据推到 GitHub。
-
-读取优先级：
-
-1. `backend/config.local.json`：本机真实配置。
-2. `backend/config.example.json`：仓库示例配置和安全默认值。
-
-主要配置：
+主要配置项：
 
 ```json
 {
-  "MIMO_API_KEY": "",
-  "MIMO_BASE_URL": "https://api.xiaomimimo.com/v1",
-  "MIMO_MODEL": "mimo-v2.5-pro",
+  "LLM_PROVIDER": "deepseek",
+  "DEEPSEEK_API_KEY": "",
+  "DEEPSEEK_BASE_URL": "https://api.deepseek.com",
+  "DEEPSEEK_MODEL": "deepseek-v4-pro",
   "AMAP_API_KEY": "",
+  "AMAP_ROUTE_ENABLED": false,
   "LIFEROUTE_USE_DATABASE": true,
   "DATABASE_HOST": "127.0.0.1",
   "DATABASE_PORT": 3306,
   "DATABASE_USER": "root",
   "DATABASE_PASSWORD": "",
-  "DATABASE_NAME": "life_route_agent"
+  "DATABASE_NAME": "life_route_agent",
+  "MILVUS_ENABLED": true,
+  "RUNTIME_STORE": "mysql",
+  "RUNTIME_MYSQL_ENABLED": true
 }
 ```
 
-路线规划说明：
+前端高德 JS 地图当前读取：
 
-- 未配置 `AMAP_API_KEY`：Route Planner 使用 Haversine 直线距离估算交通方式和时间。
-- 已配置 `AMAP_API_KEY`：优先调用高德步行/驾车路线接口修正相邻 POI 的真实距离和耗时。
-- 高德接口失败、超时或返回异常：自动回退 Haversine，不阻断 DAG。
-- 当前公交/地铁先用 `transit_or_taxi` 近似；后续可在 `backend/app/services/amap_route_service.py` 扩展公交换乘接口。
+```text
+VITE_AMAP_JS_KEY
+VITE_AMAP_SECURITY_CODE
+```
 
-## 启动 Milvus 向量记忆
+## 数据库
 
-向量记忆是增强能力，不启动 Milvus 时系统会自动回退到文件型 Memory，不影响规划主流程。
+POI 表 SQL：
 
-启动 Milvus Standalone：
+```text
+database/sql/
+├── poi_activities.sql
+├── poi_attractions.sql
+├── poi_beauty.sql
+├── poi_entertainment.sql
+├── poi_fitness.sql
+├── poi_restaurant.sql
+└── poi_shoppings.sql
+```
+
+Runtime 表初始化：
+
+```powershell
+cd C:\Users\dengp\project\LifeRouteAgent\backend
+..\.venv\Scripts\python.exe scripts\init_runtime_schema.py
+```
+
+会创建：
+
+- `runtime_sessions`
+- `runtime_tasks`
+- `runtime_tool_cache`
+- `runtime_trace_events`
+- `runtime_node_metrics`
+
+## Milvus 向量记忆
+
+Milvus 是增强能力，不启动时系统会自动回退文件记忆。
 
 ```powershell
 docker compose -f docker-compose.milvus.yml up -d
 ```
 
-安装后端依赖后，首次使用本地 BGE embedding 会下载模型：
+## 核心流程
 
-```powershell
-cd backend
-pip install -r requirements.txt
+```mermaid
+flowchart TD
+  A["用户输入"] --> B["SSE /trip/plan/stream"]
+  B --> C["TripStreamingService"]
+  C --> D["create_initial_state"]
+  D --> E["LangGraph DAG"]
+  E --> F["Intent Router / Parser"]
+  F --> G["Constraint Builder / Clarifier"]
+  G --> H["Planner Agent"]
+  H --> I["POI Collector"]
+  I --> J["并行推荐 Skills"]
+  J --> K["Route & Time Planner"]
+  K --> L["Availability Checker / Verifier"]
+  L --> M["LLM Critic"]
+  M --> N["Ranker"]
+  N --> O["Response Generator"]
+  O --> P["前端方案卡片 / 对话回复 / Trace 面板"]
 ```
 
-可用接口：
+## 重要目录
 
 ```text
-GET  /trip/memory/profile          # 当前画像、压缩记忆上下文、向量状态
-GET  /trip/memory/search?q=唱歌     # 语义检索长期记忆
-POST /trip/memory/rebuild-index    # 把文件记忆重建到 Milvus
-GET  /trip/memory/clusters         # 查看粗粒度用户画像聚类
-DELETE /trip/memory                # 清空文件记忆和向量记忆
+backend/app/api/        FastAPI 路由
+backend/app/agents/     LangGraph 节点
+backend/app/dag/        DAG 配置
+backend/app/services/   LLM、Memory、Runtime、Trace、ToolHarness、POI 仓储
+backend/app/tools/      推荐 Skill 与 POI schema
+backend/app/state/      PlanState
+backend/tests/          后端测试
+frontend/src/api/       前端请求和 SSE 解析
+frontend/src/hooks/     流式规划状态
+frontend/src/pages/     页面
+frontend/src/components/组件
+database/sql/           POI 表 SQL
+docs/                   项目介绍和答辩文档
 ```
 
-记忆写入策略：
+## 主要 API
 
-- 用户输入、需求修正、采纳方案、执行方案会写入长期记忆。
-- API key、数据库密码、完整住址、手机号等敏感信息不会写入向量库。
-- Memory 只做软约束，本轮用户明确要求永远优先。
+- `GET /health`
+- `POST /trip/plan`
+- `POST /trip/plan/stream`
+- `POST /trip/plan/revise/stream`
+- `POST /trip/plan/adjust`
+- `POST /trip/execute/stream`
+- `POST /trip/calendar/ics`
+- `POST /export/plan/pdf`
+- `GET /trip/trace/{trace_id}`
+- `GET /trip/observability/node-metrics`
+- `GET /trip/observability/runtime-health`
+- `GET /trip/memory/profile`
+- `GET /trip/memory/search`
+- `GET /trip/data-source`
+- `GET /api/cities`
+- `GET /api/user/profile`
+- `POST /api/plan-stream`
 
-## 初始化数据库
+## 测试
 
-使用 Docker 一键启动 MySQL 并导入 `database/sql`：
-
-```bash
-./scripts/init_mysql_docker.sh
-```
-
-可按需覆盖默认配置：
-
-```bash
-DATABASE_PORT=3307 DATABASE_PASSWORD=liferoute ./scripts/init_mysql_docker.sh
-```
-
-创建数据库：
+后端：
 
 ```powershell
-mysql --default-character-set=utf8mb4 -h localhost -uroot -p -e "CREATE DATABASE IF NOT EXISTS life_route_agent DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;"
+cd C:\Users\dengp\project\LifeRouteAgent\backend
+..\.venv\Scripts\python.exe -m pytest tests -q
 ```
 
-导入全部 POI SQL：
+前端：
 
 ```powershell
-mysql --default-character-set=utf8mb4 -h localhost -uroot -p life_route_agent < database\sql\poi_attractions.sql
-mysql --default-character-set=utf8mb4 -h localhost -uroot -p life_route_agent < database\sql\poi_shoppings.sql
-mysql --default-character-set=utf8mb4 -h localhost -uroot -p life_route_agent < database\sql\poi_activities.sql
-mysql --default-character-set=utf8mb4 -h localhost -uroot -p life_route_agent < database\sql\poi_restaurant.sql
-mysql --default-character-set=utf8mb4 -h localhost -uroot -p life_route_agent < database\sql\poi_fitness.sql
-mysql --default-character-set=utf8mb4 -h localhost -uroot -p life_route_agent < database\sql\poi_entertainment.sql
-mysql --default-character-set=utf8mb4 -h localhost -uroot -p life_route_agent < database\sql\poi_beauty.sql
-```
-
-开启数据库模式：
-
-```text
-LIFEROUTE_USE_DATABASE=1
-DATABASE_NAME=life_route_agent
-```
-
-当前导入数据量：
-
-| 表名 | 行数 |
-| --- | ---: |
-| `poi_attractions` | 3457 |
-| `poi_shoppings` | 1960 |
-| `poi_activities` | 297 |
-| `poi_restaurant` | 21327 |
-| `poi_fitness` | 4147 |
-| `poi_entertainment` | 1869 |
-| `poi_beauty` | 20267 |
-
-## 启动后端
-
-进入后端目录：
-
-```powershell
-cd backend
-py -m venv .venv
-.\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-```
-
-启动 API：
-
-```powershell
-uvicorn app.api.main:app --reload --host 127.0.0.1 --port 8000
-```
-
-健康检查：
-
-```powershell
-curl http://127.0.0.1:8000/health
-```
-
-调用规划接口：
-
-```powershell
-curl -X POST http://127.0.0.1:8000/trip/plan `
-  -H "Content-Type: application/json" `
-  -d '{"user_query":"周末和朋友出去玩 4 个小时，想吃饭看电影，预算 600 元"}'
-```
-
-也可以直接运行一次 DAG：
-
-```powershell
-python -m app.api.main
-```
-
-## 启动前端
-
-```powershell
-cd frontend
-npm install
-npm run dev
-```
-
-默认访问：
-
-```text
-http://127.0.0.1:5173/
-```
-
-从另一台机器访问开发前端时，使用运行前端机器的地址打开 `5173` 端口。
-前端默认通过 Vite 代理访问 `/trip`、`/export` 和 `/health`，代理再连接同机
-FastAPI 的 `http://127.0.0.1:8000`；不要在远端浏览器里把
-`VITE_API_BASE_URL` 配成 `http://127.0.0.1:8000`。
-
-构建前端：
-
-```powershell
+cd C:\Users\dengp\project\LifeRouteAgent\frontend
 npm run build
 ```
 
-## 验证和指标
+最近一次验证结果：
 
-后端测试：
+- 后端：`109 passed, 1 warning`
+- 前端：build passed
 
-```powershell
-cd backend
-pytest
-```
+## 答辩重点文件
 
-前端类型检查：
+1. `backend/app/dag/langgraph_dag_config.py`
+2. `backend/app/state/plan_state.py`
+3. `backend/app/services/trip_services.py`
+4. `backend/app/services/tool_harness.py`
+5. `backend/app/services/memory_service.py`
 
-```powershell
-cd frontend
-npm run typecheck
-```
-
-前端构建：
-
-```powershell
-cd frontend
-npm run build
-```
-
-运行期建议关注的指标：
-
-- DAG 总耗时：一次 `/trip/plan` 从请求到响应的耗时。
-- 节点耗时：Intent、Collector、Recommend、Route、Verifier、Ranker 各节点耗时。
-- Collector 召回量：各 POI 类别候选数量。
-- Verifier 通过率：方案一次通过、回退重规划、失败响应的比例。
-- 数据库查询耗时：按类别查询 MySQL 的耗时和慢查询。
-- 推荐命中率：用户最终确认的方案与推荐排序位置。
-- 履约成功率：后续接入真实订座/购票/下单后的执行成功率。
-
-## 当前边界
-
-- POI 数据已支持本地 MySQL 自建库。
-- 真实预订、排队、库存和支付还未接入，当前执行 Agent 是可扩展入口。
-- 高德数据以已采集 SQL 形式提交，后续如需刷新数据，应重新运行采集和清洗脚本后替换 `database/sql`。
-- 真实 Agent 质量取决于 LLM Key、POI 完整度、营业状态校验和路线耗时服务，当前项目重点是工程骨架和数据闭环。

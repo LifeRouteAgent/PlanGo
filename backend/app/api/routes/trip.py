@@ -41,6 +41,13 @@ from app.services.session_store import SessionStore
 from app.services.tool_harness import ToolHarness
 from app.services.tool_policy import RiskLevel
 from app.services.trace_recorder import TraceRecorder, new_id, record_trace_event, set_trace_context
+from app.services.trip_services import (
+    TaskRecoveryService,
+    TripExecutionService,
+    TripPlanningService,
+    TripRevisionService,
+    TripStreamingService,
+)
 from app.state.plan_state import create_initial_state
 from app.agents.planner_agent import planner_agent_node
 from app.agents.poi_collector import poi_collector_node
@@ -78,64 +85,7 @@ def plan_trip(request: TripPlanRequest) -> TripPlanResponse:
     这个接口保留给测试和非流式调用方使用；前端主流程优先调用 `/trip/plan/stream`。
     """
 
-    session_store = SessionStore()
-    memory = MemoryService()
-    session_id = session_store.ensure_session_id(request.session_id)
-    trace_id = request.trace_id or new_id("trace")
-    run_id = request.run_id or new_id("run")
-    set_trace_context(trace_id=trace_id, run_id=run_id, session_id=session_id)
-    checkpoint = CheckpointStore()
-    task = checkpoint.create(session_id=session_id, user_id=session_id, trace_id=trace_id)
-    task_id = str(task["task_id"])
-    saved_session = session_store.load(session_id)
-    effective_query = _effective_query_for_request(saved_session, request.user_query)
-    memory.observe_user_query(request.user_query, user_id=session_id)
-    user_profile = memory.enrich_user_profile({
-        **request.user_profile,
-        "last_query": effective_query,
-        "session_id": session_id,
-        "user_id": session_id,
-    })
-
-    initial_state = create_initial_state(
-        effective_query,
-        user_profile=user_profile,
-        max_replanning_count=request.max_replanning_count,
-        session_id=session_id,
-        trace_id=trace_id,
-        run_id=run_id,
-        task_id=task_id,
-    )
-    checkpoint.save_from_plan_state(initial_state, status=TaskStatus.CREATED, task_id=task_id)
-    if effective_query != request.user_query:
-        initial_state["logs"] = [
-            *initial_state.get("logs", []),
-            (
-                "Clarification Follow-up: merged user reply into previous pending request:"
-                f" {request.user_query}"
-            ),
-        ]
-    recorder = TraceRecorder(trace_id=trace_id, run_id=run_id, session_id=session_id)
-    result = recorder.time_node(
-        "life_route_graph.invoke",
-        lambda: life_route_graph.invoke(initial_state),
-        input_summary={"user_query": request.user_query},
-    )
-    checkpoint.save_from_plan_state(
-        result,
-        status=_checkpoint_status_from_state(result),
-        task_id=task_id,
-    )
-    response = _build_trip_response(result)
-    session_store.save_turn(
-        session_id=session_id,
-        trace_id=trace_id,
-        run_id=run_id,
-        user_query=request.user_query,
-        state=result,
-        response=response.model_dump(),
-    )
-    return response
+    return TripPlanningService().plan(request)
 
 
 @router.post("/plan/stream")
@@ -147,313 +97,27 @@ def stream_plan_trip(request: TripPlanRequest) -> StreamingResponse:
     立即收到状态；当 Response Generator 产出文本后，再逐段推送 `response_chunk`。
     """
 
-    # todo: 根据写 java 的经验来说, 这个 api 或者叫 controller 部分不应该怎么复杂才对
-    #   直接调用某一个 service 就可以
-    def event_stream() -> Iterator[str]:
-        event_queue: queue.Queue[tuple[str, dict[str, Any]] | None] = queue.Queue()
-        session_store = SessionStore()
-        memory = MemoryService()
-        # 确定三种不同类型的 id
-        session_id = session_store.ensure_session_id(request.session_id)
-        trace_id = request.trace_id or new_id("trace")
-        run_id = request.run_id or new_id("run")
-        set_trace_context(trace_id=trace_id, run_id=run_id, session_id=session_id)
-        # 加载之前保存的请求信息, 也有可能为 None
-        checkpoint = CheckpointStore()
-        task = checkpoint.create(session_id=session_id, user_id=session_id, trace_id=trace_id)
-        task_id = str(task["task_id"])
-        saved_session = session_store.load(session_id)
-        effective_query = _effective_query_for_request(saved_session, request.user_query)
-        is_clarification_followup = effective_query != request.user_query
-        memory.observe_user_query(request.user_query, user_id=session_id)
-        user_profile = memory.enrich_user_profile({
-            **request.user_profile,
-            "last_query": effective_query,
-            "session_id": session_id,
-            "user_id": session_id,
-        })
-        recorder = TraceRecorder(trace_id=trace_id, run_id=run_id, session_id=session_id)
-        current_state = create_initial_state(
-            effective_query,
-            user_profile=user_profile,
-            max_replanning_count=request.max_replanning_count,
-            session_id=session_id,
-            trace_id=trace_id,
-            run_id=run_id,
-            task_id=task_id,
-        )
-        checkpoint.save_from_plan_state(current_state, status=TaskStatus.CREATED, task_id=task_id)
-        if is_clarification_followup:
-            current_state["logs"] = [
-                *current_state.get("logs", []),
-                (
-                    "Clarification Follow-up: merged user reply into previous pending request:"
-                    f" {request.user_query}"
-                ),
-            ]
-
-        def run_graph() -> None:
-            nonlocal current_state
-            set_trace_context(trace_id=trace_id, run_id=run_id, session_id=session_id)
-            try:
-                for update in life_route_graph.stream(current_state, stream_mode="updates"):
-                    for node_name, patch in update.items():
-                        recorder.record(
-                            "node_run",
-                            {
-                                "node_name": node_name,
-                                "started_at": time.time(),
-                                "ended_at": time.time(),
-                                "duration_ms": 0,
-                                "input_summary": _summarize_patch(current_state),
-                                "output_summary": _summarize_patch(patch),
-                                "error": None,
-                            },
-                        )
-                        current_state = _merge_stream_patch(current_state, patch)
-                        checkpoint.save_from_plan_state(
-                            current_state,
-                            status=_checkpoint_status_for_node(node_name, current_state),
-                            task_id=task_id,
-                        )
-                        latest_log = patch.get("logs", [])[-1] if patch.get("logs") else ""
-                        event_queue.put((
-                            "agent_thinking",
-                            _build_agent_thinking_payload(node_name, patch, current_state),
-                        ))
-                        event_queue.put((
-                            "agent_complete",
-                            {
-                                "agent": node_name,
-                                "message": latest_log or f"{node_name} completed",
-                                "summary": _summarize_patch(patch),
-                            },
-                        ))
-                        event_queue.put((
-                            "node_update",
-                            {
-                                "node": node_name,
-                                "message": latest_log or f"{node_name} completed",
-                            },
-                        ))
-                        for trace_event, trace_payload in _trace_events_for_node(
-                            node_name,
-                            patch,
-                            current_state,
-                        ):
-                            event_queue.put((trace_event, trace_payload))
-                        if node_name == "response_generator" and patch.get("response_text"):
-                            for chunk in _chunk_text(str(patch["response_text"])):
-                                event_queue.put(("response_chunk", {"delta": chunk}))
-                event_queue.put(None)
-            except Exception as exc:  # noqa: BLE001 - 流式接口需要把后台异常转成 SSE 事件。
-                event_queue.put(("error", {"message": str(exc)}))
-                event_queue.put(None)
-
-        if is_clarification_followup:
-            yield _sse_event(
-                "status",
-                {
-                    "stage": "clarification_followup",
-                    "message": (
-                        "\u5df2\u63a5\u4e0a\u4e0a\u4e00\u8f6e\u8ffd\u95ee\uff0c\u628a\u4f60\u7684\u8865\u5145\u4fe1\u606f\u5408\u5e76\u8fdb\u539f\u59cb\u89c4\u5212\u9700\u6c42\u3002"
-                    ),
-                },
-            )
-        else:
-            yield _sse_event(
-                "status",
-                {
-                    "stage": "start",
-                    "message": "已收到需求，开始理解意图并构建本地生活规划 DAG。",
-                },
-            )
-
-        worker = threading.Thread(target=run_graph, daemon=True)
-        worker.start()
-        response_text_sent = False
-
-        while True:
-            try:
-                queued = event_queue.get(timeout=0.8)
-            except queue.Empty:
-                yield _sse_event(
-                    "progress",
-                    {
-                        "message": "规划仍在运行：正在等待大模型、数据库或路线节点返回。",
-                    },
-                )
-                continue
-            if queued is None:
-                break
-            event_name, payload = queued
-            if event_name == "response_chunk":
-                response_text_sent = True
-                time.sleep(0.03)
-            yield _sse_event(event_name, payload)
-
-        response = _build_trip_response(current_state)
-
-        yield _sse_event(
-            "metadata",
-            {
-                "intent_type": response.intent_type,
-                "answer_mode": response.answer_mode,
-                "execution_status": response.execution_status,
-                "need_clarification": response.need_clarification,
-                "plan_count": len(response.ranked_plans),
-                "session_id": response.session_id,
-                "trace_id": response.trace_id,
-                "run_id": response.run_id,
-                "task_id": response.task_id,
-            },
-        )
-
-        if not response_text_sent:
-            for chunk in _chunk_text(response.response_text):
-                yield _sse_event("response_chunk", {"delta": chunk})
-                time.sleep(0.03)
-
-        session_store.save_turn(
-            session_id=session_id,
-            trace_id=trace_id,
-            run_id=run_id,
-            user_query=request.user_query,
-            state=current_state,
-            response=response.model_dump(),
-        )
-        yield _sse_event("final", response.model_dump())
-        yield _sse_event("done", {"ok": True})
-
     return StreamingResponse(
-        event_stream(),
+        TripStreamingService().stream(request),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
             "X-Accel-Buffering": "no",
         },
     )
-
 
 @router.post("/plan/revise/stream")
 def stream_revise_plan(request: RevisePlanRequest) -> StreamingResponse:
     """基于同一会话的上一版 PlanState 修正方案，而不是从空状态重新规划。"""
 
-    def event_stream() -> Iterator[str]:
-        session_store = SessionStore()
-        memory = MemoryService()
-        saved_session = session_store.load(request.session_id)
-        if not saved_session or not isinstance(saved_session.get("latest_state"), dict):
-            yield _sse_event("error", {"message": "没有找到可续跑的会话，请先生成一次方案。"})
-            yield _sse_event("done", {"ok": False})
-            return
-
-        trace_id = new_id("trace")
-        run_id = new_id("run")
-        revision_id = new_id("rev")
-        set_trace_context(trace_id=trace_id, run_id=run_id, session_id=request.session_id)
-        checkpoint = CheckpointStore()
-        task = checkpoint.create(
-            session_id=request.session_id,
-            user_id=request.session_id,
-            trace_id=trace_id,
-        )
-        task_id = str(task["task_id"])
-        memory.observe_user_query(request.user_query, user_id=request.session_id)
-        recorder = TraceRecorder(trace_id=trace_id, run_id=run_id, session_id=request.session_id)
-        current_state = _build_revision_state(
-            saved_session["latest_state"],
-            request.user_query,
-            request.max_replanning_count,
-            trace_id,
-            run_id,
-            revision_id,
-        )
-        current_state["task_id"] = task_id
-        current_state["user_profile"] = memory.enrich_user_profile({
-            **current_state.get("user_profile", {}),
-            "last_query": request.user_query,
-            "session_id": request.session_id,
-            "user_id": request.session_id,
-        })
-        _apply_revision_constraints(current_state, request.user_query)
-        memory.observe_revision(
-            request.user_query,
-            current_state.get("constraints", {}),
-            user_id=request.session_id,
-        )
-        checkpoint.save_from_plan_state(current_state, status=TaskStatus.CREATED, task_id=task_id)
-
-        yield _sse_event(
-            "status",
-            {
-                "stage": "revision",
-                "session_id": request.session_id,
-                "trace_id": trace_id,
-                "run_id": run_id,
-                "revision_id": revision_id,
-                "task_id": task_id,
-                "message": "已读取上一版方案，正在基于新需求做局部/全局修正。",
-            },
-        )
-        record_trace_event(
-            "user_action",
-            {
-                "action": "revision_requested",
-                "query": request.user_query,
-                "selected_plan_id": request.selected_plan_id,
-            },
-        )
-
-        try:
-            current_state = _run_revision_pipeline(current_state, recorder, event_stream=True)
-            checkpoint.save_from_plan_state(
-                current_state,
-                status=_checkpoint_status_from_state(current_state),
-                task_id=task_id,
-            )
-            response = _build_trip_response(current_state)
-            session_store.save_turn(
-                session_id=request.session_id,
-                trace_id=trace_id,
-                run_id=run_id,
-                revision_id=revision_id,
-                is_revision=True,
-                user_query=request.user_query,
-                state=current_state,
-                response=response.model_dump(),
-            )
-            for chunk in _chunk_text(response.response_text):
-                yield _sse_event("response_chunk", {"delta": chunk})
-                time.sleep(0.03)
-            yield _sse_event(
-                "metadata",
-                {
-                    "session_id": response.session_id,
-                    "trace_id": response.trace_id,
-                    "run_id": response.run_id,
-                    "revision_id": response.revision_id,
-                    "is_revision": response.is_revision,
-                    "task_id": response.task_id,
-                    "plan_count": len(response.ranked_plans),
-                },
-            )
-            yield _sse_event("final", response.model_dump())
-            yield _sse_event("done", {"ok": True})
-        except Exception as exc:  # noqa: BLE001 - 修正流需要把异常转成 SSE，避免前端一直等待。
-            recorder.record("revision_error", {"error": str(exc)})
-            yield _sse_event("error", {"message": str(exc)})
-            yield _sse_event("done", {"ok": False})
-
     return StreamingResponse(
-        event_stream(),
+        TripRevisionService().stream(request),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
             "X-Accel-Buffering": "no",
         },
     )
-
 
 @router.post("/execute/stream")
 def stream_execute_plan(request: ExecutePlanRequest) -> StreamingResponse:
@@ -524,9 +188,10 @@ def stream_execute_plan(request: ExecutePlanRequest) -> StreamingResponse:
                 "message": "开始模拟执行当前方案。",
             },
         )
-        validated_item_ids = _validated_item_ids(request.plan)
+        execution_service = TripExecutionService()
+        validated_item_ids = execution_service.validated_item_ids(request.plan)
         for step in steps:
-            risk_level = _risk_level_for_execution_step(step)
+            risk_level = execution_service.risk_level_for_step(step)
             idempotency_key = make_idempotency_key(
                 user_id=session_id,
                 task_id=task_id,
@@ -568,8 +233,10 @@ def stream_execute_plan(request: ExecutePlanRequest) -> StreamingResponse:
                     "target_id": step.get("poi_id") or step.get("id") or request.plan.get("id"),
                     "validated_item_ids": validated_item_ids,
                     "confirmed": True,
+                    "confirmed_source": "execute_plan_button",
                 },
                 "requires_confirmation": int(risk_level) >= 2,
+                "confirmed_source": "execute_plan_button",
             }
             result = result_harness.run_request(tool_request, _mock_execution_result, step)
             checkpoint.append_action(
@@ -631,9 +298,25 @@ def adjust_plan(request: AdjustPlanRequest) -> dict[str, Any]:
         max_retries=1,
         fallback=lambda: _fallback_adjust_response(request.plan, request.poi_id, request.prompt),
     )
-    result = harness.run(_replace_plan_poi, request.plan, request.poi_id, request.prompt)
-    if result.success and isinstance(result.data, dict):
-        return result.data
+    result = harness.run_request(
+        {
+            "tool_name": "plan.adjust.replace_poi",
+            "risk_level": 1,
+            "session_id": request.session_id or "",
+            "task_id": "",
+            "params": {
+                "poi_id": request.poi_id,
+                "prompt": request.prompt,
+            },
+        },
+        _replace_plan_poi,
+        request.plan,
+        request.poi_id,
+        request.prompt,
+    )
+    data = result.get("data")
+    if result.get("success") and isinstance(data, dict):
+        return data
     return _fallback_adjust_response(request.plan, request.poi_id, request.prompt)
 
 
@@ -660,8 +343,25 @@ def export_calendar_ics(request: ExecutePlanRequest) -> Response:
         max_retries=1,
         fallback=lambda: build_plan_ics(request.plan),
     )
-    result = harness.run(build_plan_ics, request.plan)
-    ics_text = result.data if result.success else build_plan_ics(request.plan)
+    result = harness.run_request(
+        {
+            "tool_name": "calendar.ics.export",
+            "risk_level": 2,
+            "session_id": session_id,
+            "params": {
+                "plan_id": request.plan.get("id"),
+                "confirmed": True,
+                "confirmed_source": "calendar_export_button",
+            },
+            "confirmed_source": "calendar_export_button",
+        },
+        build_plan_ics,
+        request.plan,
+    )
+    data = result.get("data") if isinstance(result.get("data"), dict) else {}
+    ics_text = data.get("value") if isinstance(data, dict) else None
+    if not isinstance(ics_text, str):
+        ics_text = build_plan_ics(request.plan)
     return Response(
         content=ics_text,
         media_type="text/calendar; charset=utf-8",
@@ -680,15 +380,42 @@ def get_trace(trace_id: str) -> dict[str, Any]:
 def get_task_checkpoint(task_id: str) -> dict[str, Any]:
     """读取任务 checkpoint，页面刷新或服务重启后用它恢复进度。"""
 
-    task = CheckpointStore().load(task_id)
-    return {"ok": bool(task), "task": task}
+    return TaskRecoveryService().task_payload(task_id)
 
 
 @router.post("/task/{task_id}/resume")
 def resume_task_checkpoint(task_id: str) -> dict[str, Any]:
     """生成任务恢复决策；只判断继续、重校验或补偿，不自动重复交易。"""
 
-    return CheckpointStore().resume(task_id)
+    return TaskRecoveryService().resume_decision(task_id)
+
+
+@router.get("/task/{task_id}/resume-decision")
+def get_task_resume_decision(task_id: str) -> dict[str, Any]:
+    """只读恢复决策接口，方便观测面板和评测回放使用。"""
+
+    return TaskRecoveryService().resume_decision(task_id)
+
+
+@router.get("/evals/runtime-summary")
+def get_runtime_eval_summary() -> dict[str, Any]:
+    """聚合运行工件，输出工具、任务和恢复评测的基础统计。"""
+
+    return TaskRecoveryService().runtime_summary()
+
+
+@router.get("/observability/node-metrics")
+def get_node_metrics(trace_id: str | None = Query(default=None)) -> dict[str, Any]:
+    """读取节点耗时指标，支持按 trace_id 过滤。"""
+
+    return TaskRecoveryService().node_metrics(trace_id)
+
+
+@router.get("/observability/runtime-health")
+def get_runtime_health() -> dict[str, Any]:
+    """读取 runtime store 当前健康状态。"""
+
+    return TaskRecoveryService().runtime_health()
 
 
 @router.delete("/memory")
@@ -1930,3 +1657,4 @@ def data_source_status() -> DataSourceStatusResponse:
             database_name=settings.database_name,
             error=str(exc),
         )
+

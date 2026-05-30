@@ -69,13 +69,34 @@ class AmapRouteService:
             fallback=lambda *_args, **_kwargs: _fallback_estimate(fallback_distance_km),
         )
         if not self.enabled:
-            result = harness.run(lambda: _fallback_estimate(fallback_distance_km))
+            result = harness.run_request(
+                {
+                    "tool_name": "amap.route.estimate_segment",
+                    "risk_level": 1,
+                    "params": {"enabled": False, "fallback_distance_km": fallback_distance_km},
+                },
+                lambda: _fallback_estimate(fallback_distance_km),
+            )
             self.call_log.extend(harness.call_log)
-            return result.data
+            return _route_result_data(result) or _fallback_estimate(fallback_distance_km)
 
-        result = harness.run(self._estimate_segment_live, previous, current, fallback_distance_km)
+        result = harness.run_request(
+            {
+                "tool_name": "amap.route.estimate_segment",
+                "risk_level": 1,
+                "params": {
+                    "origin": _safe_route_point(previous),
+                    "destination": _safe_route_point(current),
+                    "fallback_distance_km": fallback_distance_km,
+                },
+            },
+            self._estimate_segment_live,
+            previous,
+            current,
+            fallback_distance_km,
+        )
         self.call_log.extend(harness.call_log)
-        return result.data if result.success else _fallback_estimate(fallback_distance_km)
+        return _route_result_data(result) if result.get("success") else _fallback_estimate(fallback_distance_km)
 
     def _estimate_segment_live(
         self,
@@ -156,6 +177,33 @@ def _format_location(poi: dict[str, Any]) -> str:
     """把统一 POI 坐标转换成高德 API 要求的 `lon,lat`。"""
 
     return f"{float(poi['lon'])},{float(poi['lat'])}"
+
+
+def _safe_route_point(poi: dict[str, Any]) -> dict[str, Any]:
+    """给 ToolHarness trace 使用的脱敏路线点。"""
+
+    return {
+        "id": poi.get("id"),
+        "name": poi.get("name"),
+        "lat": poi.get("lat"),
+        "lon": poi.get("lon"),
+    }
+
+
+def _route_result_data(result: dict[str, Any]) -> AmapRouteEstimate | None:
+    data = result.get("data")
+    if isinstance(data, AmapRouteEstimate):
+        return data
+    if isinstance(data, dict) and isinstance(data.get("value"), AmapRouteEstimate):
+        return data["value"]
+    if isinstance(data, dict) and {"distance_km", "duration_minutes", "source"} <= set(data):
+        return AmapRouteEstimate(
+            distance_km=float(data["distance_km"]),
+            duration_minutes=int(data["duration_minutes"]),
+            source=str(data["source"]),
+            polyline=data.get("polyline", []),
+        )
+    return None
 
 
 def _estimate_from_meters_seconds(

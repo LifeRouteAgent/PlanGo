@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from app.agents.llm_understanding import get_llm_understanding
 from app.agents.issue_utils import issue_codes
+from app.services.llm_output_schemas import DagPlanOutput, validate_llm_output
 from app.state.plan_state import PlanState, PlanStatePatch
 from app.tools.poi_schema import (
     POI_ACTIVITY,
@@ -156,7 +157,10 @@ def _llm_dag_plan(llm_understanding: dict | None) -> dict:
     if not isinstance(llm_understanding, dict):
         return {}
     dag_plan = llm_understanding.get("dag_plan")
-    return dag_plan if isinstance(dag_plan, dict) else {}
+    if not isinstance(dag_plan, dict):
+        return {}
+    validation = validate_llm_output(DagPlanOutput, dag_plan, source="planner_agent.dag_plan")
+    return validation.data if validation.ok else {}
 
 
 def _valid_enabled_skills(skills: object) -> list[str]:

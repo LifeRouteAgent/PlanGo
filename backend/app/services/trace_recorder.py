@@ -8,6 +8,7 @@ from collections.abc import Callable
 from typing import Any, TypeVar
 
 from app.services.runtime_paths import TRACES_DIR, ensure_runtime_dirs
+from app.services.runtime_store import get_runtime_store
 
 T = TypeVar("T")
 
@@ -71,8 +72,20 @@ class TraceRecorder:
             "timestamp": time.time(),
             **payload,
         }
-        with self.path.open("a", encoding="utf-8") as file:
-            file.write(json.dumps(event, ensure_ascii=False, default=str) + "\n")
+        get_runtime_store().append_trace_event(self.trace_id, event)
+        if event_type == "node_run":
+            get_runtime_store().record_node_metric({
+                "trace_id": self.trace_id,
+                "run_id": self.run_id,
+                "session_id": self.session_id,
+                "node_name": str(payload.get("node_name") or ""),
+                "started_at": float(payload.get("started_at") or event["timestamp"]),
+                "ended_at": float(payload.get("ended_at") or event["timestamp"]),
+                "duration_ms": int(payload.get("duration_ms", 0) or 0),
+                "status": "failed" if payload.get("error") else "success",
+                "error": payload.get("error"),
+                "output_summary": payload.get("output_summary", {}),
+            })
 
     def time_node(
         self, node_name: str, fn: Callable[[], T], *, input_summary: dict[str, Any] | None = None
@@ -117,15 +130,9 @@ class TraceRecorder:
     def read(trace_id: str) -> dict[str, Any]:
         """读取 trace 摘要和事件列表。"""
 
-        ensure_runtime_dirs()
-        path = TRACES_DIR / f"{trace_id}.jsonl"
-        if not path.exists():
+        events = get_runtime_store().read_trace_events(trace_id)
+        if not events:
             return {"trace_id": trace_id, "events": [], "summary": {"event_count": 0}}
-        events = [
-            json.loads(line)
-            for line in path.read_text(encoding="utf-8").splitlines()
-            if line.strip()
-        ]
         node_events = [event for event in events if event.get("event_type") == "node_run"]
         tool_events = [event for event in events if event.get("event_type") == "tool_call"]
         return {

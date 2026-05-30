@@ -21,5 +21,8 @@
     "MILVUS_COLLECTION_USER_PROFILE":  "liferoute_user_profile_vectors",
     "EMBEDDING_PROVIDER":  "local_bge",
     "EMBEDDING_MODEL_PATH":  "BAAI/bge-small-zh-v1.5",
-    "EMBEDDING_DIMENSION":  512
+    "EMBEDDING_DIMENSION":  512,
+    "RUNTIME_STORE": "mysql",
+    "RUNTIME_MYSQL_ENABLED": true,
+    "PROMPT_VERSION_ENFORCED": true
 }

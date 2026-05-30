@@ -1,0 +1,19 @@
+{
+  "default_start_hour": 10,
+  "default_total_duration_minutes": 240,
+  "max_route_minutes": 90,
+  "max_segment_route_minutes": 45,
+  "top_k_per_category": 8,
+  "max_raw_plan_combinations": 12,
+  "default_budget_per_person": 180,
+  "stay_minutes_by_slot": {
+    "attraction": 120,
+    "activity": 90,
+    "restaurant": 90,
+    "entertainment": 120,
+    "shopping": 75,
+    "fitness": 90,
+    "beauty": 90,
+    "lifestyle": 90
+  }
+}

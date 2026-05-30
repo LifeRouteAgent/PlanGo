@@ -101,6 +101,9 @@ class Settings:
     embedding_provider: str = _get(_CONFIG, "EMBEDDING_PROVIDER", "local_bge")
     embedding_model_path: str = _get(_CONFIG, "EMBEDDING_MODEL_PATH", "BAAI/bge-small-zh-v1.5")
     embedding_dimension: int = _get_int(_CONFIG, "EMBEDDING_DIMENSION", 512)
+    runtime_store: str = _get(_CONFIG, "RUNTIME_STORE", "mysql")
+    runtime_mysql_enabled: bool = _get_bool(_CONFIG, "RUNTIME_MYSQL_ENABLED", True)
+    prompt_version_enforced: bool = _get_bool(_CONFIG, "PROMPT_VERSION_ENFORCED", True)
 
 
 settings = Settings()

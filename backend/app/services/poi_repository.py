@@ -222,10 +222,19 @@ class PoiRepository:
             max_retries=1,
             fallback=lambda: {category: [] for category in category_list},
         )
-        result = harness.run(self._fetch_by_categories_once, category_list)
+        result = harness.run_request(
+            {
+                "tool_name": "database.poi.fetch_by_categories",
+                "risk_level": 1,
+                "params": {"categories": category_list, "limit": self._limit_per_category},
+            },
+            self._fetch_by_categories_once,
+            category_list,
+        )
+        data = result.get("data")
         return (
-            result.data
-            if result.success and isinstance(result.data, dict)
+            data
+            if result.get("success") and isinstance(data, dict)
             else {category: [] for category in category_list}
         )
 
@@ -246,10 +255,20 @@ class PoiRepository:
             max_retries=1,
             fallback=lambda: {category: [] for category in category_list},
         )
-        result = harness.run(self._fetch_by_name_keywords_once, keyword_list, category_list)
+        result = harness.run_request(
+            {
+                "tool_name": "database.poi.fetch_by_name_keywords",
+                "risk_level": 1,
+                "params": {"keywords": keyword_list, "categories": category_list},
+            },
+            self._fetch_by_name_keywords_once,
+            keyword_list,
+            category_list,
+        )
+        data = result.get("data")
         return (
-            result.data
-            if result.success and isinstance(result.data, dict)
+            data
+            if result.get("success") and isinstance(data, dict)
             else {category: [] for category in category_list}
         )
 
@@ -318,8 +337,12 @@ class PoiRepository:
             max_retries=1,
             fallback=lambda: {},
         )
-        result = harness.run(self._table_counts_once)
-        return result.data if result.success and isinstance(result.data, dict) else {}
+        result = harness.run_request(
+            {"tool_name": "database.poi.table_counts", "risk_level": 1, "params": {}},
+            self._table_counts_once,
+        )
+        data = result.get("data")
+        return data if result.get("success") and isinstance(data, dict) else {}
 
     def _table_counts_once(self) -> dict[str, int]:
         """执行一次真实表行数统计。"""

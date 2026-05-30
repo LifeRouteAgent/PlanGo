@@ -5,6 +5,7 @@ import time
 from typing import Any
 
 from app.services.runtime_paths import SESSIONS_DIR, ensure_runtime_dirs
+from app.services.runtime_store import get_runtime_store
 from app.services.trace_recorder import new_id
 
 
@@ -26,13 +27,10 @@ class SessionStore:
     def load(self, session_id: str) -> dict[str, Any] | None:
         """读取会话文件。"""
 
-        path = self._path(session_id)
-        if not path.exists():
-            return None
-        try:
-            return json.loads(path.read_text(encoding="utf-8"))
-        except json.JSONDecodeError:
-            return None
+        payload = get_runtime_store().load_session(session_id)
+        if isinstance(payload, dict):
+            return payload
+        return None
 
     def save_turn(
         self,
@@ -71,10 +69,7 @@ class SessionStore:
             "latest_response": response,
             "turns": turns[-30:],
         }
-        self._path(session_id).write_text(
-            json.dumps(payload, ensure_ascii=False, indent=2, default=str),
-            encoding="utf-8",
-        )
+        get_runtime_store().save_session(session_id, payload)
 
     def _path(self, session_id: str):
         """限制文件名只来自内部生成的短 ID。"""

@@ -1,0 +1,19 @@
+{
+  "risk_levels": {
+    "internal_reasoning": 0,
+    "database_query": 1,
+    "amap_route": 1,
+    "amap_weather": 1,
+    "pdf_export": 2,
+    "calendar_export": 2,
+    "share_plan": 2,
+    "restaurant_booking": 3,
+    "ticket_order": 3,
+    "taxi": 3,
+    "payment": 4,
+    "refund": 4
+  },
+  "requires_confirmation_min_level": 2,
+  "requires_verified_target_min_level": 3,
+  "auto_execute_max_level": 3
+}

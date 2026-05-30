@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Protocol, TypedDict
 
 from app.services.runtime_paths import MEMORY_DIR, SESSIONS_DIR, TOOL_CACHE_DIR, ensure_runtime_dirs
+from app.services.runtime_store import get_runtime_store
 
 
 class UserProfileMemory(TypedDict, total=False):
@@ -153,16 +154,8 @@ class FileMemoryStore:
     def get_tool_cache(self, key: str) -> ToolCacheEntry | None:
         """读取未过期的工具缓存。过期返回 None，但文件保留用于历史解释。"""
 
-        path = _tool_cache_path(key)
-        if not path.exists():
-            return None
-        data = _read_json(path, {})
-        if not isinstance(data, dict):
-            return None
-        expires_at = _parse_ts(str(data.get("expires_at") or ""))
-        if expires_at and expires_at < time.time():
-            return None
-        return data
+        data = get_runtime_store().get_tool_cache(key)
+        return data if isinstance(data, dict) else None
 
     def put_tool_cache(self, entry: ToolCacheEntry) -> None:
         """写入工具缓存。"""
@@ -172,10 +165,7 @@ class FileMemoryStore:
             entry.get("request_hash", {}),
         )
         entry["cache_key"] = key
-        _tool_cache_path(key).write_text(
-            json.dumps(entry, ensure_ascii=False, indent=2, default=str),
-            encoding="utf-8",
-        )
+        get_runtime_store().put_tool_cache(key, entry)
 
     def search_relevant_memory(
         self,

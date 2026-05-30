@@ -34,16 +34,27 @@ class AmapWeatherService:
             fallback=lambda: _fallback_weather("unconfigured" if not self.enabled else "error"),
         )
         if not self.enabled:
-            result = harness.run(lambda: _fallback_weather("unconfigured"))
+            result = harness.run_request(
+                {
+                    "tool_name": "amap.weather.current",
+                    "risk_level": 1,
+                    "params": {"city": city_code, "enabled": False},
+                },
+                lambda: _fallback_weather("unconfigured"),
+            )
             self.call_log.extend(harness.call_log)
-            return result.data
-        result = harness.run(self._current_weather_live, city_code)
-        self.call_log.extend(harness.call_log)
-        return (
-            result.data
-            if result.success and isinstance(result.data, dict)
-            else _fallback_weather("error")
+            return _weather_result_data(result) or _fallback_weather("unconfigured")
+        result = harness.run_request(
+            {
+                "tool_name": "amap.weather.current",
+                "risk_level": 1,
+                "params": {"city": city_code},
+            },
+            self._current_weather_live,
+            city_code,
         )
+        self.call_log.extend(harness.call_log)
+        return _weather_result_data(result) if result.get("success") else _fallback_weather("error")
 
     def _current_weather_live(self, city_code: str) -> dict[str, Any]:
         response = httpx.get(
@@ -88,6 +99,13 @@ def _city_code(city: str | None) -> str:
     if value in {"beijing", "北京", "北京市", "110000", "110100"}:
         return "110000"
     return city or "110000"
+
+
+def _weather_result_data(result: dict[str, Any]) -> dict[str, Any] | None:
+    data = result.get("data")
+    if isinstance(data, dict) and "value" in data and isinstance(data["value"], dict):
+        return data["value"]
+    return data if isinstance(data, dict) else None
 
 
 def _safe_int(value: Any) -> int | None:

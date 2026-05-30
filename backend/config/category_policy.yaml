@@ -1,0 +1,23 @@
+{
+  "template_slots": {
+    "meal_only": ["restaurant"],
+    "meal_plus_activity": ["activity", "restaurant"],
+    "family_half_day": ["activity", "restaurant", "shopping"],
+    "friends_gathering": ["entertainment", "restaurant", "entertainment"],
+    "couple_date": ["activity", "restaurant", "entertainment"],
+    "relaxation": ["beauty", "restaurant"],
+    "shopping_leisure": ["shopping", "restaurant", "entertainment"]
+  },
+  "skill_categories": {
+    "poi_mix_recommend": ["attraction", "shopping", "activity"],
+    "poi_activity_recommend": ["activity", "entertainment"],
+    "poi_restaurant_recommend": ["restaurant"],
+    "poi_lifestyle_recommend": ["fitness", "beauty", "entertainment"]
+  },
+  "default_enabled_skills": [
+    "poi_mix_recommend",
+    "poi_activity_recommend",
+    "poi_restaurant_recommend",
+    "poi_lifestyle_recommend"
+  ]
+}

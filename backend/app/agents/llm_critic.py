@@ -6,6 +6,7 @@ from typing import Any
 from app.agents.issue_utils import dedupe_issues, make_issue, normalize_issues
 from app.services.context_builder import ContextBuilder
 from app.services.llm_service import call_chat_completion, extract_json_object
+from app.services.llm_output_schemas import CriticOutput, validate_llm_output
 from app.services.trace_recorder import record_trace_event
 from app.state.plan_state import PlanState, PlanStatePatch
 
@@ -70,14 +71,22 @@ def llm_critic_node(state: PlanState) -> PlanStatePatch:
         temperature=0.15,
         timeout_seconds=25,
         max_completion_tokens=1200,
+        prompt_name="llm_critic",
+        schema_name="CriticOutput",
     )
     parsed = extract_json_object(raw)
-    critic_issues = _sanitize_issues(parsed, verified_plans) if parsed else []
+    validation = (
+        validate_llm_output(CriticOutput, parsed, source="llm_critic")
+        if isinstance(parsed, dict)
+        else None
+    )
+    critic_issues = _sanitize_issues(validation.data, verified_plans) if validation and validation.ok else []
     updated_plans = _attach_plan_issues(verified_plans, critic_issues)
     record_trace_event(
         "llm_critic",
         {
             "success": bool(parsed),
+            "schema_valid": bool(validation and validation.ok),
             "raw_preview": raw[:600] if raw else "",
             "issues": critic_issues,
         },

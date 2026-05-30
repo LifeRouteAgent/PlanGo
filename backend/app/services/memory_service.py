@@ -4,7 +4,7 @@ import json
 import time
 from typing import Any
 
-from app.services.runtime_paths import MEMORY_DIR, ensure_runtime_dirs
+from app.services.runtime_paths import MEMORY_DIR, MEMORY_USERS_DIR, ensure_runtime_dirs
 from app.services.llm_semantic_extractor import extract_memory_updates
 from app.services.memory_store import FileMemoryStore, ToolCacheEntry
 from app.services.vector_memory_store import VectorMemoryRecord, VectorMemoryStore
@@ -20,24 +20,21 @@ class MemoryService:
     def __init__(self, vector_store: VectorMemoryStore | None = None) -> None:
         ensure_runtime_dirs()
         self.memory_md = MEMORY_DIR / "MEMORY.md"
-        self.profile_json = MEMORY_DIR / "user_profile.json"
-        self.history_jsonl = MEMORY_DIR / "history.jsonl"
+        self.users_dir = MEMORY_USERS_DIR
+        self.profile_json = self._profile_path("default")
+        self.history_jsonl = self._history_path("default")
         self.vector_store = vector_store or VectorMemoryStore()
         self.store = FileMemoryStore()
         if not self.memory_md.exists():
             self.memory_md.write_text("# LifeRoute Memory\n\n", encoding="utf-8")
-        if not self.profile_json.exists():
-            self.profile_json.write_text(
-                json.dumps(_empty_profile(), ensure_ascii=False, indent=2),
-                encoding="utf-8",
-            )
+        self._ensure_user_files("default")
 
     def enrich_user_profile(self, user_profile: dict[str, Any] | None) -> dict[str, Any]:
         """把压缩后的长期画像注入本轮 user_profile。"""
 
         profile = dict(user_profile or {})
         user_id = _user_id(profile)
-        memory_profile = self.read_profile()
+        memory_profile = self.read_profile(user_id=user_id)
         query = str(profile.get("last_query", ""))
         memory_context = self.build_memory_context(query=query, user_id=user_id)
         similar = self.similar_user_preference_search(memory_profile, user_id=user_id)
@@ -59,11 +56,11 @@ class MemoryService:
     ) -> dict[str, Any]:
         """构建给上下文层使用的压缩记忆，只返回少量摘要。"""
 
-        profile = self.read_profile()
+        profile = self.read_profile(user_id=user_id)
         vector_hits = self.vector_store.search_memory(query, limit=limit, user_id=user_id)
         snippets = [str(hit.get("text", "")) for hit in vector_hits if hit.get("text")]
         if len(snippets) < limit:
-            snippets.extend(self.search(query, limit=limit - len(snippets)))
+            snippets.extend(self.search(query, limit=limit - len(snippets), user_id=user_id))
         snippets = _dedupe(snippets)[:limit]
         memory_fit_tags = _memory_fit_tags(profile, snippets)
         return {
@@ -73,11 +70,23 @@ class MemoryService:
             "source": "milvus+file" if vector_hits else "file",
         }
 
-    def read_profile(self) -> dict[str, Any]:
+    def read_profile(self, *, user_id: str = "default") -> dict[str, Any]:
         """读取用户画像 JSON，文件损坏时回退为空画像。"""
 
+        profile_path = self._profile_path(user_id)
+        if not profile_path.exists():
+            self._ensure_user_files(user_id)
+            legacy_path = MEMORY_DIR / "user_profile.json"
+            if _safe_user_id(user_id) == "default" and legacy_path.exists():
+                try:
+                    legacy_data = json.loads(legacy_path.read_text(encoding="utf-8"))
+                    if isinstance(legacy_data, dict):
+                        self._write_profile(legacy_data, user_id=user_id)
+                        return legacy_data
+                except (OSError, json.JSONDecodeError):
+                    pass
         try:
-            data = json.loads(self.profile_json.read_text(encoding="utf-8"))
+            data = json.loads(profile_path.read_text(encoding="utf-8"))
             return data if isinstance(data, dict) else _empty_profile()
         except (OSError, json.JSONDecodeError):
             return _empty_profile()
@@ -88,7 +97,7 @@ class MemoryService:
         优先由 LLM 判断是否应写入长期画像；规则只作为 LLM 不可用时的保守兜底。
         """
 
-        profile = self.read_profile()
+        profile = self.read_profile(user_id=user_id)
         extracted = extract_memory_updates(query, user_profile=profile)
         changed = _apply_llm_memory_updates(profile, extracted)
         source = "llm"
@@ -96,10 +105,13 @@ class MemoryService:
             changed = _apply_rule_memory_updates(profile, query)
             source = "rule_fallback"
         if changed:
-            self._write_profile(profile)
-            self._append_memory(f"用户偏好更新({source})：" + "；".join(changed))
+            self._write_profile(profile, user_id=user_id)
+            self._append_memory(
+                f"用户偏好更新({source})：" + "；".join(changed),
+                user_id=user_id,
+            )
             self._upsert_profile_vector(user_id, profile)
-        self._append_history({"type": "user_query", "query": query})
+        self._append_history({"type": "user_query", "query": query}, user_id=user_id)
         self.store.append_session_event(user_id, {"type": "user_query", "query": query})
         self.vector_store.upsert_memory(
             VectorMemoryRecord(
@@ -121,7 +133,7 @@ class MemoryService:
     def observe_selected_plan(self, plan: dict[str, Any], *, user_id: str = "default") -> None:
         """用户采纳/执行方案后累计类别偏好和最近选择摘要。"""
 
-        profile = self.read_profile()
+        profile = self.read_profile(user_id=user_id)
         categories = profile.get("favorite_categories", {})
         if not isinstance(categories, dict):
             categories = {}
@@ -138,10 +150,14 @@ class MemoryService:
             "estimated_budget": plan.get("estimated_budget"),
             "total_duration_minutes": plan.get("total_duration_minutes"),
         }
-        self._write_profile(profile)
-        self._append_memory(f"用户采纳方案：{plan.get('title') or plan.get('id')}")
+        self._write_profile(profile, user_id=user_id)
+        self._append_memory(
+            f"用户采纳方案：{plan.get('title') or plan.get('id')}",
+            user_id=user_id,
+        )
         self._append_history(
-            {"type": "plan_selected", "plan": profile["last_selected_plan_summary"]}
+            {"type": "plan_selected", "plan": profile["last_selected_plan_summary"]},
+            user_id=user_id,
         )
         self.store.append_session_event(
             user_id,
@@ -208,15 +224,19 @@ class MemoryService:
 
         self.store.put_tool_cache(entry)
 
-    def search(self, query: str, *, limit: int = 5) -> list[str]:
+    def search(self, query: str, *, limit: int = 5, user_id: str = "default") -> list[str]:
         """关键词检索 MEMORY.md 和最近历史，不依赖向量库。"""
 
         keywords = [token for token in query.replace("，", " ").replace(",", " ").split() if token]
         lines: list[str] = []
         if self.memory_md.exists():
             lines.extend(self.memory_md.read_text(encoding="utf-8").splitlines())
-        if self.history_jsonl.exists():
-            lines.extend(self.history_jsonl.read_text(encoding="utf-8").splitlines()[-80:])
+        user_memory = self._memory_path(user_id)
+        user_history = self._history_path(user_id)
+        if user_memory.exists():
+            lines.extend(user_memory.read_text(encoding="utf-8").splitlines())
+        if user_history.exists():
+            lines.extend(user_history.read_text(encoding="utf-8").splitlines()[-80:])
         if not keywords:
             return [line for line in lines[-limit:] if line.strip()]
         matched = [
@@ -234,7 +254,7 @@ class MemoryService:
             return vector_hits
         return [
             {"text": line, "source": "file", "score": None}
-            for line in self.search(query, limit=limit)
+            for line in self.search(query, limit=limit, user_id=user_id)
         ]
 
     def similar_user_preference_search(
@@ -246,7 +266,7 @@ class MemoryService:
     ) -> list[dict[str, Any]]:
         """检索相似用户画像，返回可作为召回软约束的偏好摘要。"""
 
-        profile_data = profile or self.read_profile()
+        profile_data = profile or self.read_profile(user_id=user_id)
         hits = self.vector_store.search_similar_profiles(
             _profile_text(profile_data),
             limit=limit,
@@ -265,9 +285,9 @@ class MemoryService:
     def rebuild_vector_index(self, *, user_id: str = "default") -> dict[str, Any]:
         """把文件记忆重建到 Milvus。"""
 
-        profile = self.read_profile()
+        profile = self.read_profile(user_id=user_id)
         count = 0
-        for line in self.search("", limit=200):
+        for line in self.search("", limit=200, user_id=user_id):
             if self.vector_store.upsert_memory(
                 VectorMemoryRecord(
                     user_id=user_id,
@@ -296,7 +316,7 @@ class MemoryService:
     def profile_payload(self, *, user_id: str = "default") -> dict[str, Any]:
         """返回前端/调试接口可展示的画像和向量状态。"""
 
-        profile = self.read_profile()
+        profile = self.read_profile(user_id=user_id)
         return {
             "profile": profile,
             "memory_context": self.build_memory_context(query="", user_id=user_id),
@@ -314,12 +334,20 @@ class MemoryService:
     def clear(self, *, user_id: str | None = None) -> None:
         """清空长期记忆和向量记忆。"""
 
-        self.memory_md.write_text("# LifeRoute Memory\n\n", encoding="utf-8")
-        self.profile_json.write_text(
-            json.dumps(_empty_profile(), ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
-        self.history_jsonl.write_text("", encoding="utf-8")
+        if user_id:
+            self._write_profile(_empty_profile(), user_id=user_id)
+            self._memory_path(user_id).write_text("# User Memory\n\n", encoding="utf-8")
+            self._history_path(user_id).write_text("", encoding="utf-8")
+        else:
+            self.memory_md.write_text("# LifeRoute Memory\n\n", encoding="utf-8")
+            user_dirs = [path for path in self.users_dir.iterdir() if path.is_dir()]
+            if not user_dirs:
+                user_dirs = [self._user_dir("default")]
+            for user_dir in user_dirs:
+                current_user_id = user_dir.name
+                self._write_profile(_empty_profile(), user_id=current_user_id)
+                self._memory_path(current_user_id).write_text("# User Memory\n\n", encoding="utf-8")
+                self._history_path(current_user_id).write_text("", encoding="utf-8")
         self.vector_store.clear(user_id=user_id)
 
     def _upsert_profile_vector(self, user_id: str, profile: dict[str, Any]) -> bool:
@@ -332,20 +360,54 @@ class MemoryService:
             },
         )
 
-    def _write_profile(self, profile: dict[str, Any]) -> None:
-        self.profile_json.write_text(
+    def _write_profile(self, profile: dict[str, Any], *, user_id: str = "default") -> None:
+        self._ensure_user_files(user_id)
+        self._profile_path(user_id).write_text(
             json.dumps(profile, ensure_ascii=False, indent=2, default=str),
             encoding="utf-8",
         )
 
-    def _append_memory(self, line: str) -> None:
+    def _append_memory(self, line: str, *, user_id: str = "default") -> None:
+        self._ensure_user_files(user_id)
+        timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
         with self.memory_md.open("a", encoding="utf-8") as file:
-            file.write(f"- {time.strftime('%Y-%m-%d %H:%M:%S')} {line}\n")
+            file.write(f"- {timestamp} [{_safe_user_id(user_id)}] {line}\n")
+        with self._memory_path(user_id).open("a", encoding="utf-8") as file:
+            file.write(f"- {timestamp} {line}\n")
 
-    def _append_history(self, payload: dict[str, Any]) -> None:
+    def _append_history(self, payload: dict[str, Any], *, user_id: str = "default") -> None:
+        self._ensure_user_files(user_id)
         payload = {"timestamp": time.time(), **payload}
-        with self.history_jsonl.open("a", encoding="utf-8") as file:
+        with self._history_path(user_id).open("a", encoding="utf-8") as file:
             file.write(json.dumps(payload, ensure_ascii=False, default=str) + "\n")
+
+    def _ensure_user_files(self, user_id: str) -> None:
+        user_dir = self._user_dir(user_id)
+        user_dir.mkdir(parents=True, exist_ok=True)
+        profile_path = self._profile_path(user_id)
+        memory_path = self._memory_path(user_id)
+        history_path = self._history_path(user_id)
+        if not profile_path.exists():
+            profile_path.write_text(
+                json.dumps(_empty_profile(), ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+        if not memory_path.exists():
+            memory_path.write_text("# User Memory\n\n", encoding="utf-8")
+        if not history_path.exists():
+            history_path.write_text("", encoding="utf-8")
+
+    def _user_dir(self, user_id: str) -> Any:
+        return self.users_dir / _safe_user_id(user_id)
+
+    def _profile_path(self, user_id: str) -> Any:
+        return self._user_dir(user_id) / "user_profile.json"
+
+    def _memory_path(self, user_id: str) -> Any:
+        return self._user_dir(user_id) / "MEMORY.md"
+
+    def _history_path(self, user_id: str) -> Any:
+        return self._user_dir(user_id) / "history.jsonl"
 
 
 def _empty_profile() -> dict[str, Any]:
@@ -450,6 +512,14 @@ def _safe_float(value: Any, fallback: float) -> float:
 
 def _user_id(profile: dict[str, Any]) -> str:
     return str(profile.get("user_id") or profile.get("session_id") or "default")
+
+
+def _safe_user_id(user_id: str | None) -> str:
+    """把外部 user_id/session_id 收敛成可作为目录名的安全标识。"""
+
+    raw = str(user_id or "default").strip() or "default"
+    safe = "".join(ch for ch in raw if ch.isalnum() or ch in {"_", "-"})
+    return safe[:96] or "default"
 
 
 def _safe_profile_metadata(profile: dict[str, Any]) -> dict[str, Any]:

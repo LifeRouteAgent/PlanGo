@@ -7,9 +7,11 @@ RUNTIME_DIR = BACKEND_DIR / "data" / "runtime"
 SESSIONS_DIR = RUNTIME_DIR / "sessions"
 TRACES_DIR = RUNTIME_DIR / "traces"
 MEMORY_DIR = RUNTIME_DIR / "memory"
+MEMORY_USERS_DIR = MEMORY_DIR / "users"
 CALENDAR_DIR = RUNTIME_DIR / "calendar"
 TASKS_DIR = RUNTIME_DIR / "tasks"
 TOOL_CACHE_DIR = RUNTIME_DIR / "tool_cache"
+POLICY_CONFIG_DIR = BACKEND_DIR / "config"
 
 
 def ensure_runtime_dirs() -> None:
@@ -19,5 +21,13 @@ def ensure_runtime_dirs() -> None:
     可以保持上层接口不变，只替换服务实现。
     """
 
-    for path in (SESSIONS_DIR, TRACES_DIR, MEMORY_DIR, CALENDAR_DIR, TASKS_DIR, TOOL_CACHE_DIR):
+    for path in (
+        SESSIONS_DIR,
+        TRACES_DIR,
+        MEMORY_DIR,
+        MEMORY_USERS_DIR,
+        CALENDAR_DIR,
+        TASKS_DIR,
+        TOOL_CACHE_DIR,
+    ):
         path.mkdir(parents=True, exist_ok=True)

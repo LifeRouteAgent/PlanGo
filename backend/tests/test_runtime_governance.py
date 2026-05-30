@@ -82,7 +82,7 @@ def test_checkpoint_resume_blocks_blind_rerun_after_success() -> None:
     decision = store.resume(task["task_id"])
 
     assert decision["ok"] is True
-    assert decision["decision"] == "already_has_success_do_not_rerun"
+    assert decision["decision"] == "require_user_confirmation"
 
 
 def test_tool_policy_requires_confirmation_and_verified_target() -> None:
@@ -100,10 +100,12 @@ def test_tool_policy_requires_confirmation_and_verified_target() -> None:
             "target_id": "poi_1",
             "validated_item_ids": ["poi_2"],
             "confirmed": True,
+            "confirmed_source": "unit_test",
             "people_count": 2,
             "budget": 300,
         },
         "requires_confirmation": True,
+        "confirmed_source": "unit_test",
     }
 
     issues = policy.validate(request)
@@ -181,7 +183,7 @@ def test_eval_runner_splits_harness_context_memory_and_recovery_layers() -> None
             "recovery_correctness",
             "恢复任务",
             expected={
-                "resume_decision": "already_has_success_do_not_rerun",
+                "resume_decision": "require_user_confirmation",
                 "must_not_rerun_successful_action": True,
                 "requires_idempotency_keys": True,
             },
@@ -211,7 +213,7 @@ def test_eval_runner_splits_harness_context_memory_and_recovery_layers() -> None
             "memory_fit_tags": ["KTV", "室内"],
         },
         "resume_boundary": {
-            "resume_decision": "already_has_success_do_not_rerun",
+            "resume_decision": "require_user_confirmation",
             "reran_successful_action": False,
             "booking_actions": [{
                 "action_id": "ticket_1",

@@ -4,11 +4,11 @@ import hashlib
 import json
 import time
 from enum import StrEnum
-from pathlib import Path
 from typing import Any, TypedDict
 
 from app.services.memory_store import ToolCacheEntry
-from app.services.runtime_paths import TASKS_DIR, ensure_runtime_dirs
+from app.services.runtime_paths import ensure_runtime_dirs
+from app.services.runtime_store import get_runtime_store
 from app.services.trace_recorder import new_id, record_trace_event
 
 
@@ -44,6 +44,9 @@ class BookingAction(TypedDict, total=False):
 class TaskState(TypedDict, total=False):
     """任务 checkpoint 的完整状态。"""
 
+    version: int
+    updated_by_run_id: str
+    state_revision: int
     task_id: str
     session_id: str
     user_id: str
@@ -83,6 +86,9 @@ class CheckpointStore:
         """创建初始任务。"""
 
         task: TaskState = {
+            "version": 1,
+            "updated_by_run_id": "",
+            "state_revision": 0,
             "task_id": task_id or new_id("task"),
             "session_id": session_id,
             "user_id": user_id,
@@ -107,16 +113,27 @@ class CheckpointStore:
     def save(self, task: TaskState) -> None:
         """保存 checkpoint。"""
 
+        previous = self.load(str(task["task_id"]))
+        if previous:
+            task["version"] = int(previous.get("version", 1) or 1) + 1
+            task.setdefault(
+                "state_revision",
+                int(previous.get("state_revision", 0) or 0),
+            )
+        else:
+            task.setdefault("version", 1)
+            task.setdefault("state_revision", 0)
+        task.setdefault("updated_by_run_id", "")
         task["updated_at"] = _now_iso()
-        self._path(str(task["task_id"])).write_text(
-            json.dumps(task, ensure_ascii=False, indent=2, default=str),
-            encoding="utf-8",
-        )
+        get_runtime_store().save_task(str(task["task_id"]), task)
         record_trace_event(
             "checkpoint_saved",
             {
                 "task_id": task.get("task_id"),
                 "status": task.get("status"),
+                "version": task.get("version"),
+                "state_revision": task.get("state_revision"),
+                "updated_by_run_id": task.get("updated_by_run_id"),
                 "booking_action_count": len(task.get("booking_actions", []) or []),
             },
         )
@@ -124,14 +141,8 @@ class CheckpointStore:
     def load(self, task_id: str) -> TaskState | None:
         """读取 checkpoint。"""
 
-        path = self._path(task_id)
-        if not path.exists():
-            return None
-        try:
-            data = json.loads(path.read_text(encoding="utf-8"))
-            return data if isinstance(data, dict) else None
-        except json.JSONDecodeError:
-            return None
+        data = get_runtime_store().load_task(task_id)
+        return data if isinstance(data, dict) else None
 
     def save_from_plan_state(
         self,
@@ -149,7 +160,10 @@ class CheckpointStore:
             trace_id=str(state.get("trace_id") or ""),
             task_id=task_id,
         )
+        previous_revision = int(task.get("state_revision", 0) or 0)
         task.update({
+            "updated_by_run_id": str(state.get("run_id") or task.get("updated_by_run_id") or ""),
+            "state_revision": previous_revision + 1,
             "status": status.value,
             "intent": {
                 "intent_type": state.get("intent_type"),
@@ -201,19 +215,23 @@ class CheckpointStore:
         has_success = any(action.get("status") == "success" for action in actions)
         unfinished = [action for action in actions if action.get("status") not in {"success", "compensated"}]
         expired = _expired_tool_entries(tool_entries or [])
-        if has_success and unfinished:
-            decision = "continue_or_compensate"
+        failed_unfinished = [action for action in unfinished if action.get("status") == "failed"]
+        if has_success and failed_unfinished:
+            decision = "compensate"
+        elif has_success and unfinished:
+            decision = "continue_unfinished_actions"
         elif has_success:
-            decision = "already_has_success_do_not_rerun"
+            decision = "require_user_confirmation"
         elif expired:
             decision = "revalidate_tools"
         elif task.get("status") in {TaskStatus.FAILED.value, TaskStatus.PARTIALLY_EXECUTED.value}:
-            decision = "resume_from_failure"
+            decision = "compensate" if task.get("status") == TaskStatus.PARTIALLY_EXECUTED.value else "require_user_confirmation"
         else:
             decision = "continue"
         return {
             "ok": True,
             "decision": decision,
+            "message": _resume_message(decision),
             "task": task,
             "unfinished_actions": unfinished,
             "expired_tool_entries": expired,
@@ -223,8 +241,7 @@ class CheckpointStore:
         """扫描服务重启后可恢复的任务。"""
 
         result: list[TaskState] = []
-        for path in TASKS_DIR.glob("task_*.json"):
-            task = self.load(path.stem)
+        for task in get_runtime_store().list_tasks():
             if task and task.get("status") in {
                 TaskStatus.EXECUTING.value,
                 TaskStatus.PARTIALLY_EXECUTED.value,
@@ -232,10 +249,6 @@ class CheckpointStore:
             }:
                 result.append(task)
         return result
-
-    def _path(self, task_id: str) -> Path:
-        safe = "".join(ch for ch in task_id if ch.isalnum() or ch in {"_", "-"})
-        return TASKS_DIR / f"{safe}.json"
 
 
 def make_idempotency_key(
@@ -289,6 +302,20 @@ def _expired_tool_entries(entries: list[ToolCacheEntry]) -> list[ToolCacheEntry]
         if ts < now:
             result.append(entry)
     return result
+
+
+def _resume_message(decision: str) -> str:
+    """把恢复决策转成人可读说明，前端和观测面板可直接展示。"""
+
+    messages = {
+        "continue": "任务可以从最近 checkpoint 继续。",
+        "revalidate_tools": "部分工具证据已过期，需要先重新校验路线、库存或天气。",
+        "continue_unfinished_actions": "已有成功动作，禁止重跑成功订单，只继续未完成动作。",
+        "compensate": "任务处于部分成功或失败状态，需要先补偿或处理失败项。",
+        "require_user_confirmation": "已有交易结果或失败边界，继续前需要用户重新确认。",
+        "not_found": "没有找到任务 checkpoint。",
+    }
+    return messages.get(decision, "需要人工检查恢复策略。")
 
 
 def _now_iso() -> str:
