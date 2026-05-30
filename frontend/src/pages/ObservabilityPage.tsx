@@ -1,4 +1,12 @@
-import { AlertTriangle, CheckCircle2, Clock3, Gauge, ListChecks, Route, Sparkles } from "lucide-react";
+import {
+  AlertTriangle,
+  CheckCircle2,
+  Clock3,
+  Gauge,
+  ListChecks,
+  Route,
+  Sparkles
+} from "lucide-react";
 import { useEffect, useState } from "react";
 import type { TimelineEvent } from "../hooks/usePlanStream";
 import type { Plan } from "../types/agent";
@@ -22,6 +30,9 @@ interface RawTraceEvent {
   content_preview?: string;
   raw_preview?: string;
   understanding?: Record<string, unknown>;
+  parsed?: Record<string, unknown>;
+  issues?: unknown[];
+  plan_count?: number;
   output_summary?: Record<string, unknown>;
 }
 
@@ -53,14 +64,35 @@ function phaseLabel(phase: TimelineEvent["phase"]) {
   return labels[phase];
 }
 
+function llmEventTitle(event: RawTraceEvent) {
+  if (event.event_type === "llm_understanding") return "意图与约束理解";
+  if (event.event_type === "llm_semantic_extractor") return "Memory / Revision 语义抽取";
+  if (event.event_type === "llm_critic") return "LLM Critic 方案审查";
+  if (event.event_type === "response_plan_enrichment") return "方案展示增强";
+  if (event.event_type === "response_llm_preview") return "最终回复生成";
+  return `${event.provider ?? "LLM"} / ${event.model ?? "unknown"}`;
+}
+
 function llmEventText(event: RawTraceEvent) {
   if (event.event_type === "llm_understanding") {
     return event.success
       ? JSON.stringify(event.understanding ?? {}, null, 0)
       : "结构化识别未拿到有效 LLM JSON，系统已使用规则兜底。";
   }
+  if (event.event_type === "llm_semantic_extractor") {
+    return JSON.stringify(event.parsed ?? { raw_preview: event.raw_preview }, null, 0);
+  }
+  if (event.event_type === "llm_critic") {
+    return JSON.stringify(event.issues ?? { raw_preview: event.raw_preview }, null, 0);
+  }
+  if (event.event_type === "response_llm_preview") {
+    return event.content_preview || "Response LLM 无返回内容，已使用模板兜底。";
+  }
+  if (event.event_type === "response_plan_enrichment") {
+    return event.raw_preview || `方案展示增强结果：${event.plan_count ?? 0} 个方案`;
+  }
   if (event.success === false && event.source === "fallback") {
-    return "真实 MiMo 调用失败，系统已使用规则/模板兜底；下方 Tool Trace 可查看 HTTP 错误原因。";
+    return "真实 LLM 调用失败，系统已使用规则/模板兜底；下方 Tool Trace 可查看 HTTP 错误原因。";
   }
   return event.content_preview || event.error || "无返回内容";
 }
@@ -74,7 +106,14 @@ export function ObservabilityPage({ plan, events }: ObservabilityPageProps) {
   const latestEvent = events[events.length - 1];
   const rawEvents = tracePayload?.events ?? [];
   const llmEvents = rawEvents.filter((event) =>
-    ["llm_result", "llm_understanding"].includes(event.event_type)
+    [
+      "llm_result",
+      "llm_understanding",
+      "llm_semantic_extractor",
+      "llm_critic",
+      "response_llm_preview",
+      "response_plan_enrichment"
+    ].includes(event.event_type)
   );
   const toolEvents = rawEvents.filter((event) => event.event_type === "tool_call");
   const nodeEvents = rawEvents.filter((event) => event.event_type === "node_run");
@@ -118,7 +157,7 @@ export function ObservabilityPage({ plan, events }: ObservabilityPageProps) {
       <section className="page-heading">
         <p className="eyebrow">Agent Observability</p>
         <h1>观测面板</h1>
-        <p>从产品视角查看最近一次规划的理解、召回、路线、校验和执行状态。</p>
+        <p>从产品视角查看最近一次规划的理解、召回、路线、校验、LLM 决策链路和执行状态。</p>
       </section>
 
       <section className="ops-metrics" aria-label="运行观测指标">
@@ -191,23 +230,20 @@ export function ObservabilityPage({ plan, events }: ObservabilityPageProps) {
               <Sparkles size={18} />
               <div>
                 <strong>暂无 LLM 事件</strong>
-                <p>如果这里为空，通常是本轮被规则直接回答，或 LLM 未配置/调用失败。</p>
+                <p>如果这里为空，通常是本轮被规则直接回答，或 LLM 未配置、调用失败。</p>
               </div>
               <span>LLM</span>
             </article>
           )}
           {llmEvents.map((event, index) => (
-            <article className={`observability-row ${event.success === false ? "is-warning" : "is-success"}`} key={`${event.event_type}-${index}`}>
+            <article
+              className={`observability-row ${event.success === false ? "is-warning" : "is-success"}`}
+              key={`${event.event_type}-${index}`}
+            >
               <Sparkles size={18} />
               <div>
-                <strong>
-                  {event.event_type === "llm_understanding"
-                    ? "结构化意图识别"
-                    : `${event.provider ?? "LLM"} / ${event.model ?? "unknown"}`}
-                </strong>
-                <p>
-                  {llmEventText(event)}
-                </p>
+                <strong>{llmEventTitle(event)}</strong>
+                <p>{llmEventText(event)}</p>
               </div>
               <span>{event.success === false ? "失败/降级" : "成功"}</span>
             </article>
@@ -225,7 +261,10 @@ export function ObservabilityPage({ plan, events }: ObservabilityPageProps) {
         </div>
         <div className="observability-list">
           {[...toolEvents, ...nodeEvents].slice(0, 80).map((event, index) => (
-            <article className={`observability-row ${event.error ? "is-warning" : "is-success"}`} key={`${event.event_type}-${index}`}>
+            <article
+              className={`observability-row ${event.error ? "is-warning" : "is-success"}`}
+              key={`${event.event_type}-${index}`}
+            >
               <ListChecks size={18} />
               <div>
                 <strong>{event.tool ?? event.node_name ?? event.event_type}</strong>

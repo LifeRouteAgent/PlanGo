@@ -20,6 +20,10 @@ def constraint_builder_node(state: PlanState) -> PlanStatePatch:
     llm_understanding = get_llm_understanding(state)
     constraints = dict(state.get("constraints", {}))
     user_profile = state.get("user_profile", {})
+    if llm_understanding and llm_understanding.get("scenario"):
+        constraints.setdefault("scenario", llm_understanding["scenario"])
+    else:
+        constraints.setdefault("scenario", _fallback_scenario(query))
 
     constraints.setdefault(
         "city", user_profile.get("city") or user_profile.get("preferred_city") or "北京"
@@ -46,12 +50,19 @@ def constraint_builder_node(state: PlanState) -> PlanStatePatch:
 
     if llm_understanding and llm_understanding.get("location_area"):
         constraints.setdefault("location_area", llm_understanding["location_area"])
-    must_keywords = _extract_must_keywords(query)
+    must_keywords = _must_keywords_from_llm(llm_understanding)
+    if not must_keywords:
+        must_keywords = _extract_must_keywords(query)
     if must_keywords:
         constraints.setdefault("must_keywords", must_keywords)
-    preference_keywords = _extract_preference_keywords(query)
+    preference_keywords = _preference_keywords_from_llm(llm_understanding)
+    if not preference_keywords:
+        preference_keywords = _extract_preference_keywords(query)
     if preference_keywords:
         constraints.setdefault("preference_keywords", preference_keywords)
+    activity_intents = _activity_intents_from_llm(llm_understanding)
+    if activity_intents:
+        constraints.setdefault("activity_intents", activity_intents)
 
     return {
         "constraints": constraints,
@@ -99,7 +110,7 @@ def _resolve_budget(query: str, llm_understanding: dict[str, Any] | None) -> tup
     parsed = _parse_budget(query)
     if parsed is not None:
         return parsed, "user"
-    if _has_budget(query) and llm_understanding and llm_understanding.get("budget"):
+    if llm_understanding and llm_understanding.get("budget"):
         return int(float(llm_understanding["budget"])), "llm"
     return 600, "default"
 
@@ -114,6 +125,22 @@ def _resolve_max_route_minutes(
         return 30, "user"
     # 默认路程阈值只是排序偏好，不是失败条件。
     return 90, "system_default"
+
+
+def _fallback_scenario(text: str) -> str:
+    """LLM 不可用时的极小场景兜底。
+
+    语义判断主路径仍然是 LLM；这里仅在模型失败、测试离线或输出缺失时保留
+    “朋友/情侣/家庭”这类基础场景，避免后续 Planner 丢失关键上下文。
+    """
+
+    if any(keyword in text for keyword in ("朋友", "同学", "同事", "哥们", "闺蜜")):
+        return "friends"
+    if any(keyword in text for keyword in ("对象", "情侣", "女朋友", "男朋友", "约会")):
+        return "couple"
+    if any(keyword in text for keyword in ("家人", "家庭", "孩子", "亲子", "爸妈")):
+        return "family"
+    return "unknown"
 
 
 def _parse_start_time(text: str) -> str | None:
@@ -222,6 +249,41 @@ def _extract_must_keywords(text: str) -> list[str]:
         if not any(place in existing or existing in place for existing in deduped):
             deduped.append(place)
     return deduped
+
+
+def _must_keywords_from_llm(llm_understanding: dict[str, Any] | None) -> list[str]:
+    """优先使用 LLM 抽取的 must_pois 名称，规则只做兜底。"""
+
+    if not llm_understanding:
+        return []
+    result: list[str] = []
+    for item in llm_understanding.get("must_pois", []) or []:
+        if isinstance(item, dict) and item.get("must_include", True):
+            name = str(item.get("name") or "").strip()
+            if name:
+                result.append(name)
+    return list(dict.fromkeys(result))
+
+
+def _preference_keywords_from_llm(llm_understanding: dict[str, Any] | None) -> list[str]:
+    """优先使用 LLM 抽取的偏好关键词和活动语义关键词。"""
+
+    if not llm_understanding:
+        return []
+    result = [str(item).strip() for item in llm_understanding.get("preference_keywords", []) or [] if str(item).strip()]
+    for intent in llm_understanding.get("activity_intents", []) or []:
+        if isinstance(intent, dict):
+            result.extend(str(item).strip() for item in intent.get("keywords", []) or [] if str(item).strip())
+    return list(dict.fromkeys(result))
+
+
+def _activity_intents_from_llm(llm_understanding: dict[str, Any] | None) -> list[dict[str, Any]]:
+    """把 LLM 活动语义类型透传到 Route Planner/Skill。"""
+
+    if not llm_understanding:
+        return []
+    intents = llm_understanding.get("activity_intents", [])
+    return [item for item in intents if isinstance(item, dict)]
 
 
 def _extract_preference_keywords(text: str) -> list[str]:

@@ -83,7 +83,7 @@ def compat_plan_stream(payload: dict[str, Any] = Body(default_factory=dict)) -> 
     max_replanning_count = payload.get("max_replanning_count", payload.get("maxReplanningCount", 2))
     try:
         max_replanning_count = int(max_replanning_count)
-    except TypeError, ValueError:
+    except (TypeError, ValueError):
         max_replanning_count = 2
 
     request = TripPlanRequest(

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from app.services.context_builder import ContextBuilder
@@ -46,6 +47,31 @@ ALLOWED_TEMPLATES = {
 }
 
 ALLOWED_MISSING = {"people_or_scenario", "time_window", "preference", "location", "budget"}
+
+ALLOWED_SKILLS = {
+    "poi_mix_recommend",
+    "poi_activity_recommend",
+    "poi_restaurant_recommend",
+    "poi_lifestyle_recommend",
+}
+
+ALLOWED_MOVEMENT_POLICIES = {
+    "balanced_local",
+    "low_movement",
+    "compact_walk_or_taxi",
+    "same_business_area_first",
+}
+
+ALLOWED_CANDIDATE_STRATEGIES = {
+    "slot_balance",
+    "same_business_area_first",
+    "restaurant_fit_first",
+    "slow_pace_reservation_first",
+    "category_focus",
+    "preference_fit_first",
+    "budget_fit_first",
+    "compact_slots_same_area_first",
+}
 
 
 def get_llm_understanding(state: dict[str, Any]) -> dict[str, Any] | None:
@@ -98,7 +124,22 @@ def _build_prompt(query: str, user_profile: dict[str, Any]) -> str:
     用户画像和 Memory 只能作为软偏好，不能被模型复制成“本轮用户明确说过的约束”。
     """
 
-    profile_context = ContextBuilder().build_user_profile_context(user_profile)
+    context_builder = ContextBuilder()
+    profile_context = context_builder.build_user_profile_context(user_profile)
+    context_snapshot = context_builder.build_for(
+        "intent_router",
+        {
+            "user_query": query,
+            "user_profile": user_profile,
+            "constraints": {},
+            "dag_plan": {},
+            "candidate_pois": {},
+            "recommended_pois": {},
+            "ranked_plans": [],
+            "errors": [],
+            "logs": [],
+        },
+    )
     return f"""
 请理解用户的本地生活需求，并且只输出一个 JSON 对象。
 
@@ -107,6 +148,9 @@ def _build_prompt(query: str, user_profile: dict[str, Any]) -> str:
 
 历史画像和记忆（只能作为软偏好，不得覆盖本轮输入）：
 {profile_context}
+
+结构化上下文快照（这是唯一允许参考的规划上下文，不要自行回忆完整聊天历史）：
+{json.dumps(context_snapshot, ensure_ascii=False, default=str)}
 
 关键规则：
 1. intent_type 可选：
@@ -155,6 +199,13 @@ planning_template 可选：
   "budget": 1000,
   "planning_template": "couple_date",
   "required_slots": ["attraction", "entertainment"],
+  "must_pois": [
+    {{"name": "北京环球度假区", "category": "poi_attraction", "must_include": true}}
+  ],
+  "preference_keywords": ["KTV"],
+  "activity_intents": [
+    {{"slot": "entertainment", "semantic_type": "ktv", "must_match": true, "keywords": ["KTV", "唱歌"]}}
+  ],
   "need_clarification": false,
   "missing_constraints": [],
   "clarify_question": ""
@@ -178,6 +229,7 @@ def _normalize_understanding(data: dict[str, Any]) -> dict[str, Any] | None:
     template = str(data.get("planning_template") or "").strip()
     if template and template not in ALLOWED_TEMPLATES:
         template = ""
+    required_slots = _clean_string_list(data.get("required_slots"))
 
     missing = [
         str(item) for item in data.get("missing_constraints", []) if str(item) in ALLOWED_MISSING
@@ -194,10 +246,102 @@ def _normalize_understanding(data: dict[str, Any]) -> dict[str, Any] | None:
         "duration_hours": _clean_number(data.get("duration_hours")),
         "budget": _clean_int(data.get("budget")),
         "planning_template": template,
-        "required_slots": _clean_string_list(data.get("required_slots")),
+        "required_slots": required_slots,
+        "must_pois": _clean_must_pois(data.get("must_pois")),
+        "preference_keywords": _clean_string_list(data.get("preference_keywords")),
+        "activity_intents": _clean_activity_intents(data.get("activity_intents")),
+        "dag_plan": _clean_dag_plan(data.get("dag_plan"), template, required_slots, categories),
         "need_clarification": bool(data.get("need_clarification")),
         "missing_constraints": missing,
         "clarify_question": _clean_optional_string(data.get("clarify_question")) or "",
+    }
+
+
+def _clean_must_pois(value: Any) -> list[dict[str, Any]]:
+    """清洗 LLM 抽取的明确必去地点。"""
+
+    if not isinstance(value, list):
+        return []
+    result: list[dict[str, Any]] = []
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        name = _clean_optional_string(item.get("name"))
+        if not name:
+            continue
+        category = str(item.get("category") or "").strip()
+        result.append({
+            "name": name,
+            "category": category if category in ALLOWED_CATEGORIES else "",
+            "must_include": bool(item.get("must_include", True)),
+        })
+    return result[:5]
+
+
+def _clean_activity_intents(value: Any) -> list[dict[str, Any]]:
+    """清洗 LLM 抽取的活动语义类型。"""
+
+    if not isinstance(value, list):
+        return []
+    result: list[dict[str, Any]] = []
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        semantic_type = _clean_optional_string(item.get("semantic_type"))
+        if not semantic_type:
+            continue
+        result.append({
+            "slot": _clean_optional_string(item.get("slot")) or "",
+            "semantic_type": semantic_type,
+            "must_match": bool(item.get("must_match")),
+            "keywords": _clean_string_list(item.get("keywords"))[:8],
+        })
+    return result[:8]
+
+
+def _clean_dag_plan(
+    value: Any,
+    fallback_template: str,
+    fallback_slots: list[str],
+    fallback_categories: list[str],
+) -> dict[str, Any]:
+    """清洗 LLM 生成的 DAG Plan。
+
+    LLM 可以决定本轮需要查哪些类别、启用哪些 Skill、采用什么规划模板；代码只做
+    白名单校验和默认值兜底，避免模型输出污染 LangGraph 状态。
+    """
+
+    if not isinstance(value, dict):
+        return {}
+    template = str(value.get("planning_template") or fallback_template or "").strip()
+    if template not in ALLOWED_TEMPLATES:
+        template = fallback_template
+    collector_categories = [
+        str(item)
+        for item in value.get("collector_categories", fallback_categories) or []
+        if str(item) in ALLOWED_CATEGORIES
+    ]
+    enabled_skills = [
+        str(item)
+        for item in value.get("enabled_skills", []) or []
+        if str(item) in ALLOWED_SKILLS
+    ]
+    slot_sequence = _clean_string_list(value.get("slot_sequence")) or fallback_slots
+    movement_policy = str(value.get("movement_policy") or "").strip()
+    if movement_policy not in ALLOWED_MOVEMENT_POLICIES:
+        movement_policy = ""
+    candidate_strategy = str(value.get("candidate_strategy") or "").strip()
+    if candidate_strategy not in ALLOWED_CANDIDATE_STRATEGIES:
+        candidate_strategy = ""
+    return {
+        "collector_categories": collector_categories[:8],
+        "enabled_skills": enabled_skills,
+        "planning_template": template,
+        "slot_sequence": slot_sequence[:8],
+        "required_slots": slot_sequence[:8],
+        "movement_policy": movement_policy,
+        "candidate_strategy": candidate_strategy,
+        "reason": _clean_optional_string(value.get("reason")) or "",
     }
 
 
@@ -249,7 +393,7 @@ def _clean_int(value: Any) -> int | None:
         if value is None or value == "":
             return None
         return int(float(value))
-    except TypeError, ValueError:
+    except (TypeError, ValueError):
         return None
 
 
@@ -260,5 +404,5 @@ def _clean_number(value: Any) -> float | None:
         if value is None or value == "":
             return None
         return float(value)
-    except TypeError, ValueError:
+    except (TypeError, ValueError):
         return None

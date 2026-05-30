@@ -61,7 +61,7 @@ def _get_int(config: dict[str, Any], key: str, default: int) -> int:
 
     try:
         return int(config.get(key, default))
-    except TypeError, ValueError:
+    except (TypeError, ValueError):
         return default
 
 

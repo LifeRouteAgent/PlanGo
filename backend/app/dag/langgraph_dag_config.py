@@ -11,6 +11,7 @@ from app.agents.constraint_clarifier import (
 from app.agents.execution_agent import execution_agent_node, user_confirm_node
 from app.agents.intent_parser import intent_parser_node
 from app.agents.intent_router import intent_router_node, intent_router_route
+from app.agents.llm_critic import llm_critic_node
 from app.agents.planner_agent import planner_agent_node
 from app.agents.poi_collector import poi_collector_node
 from app.agents.ranker import ranker_node
@@ -50,6 +51,7 @@ def build_life_route_graph():
     graph.add_node("route_time_planner", route_time_planner_node)
     graph.add_node("availability_checker", availability_checker_node)
     graph.add_node("verifier", verifier_node)
+    graph.add_node("llm_critic", llm_critic_node)
     graph.add_node("ranker", ranker_node)
     graph.add_node("response_generator", response_generator_node)
     graph.add_node("user_confirm", user_confirm_node)
@@ -105,11 +107,12 @@ def build_life_route_graph():
         "verifier",
         verifier_route,
         {
-            "rank": "ranker",
+            "rank": "llm_critic",
             "replan": "planner_agent",
             "respond": "response_generator",
         },
     )
+    graph.add_edge("llm_critic", "ranker")
     graph.add_edge("ranker", "response_generator")
     graph.add_conditional_edges(
         "response_generator",

@@ -12,7 +12,11 @@ from app.tools.poi_schema import (
     POI_RESTAURANT,
     POI_SHOPPING,
 )
-from app.tools.skill_registry import collector_categories_for_skills, select_skills_for_plan
+from app.tools.skill_registry import (
+    SKILL_REGISTRY,
+    collector_categories_for_skills,
+    select_skills_for_plan,
+)
 
 
 def planner_agent_node(state: PlanState) -> PlanStatePatch:
@@ -30,19 +34,34 @@ def planner_agent_node(state: PlanState) -> PlanStatePatch:
     preferences = constraints.get("preferences") or ["活动", "餐厅", "休闲娱乐"]
     # 单类推荐/地点查询由 Intent Router 指定目标类别；完整行程才根据偏好扩展类别。
     categories = state.get("target_categories") or _categories_for_preferences(preferences)
+    llm_dag_plan = _llm_dag_plan(llm_understanding)
     planning_template = (
-        llm_understanding.get("planning_template")
-        if llm_understanding and llm_understanding.get("planning_template")
-        else _select_planning_template(state, preferences, categories)
+        llm_dag_plan.get("planning_template")
+        or (
+            llm_understanding.get("planning_template")
+            if llm_understanding and llm_understanding.get("planning_template")
+            else ""
+        )
+        or _select_planning_template(state, preferences, categories)
     )
     required_slots = (
-        llm_understanding.get("required_slots")
-        if llm_understanding and llm_understanding.get("required_slots")
-        else _required_slots_for_template(planning_template, categories)
+        llm_dag_plan.get("slot_sequence")
+        or (
+            llm_understanding.get("required_slots")
+            if llm_understanding and llm_understanding.get("required_slots")
+            else []
+        )
+        or _required_slots_for_template(planning_template, categories)
     )
     time_budget = int(float(constraints.get("duration_hours", 10))) * 60
-    movement_policy = _movement_policy_for_state(state, planning_template, time_budget)
-    candidate_strategy = _candidate_strategy_for_template(planning_template)
+    movement_policy = (
+        llm_dag_plan.get("movement_policy")
+        or _movement_policy_for_state(state, planning_template, time_budget)
+    )
+    candidate_strategy = (
+        llm_dag_plan.get("candidate_strategy")
+        or _candidate_strategy_for_template(planning_template)
+    )
     replanning_count = state.get("replanning_count", 0) + 1
     last_errors = issue_codes(state.get("errors", []))
 
@@ -71,13 +90,29 @@ def planner_agent_node(state: PlanState) -> PlanStatePatch:
             movement_policy = "same_business_area_first"
             candidate_strategy = "compact_slots_same_area_first"
 
-    enabled_skills = select_skills_for_plan(
-        intent_type=state.get("intent_type", "full_trip_plan"),
-        categories=categories,
-        required_slots=required_slots,
-        planning_template=planning_template,
-    )
-    collector_categories = collector_categories_for_skills(enabled_skills, categories)
+    enabled_skills = _valid_enabled_skills(llm_dag_plan.get("enabled_skills"))
+    if not enabled_skills:
+        enabled_skills = select_skills_for_plan(
+            intent_type=state.get("intent_type", "full_trip_plan"),
+            categories=categories,
+            required_slots=required_slots,
+            planning_template=planning_template,
+        )
+    collector_categories = [
+        category
+        for category in llm_dag_plan.get("collector_categories", [])
+        if category in {
+            POI_ACTIVITY,
+            POI_ATTRACTION,
+            POI_BEAUTY,
+            POI_ENTERTAINMENT,
+            POI_FITNESS,
+            POI_RESTAURANT,
+            POI_SHOPPING,
+        }
+    ]
+    if not collector_categories:
+        collector_categories = collector_categories_for_skills(enabled_skills, categories)
 
     return {
         "dag_plan": {
@@ -102,13 +137,34 @@ def planner_agent_node(state: PlanState) -> PlanStatePatch:
         "routes": [],
         "logs": [
             "Planner Agent: "
-            + ("used LLM template, " if llm_understanding else "used rule fallback, ")
+            + (
+                "used LLM dag_plan, "
+                if llm_dag_plan
+                else ("used LLM template, " if llm_understanding else "used rule fallback, ")
+            )
             + f"template={planning_template}, slots={','.join(required_slots)}, "
             + f"categories={','.join(collector_categories)}, "
             + f"enabled_skills={','.join(enabled_skills)}, movement_policy={movement_policy}, "
             + f"retry_policy={retry_policy}"
         ],
     }
+
+
+def _llm_dag_plan(llm_understanding: dict | None) -> dict:
+    """读取并返回已由 Intent LLM 生成且通过白名单清洗的 DAG Plan。"""
+
+    if not isinstance(llm_understanding, dict):
+        return {}
+    dag_plan = llm_understanding.get("dag_plan")
+    return dag_plan if isinstance(dag_plan, dict) else {}
+
+
+def _valid_enabled_skills(skills: object) -> list[str]:
+    """过滤 LLM 输出的 Skill 名称，只允许注册表内的节点进入 LangGraph。"""
+
+    if not isinstance(skills, list):
+        return []
+    return [str(item) for item in skills if str(item) in SKILL_REGISTRY]
 
 
 def _categories_for_preferences(preferences: list[str]) -> list[str]:
@@ -212,9 +268,11 @@ def _movement_policy_for_state(
     本地生活规划对移动成本很敏感，短时间窗口和亲子/放松场景都应该减少跨区移动。
     """
 
-    query = state["user_query"]
-    scenario = state.get("constraints", {}).get("scenario", "unknown")
-    if "别太远" in query or "附近" in query or time_budget <= 180:
+    constraints = state.get("constraints", {})
+    scenario = constraints.get("scenario", "unknown")
+    if constraints.get("movement_policy"):
+        return str(constraints["movement_policy"])
+    if constraints.get("max_route_minutes_source") == "user" or time_budget <= 240:
         return "compact_walk_or_taxi"
     if scenario == "family" or planning_template in {
         "family_half_day",

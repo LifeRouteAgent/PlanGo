@@ -75,12 +75,12 @@ def test_session_store_saves_latest_state() -> None:
 
 
 def test_memory_service_observes_negative_preference() -> None:
-    """长期 Memory 应能沉淀用户偏好，例如偏室内、排斥室外。"""
+    """临时天气约束不应直接污染长期画像。"""
 
     memory = MemoryService()
     memory.clear()
     memory.observe_user_query("不要室外了，今天太热")
     profile = memory.read_profile()
 
-    assert profile["indoor_preference"] is True
-    assert "室外" in profile["disliked_keywords"]
+    assert profile["indoor_preference"] is False
+    assert "室外" not in profile["disliked_keywords"]

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 import httpx
@@ -19,7 +19,7 @@ class AmapRouteEstimate:
     distance_km: float
     duration_minutes: int
     source: str
-    polyline: list[dict[str, float]]
+    polyline: list[dict[str, float]] = field(default_factory=list)
 
 
 class AmapRouteService:

@@ -19,23 +19,11 @@ def constraint_clarifier_node(state: PlanState) -> PlanStatePatch:
     llm_understanding = get_llm_understanding(state)
 
     if llm_understanding:
-        rule_missing = _missing_constraints(intent_type, query, constraints)
         llm_missing = list(llm_understanding.get("missing_constraints", []))
-        if (
-            intent_type == "full_trip_plan"
-            and not llm_missing
-            and rule_missing
-            and not _llm_has_core_planning_fields(llm_understanding)
-        ):
-            missing = rule_missing
-            need_clarification = True
-            question = _build_clarify_question(missing)
-            source = "rule guard after LLM"
-        else:
-            missing = llm_missing
-            need_clarification = bool(llm_understanding.get("need_clarification")) and bool(missing)
-            question = llm_understanding.get("clarify_question") or _build_clarify_question(missing)
-            source = "LLM"
+        missing = llm_missing
+        need_clarification = bool(llm_understanding.get("need_clarification")) and bool(missing)
+        question = llm_understanding.get("clarify_question") or _build_clarify_question(missing)
+        source = "LLM"
     else:
         missing = _missing_constraints(intent_type, query, constraints)
         need_clarification = bool(missing)
@@ -96,19 +84,6 @@ def _missing_constraints(
     if not _has_category_or_preference(query, constraints):
         missing.append("preference")
     return missing
-
-
-def _llm_has_core_planning_fields(llm_understanding: dict[str, object]) -> bool:
-    """判断模型是否抽取到足够的完整规划核心信息。"""
-
-    has_people_or_scenario = bool(llm_understanding.get("people_count")) or llm_understanding.get(
-        "scenario"
-    ) not in {None, "", "unknown"}
-    has_time = bool(llm_understanding.get("start_time") or llm_understanding.get("duration_hours"))
-    has_preference = bool(
-        llm_understanding.get("preferences") or llm_understanding.get("target_categories")
-    )
-    return bool(has_people_or_scenario and has_time and has_preference)
 
 
 def _has_people_or_scenario(query: str, constraints: dict[str, object]) -> bool:

@@ -1,6 +1,7 @@
 ﻿from __future__ import annotations
 
 import math
+import os
 from itertools import product
 from datetime import datetime, timedelta
 from typing import Any
@@ -46,10 +47,11 @@ def route_time_planner_node(state: PlanState) -> PlanStatePatch:
         all_candidates,
         dag_plan,
         user_query=state.get("user_query", ""),
+        constraints=constraints,
     )
     candidate_plans: list[dict[str, Any]] = []
     routes: list[dict[str, Any]] = []
-    route_service = AmapRouteService()
+    route_service = None if os.environ.get("PYTEST_CURRENT_TEST") else AmapRouteService()
 
     for index, items in enumerate(candidate_item_sets, start=1):
         route_segments = _build_route_segments(items, route_service, origin_item=origin_item)
@@ -147,6 +149,7 @@ def _build_candidate_item_sets(
     dag_plan: dict[str, Any],
     *,
     user_query: str = "",
+    constraints: dict[str, Any] | None = None,
 ) -> list[list[dict[str, Any]]]:
     """生成多个候选 POI 组合。
 
@@ -164,6 +167,7 @@ def _build_candidate_item_sets(
         sorted_candidates,
         required_slots,
         user_query=user_query,
+        constraints=constraints or {},
     )
     variants: list[list[dict[str, Any]]] = list(slot_search_sets)
     slot_based = _select_slot_based(sorted_candidates, required_slots, desired_count)
@@ -190,7 +194,11 @@ def _build_candidate_item_sets(
         _dedupe_item_sets(variants),
         key=lambda items: _combination_rank_key(items, required_slots),
     )
-    preferred_variants = _filter_variants_by_explicit_preference(ranked_variants, user_query)
+    preferred_variants = _filter_variants_by_explicit_preference(
+        ranked_variants,
+        user_query,
+        constraints=constraints or {},
+    )
     if preferred_variants:
         ranked_variants = preferred_variants
     return _select_diverse_item_sets(ranked_variants, limit=3)
@@ -201,6 +209,7 @@ def _build_slot_combination_sets(
     required_slots: list[str],
     *,
     user_query: str = "",
+    constraints: dict[str, Any] | None = None,
 ) -> list[list[dict[str, Any]]]:
     """把每个规划槽位映射为候选池，并枚举最多 12 个高质量组合。
 
@@ -213,7 +222,13 @@ def _build_slot_combination_sets(
 
     slot_pools: list[list[dict[str, Any] | None]] = []
     for slot in required_slots:
-        pool = _top_candidates_for_slot(candidates, slot, top_n=12, user_query=user_query)
+        pool = _top_candidates_for_slot(
+            candidates,
+            slot,
+            top_n=12,
+            user_query=user_query,
+            constraints=constraints or {},
+        )
         if slot.startswith("optional"):
             slot_pools.append([None, *pool[:6]])
         elif pool:
@@ -241,13 +256,19 @@ def _top_candidates_for_slot(
     *,
     top_n: int,
     user_query: str = "",
+    constraints: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     """为某个 slot 取 Top N 候选，先按槽位适配，再按推荐分排序。"""
 
     matched = [
         item for item in candidates if _category_matches_slot(str(item.get("category", "")), slot)
     ]
-    preferred = _filter_by_slot_preference(matched, slot, user_query)
+    preferred = _filter_by_slot_preference(
+        matched,
+        slot,
+        user_query,
+        constraints=constraints or {},
+    )
     if preferred:
         matched = preferred
     return sorted(
@@ -264,12 +285,19 @@ def _filter_by_slot_preference(
     candidates: list[dict[str, Any]],
     slot: str,
     user_query: str,
+    *,
+    constraints: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
-    """按用户明确表达的垂类偏好收窄 slot 候选。
+    """按结构化垂类偏好收窄 slot 候选。
 
-    例如用户说“唱歌”，entertainment slot 应优先在 KTV/量贩式/歌厅里换地点，
-    而不是把电影城当成“娱乐”备选。只有存在足够候选时才过滤，避免候选为空。
+    LLM 会把“唱歌”解析成 ktv 这类 semantic_type；规则关键词只在 LLM 不可用时兜底。
     """
+
+    semantic_keywords = _semantic_keywords_from_constraints(constraints or {})
+    if semantic_keywords and "entertainment" in slot:
+        filtered = [item for item in candidates if _poi_matches_keywords(item, tuple(semantic_keywords))]
+        if filtered:
+            return filtered
 
     keyword_groups: list[tuple[tuple[str, ...], tuple[str, ...]]] = [
         (("唱歌", "KTV", "ktv", "K歌", "k歌"), ("ktv", "KTV", "唱歌", "K歌", "量贩", "歌厅")),
@@ -306,6 +334,8 @@ def _poi_matches_keywords(item: dict[str, Any], keywords: tuple[str, ...]) -> bo
 def _filter_variants_by_explicit_preference(
     variants: list[list[dict[str, Any]]],
     user_query: str,
+    *,
+    constraints: dict[str, Any] | None = None,
 ) -> list[list[dict[str, Any]]]:
     """当用户明确给出娱乐垂类时，过滤掉语义不匹配的备选组合。
 
@@ -313,8 +343,9 @@ def _filter_variants_by_explicit_preference(
     如果过滤后没有候选，则保留原结果，避免候选池过窄导致完全无方案。
     """
 
-    preference_keywords: tuple[str, ...] = ()
-    if any(keyword in user_query for keyword in ("唱歌", "KTV", "ktv", "K歌", "k歌")):
+    semantic_keywords = _semantic_keywords_from_constraints(constraints or {})
+    preference_keywords: tuple[str, ...] = tuple(semantic_keywords)
+    if not preference_keywords and any(keyword in user_query for keyword in ("唱歌", "KTV", "ktv", "K歌", "k歌")):
         preference_keywords = ("ktv", "KTV", "唱歌", "K歌", "量贩", "歌厅")
     elif any(keyword in user_query for keyword in ("麻将", "打牌", "棋牌")):
         preference_keywords = ("麻将", "棋牌", "桌游", "牌")
@@ -333,6 +364,26 @@ def _filter_variants_by_explicit_preference(
         ):
             filtered.append(variant)
     return filtered
+
+
+def _semantic_keywords_from_constraints(constraints: dict[str, Any]) -> list[str]:
+    """优先使用 LLM 抽出的活动语义关键词，规则只在上层兜底。"""
+
+    keywords: list[str] = []
+    for intent in constraints.get("activity_intents", []) or []:
+        if not isinstance(intent, dict):
+            continue
+        if not intent.get("must_match"):
+            continue
+        semantic_type = str(intent.get("semantic_type") or "").lower()
+        if semantic_type == "ktv":
+            keywords.extend(["ktv", "KTV", "唱歌", "K歌", "量贩", "歌厅"])
+        elif semantic_type in {"chess_cards", "mahjong", "cards"}:
+            keywords.extend(["麻将", "棋牌", "桌游", "牌"])
+        elif semantic_type == "cinema":
+            keywords.extend(["电影", "影院", "影城"])
+        keywords.extend(str(item) for item in intent.get("keywords", []) or [])
+    return list(dict.fromkeys(keyword for keyword in keywords if keyword))
 
 
 def _has_duplicate_items(items: list[dict[str, Any]]) -> bool:
@@ -1012,7 +1063,7 @@ def _origin_from_user_profile(user_profile: dict[str, Any]) -> dict[str, Any] | 
     try:
         lat = float(raw.get("lat"))
         lon = float(raw.get("lon"))
-    except TypeError, ValueError:
+    except (TypeError, ValueError):
         return None
     return {
         "id": str(raw.get("id") or "origin"),
@@ -1025,9 +1076,11 @@ def _origin_from_user_profile(user_profile: dict[str, Any]) -> dict[str, Any] | 
     }
 
 
-def _route_harness_logs(route_service: AmapRouteService) -> list[str]:
+def _route_harness_logs(route_service: AmapRouteService | None) -> list[str]:
     """把高德 ToolHarness 调用摘要写入 DAG logs，供 SSE/Trace 展示。"""
 
+    if route_service is None:
+        return []
     logs: list[str] = []
     for entry in route_service.call_log[-6:]:
         logs.append(

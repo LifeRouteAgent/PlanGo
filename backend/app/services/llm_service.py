@@ -1,6 +1,7 @@
 ﻿from __future__ import annotations
 
 import json
+import os
 import re
 from typing import Any
 
@@ -40,6 +41,22 @@ def call_chat_completion(
     model = _active_model()
     api_key = _active_api_key()
     base_url = _active_base_url()
+
+    if os.environ.get("PYTEST_CURRENT_TEST"):
+        record_trace_event(
+            "llm_result",
+            {
+                "provider": provider,
+                "model": model,
+                "success": False,
+                "source": "pytest_disabled",
+                "latency_ms": 0,
+                "attempts": 0,
+                "error": "LLM calls are disabled during pytest; using deterministic fallback.",
+                "content_preview": "",
+            },
+        )
+        return None
 
     if not api_key:
         record_trace_event(

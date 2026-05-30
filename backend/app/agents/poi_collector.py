@@ -59,6 +59,16 @@ def poi_collector_node(state: PlanState) -> PlanStatePatch:
                     **constraints,
                     "must_pois": _flatten_must_pois(must_pois),
                 },
+                "tool_evidence": [{
+                    "tool_name": "poi_repository.fetch_by_categories",
+                    "source": "mysql",
+                    "summary": {
+                        "categories": categories,
+                        "candidate_count": total,
+                        "must_poi_count": must_total,
+                    },
+                    "confidence": 0.86,
+                }],
                 "logs": [
                     f"POI Collector: loaded {total} candidates from MySQL database"
                     + (f", must_pois={must_total}" if constraints.get("must_keywords") else "")
@@ -71,6 +81,13 @@ def poi_collector_node(state: PlanState) -> PlanStatePatch:
                     {category: _mock_pois(category) for category in categories},
                     state.get("constraints", {}),
                 ),
+                "tool_evidence": [{
+                    "tool_name": "poi_repository.fetch_by_categories",
+                    "source": "mock_fallback",
+                    "summary": {"categories": categories, "error": str(exc)},
+                    "confidence": 0.35,
+                    "fallback_used": True,
+                }],
                 "logs": [f"POI Collector: database unavailable, fallback to mock: {exc}"],
             }
 
@@ -81,6 +98,16 @@ def poi_collector_node(state: PlanState) -> PlanStatePatch:
 
     return {
         "candidate_pois": candidate_pois,
+        "tool_evidence": [{
+            "tool_name": "poi_repository.fetch_by_categories",
+            "source": "mock",
+            "summary": {
+                "categories": categories,
+                "candidate_count": sum(len(items) for items in candidate_pois.values()),
+            },
+            "confidence": 0.4,
+            "fallback_used": True,
+        }],
         "logs": [f"POI Collector: collected mock candidates for {len(categories)} categories"],
     }
 

@@ -80,12 +80,23 @@ def test_embedding_service_fallback_vector_has_fixed_dimension() -> None:
     assert any(value != 0 for value in vector)
 
 
-def test_memory_service_writes_file_and_vector_memory() -> None:
-    """用户输入和采纳方案应同时沉淀文件记忆与向量记忆。"""
+def test_memory_service_writes_file_and_vector_memory(monkeypatch) -> None:
+    """用户输入和采纳方案应写事件记忆；临时约束不应污染长期画像。"""
 
     fake_store = FakeVectorStore()
     memory = MemoryService(vector_store=fake_store)  # type: ignore[arg-type]
     memory.clear(user_id="u1")
+    monkeypatch.setattr(
+        "app.services.memory_service.extract_memory_updates",
+        lambda query, user_profile=None: {
+            "should_update_profile": False,
+            "scope": "temporary",
+            "confidence": 0.92,
+            "profile_updates": {},
+            "memory_text": "用户本次因为天气热临时避免室外，预算 200。",
+            "tags": ["室内", "低预算"],
+        },
+    )
 
     memory.observe_user_query("不要室外了，今天太热，预算200", user_id="u1")
     memory.observe_selected_plan(
@@ -100,10 +111,40 @@ def test_memory_service_writes_file_and_vector_memory() -> None:
     )
 
     profile = memory.read_profile()
-    assert profile["indoor_preference"] is True
-    assert "室外" in profile["disliked_keywords"]
+    assert profile["indoor_preference"] is False
+    assert "室外" not in profile["disliked_keywords"]
     assert fake_store.memories
     assert fake_store.profiles
+
+
+def test_memory_service_writes_long_term_profile_with_llm(monkeypatch) -> None:
+    """LLM 判断为长期偏好时，Memory 才写入用户画像。"""
+
+    fake_store = FakeVectorStore()
+    memory = MemoryService(vector_store=fake_store)  # type: ignore[arg-type]
+    memory.clear(user_id="u_long")
+    monkeypatch.setattr(
+        "app.services.memory_service.extract_memory_updates",
+        lambda query, user_profile=None: {
+            "should_update_profile": True,
+            "scope": "long_term",
+            "confidence": 0.91,
+            "profile_updates": {
+                "indoor_preference": True,
+                "disliked_keywords": ["室外"],
+                "favorite_categories": ["poi_entertainment"],
+            },
+            "memory_text": "用户长期偏好室内娱乐，排斥室外活动。",
+            "tags": ["室内", "娱乐"],
+        },
+    )
+
+    memory.observe_user_query("我以后都不喜欢室外，优先室内娱乐", user_id="u_long")
+
+    profile = memory.read_profile()
+    assert profile["indoor_preference"] is True
+    assert "室外" in profile["disliked_keywords"]
+    assert "poi_entertainment" in profile["favorite_categories"]
 
 
 def test_memory_semantic_search_falls_back_to_vector_results() -> None:

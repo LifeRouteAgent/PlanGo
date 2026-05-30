@@ -29,8 +29,12 @@ def verifier_node(state: PlanState) -> PlanStatePatch:
     max_route_minutes = int(constraints.get("max_route_minutes", 90))
     duration_limit = int(float(constraints.get("duration_hours", 10))) * 60
     budget = int(float(constraints.get("budget", 600)))
-    route_limit_is_hard = bool(constraints.get("route_limit_is_hard"))
-    duration_is_hard = bool(constraints.get("duration_is_hard"))
+    route_limit_is_hard = bool(
+        constraints.get("route_limit_is_hard", "max_route_minutes" in constraints)
+    )
+    duration_is_hard = bool(
+        constraints.get("duration_is_hard", "duration_hours" in constraints)
+    )
     budget_is_hard = bool(constraints.get("budget_is_hard", True))
     verified: list[dict[str, Any]] = []
     current_issues: list[dict[str, Any]] = []
@@ -90,9 +94,9 @@ def _issues_for_plan(
     duration_limit: int,
     budget: int,
     *,
-    route_limit_is_hard: bool,
-    duration_is_hard: bool,
-    budget_is_hard: bool,
+    route_limit_is_hard: bool = True,
+    duration_is_hard: bool = True,
+    budget_is_hard: bool = True,
 ) -> list[dict[str, Any]]:
     """对单个候选方案执行完整可行性校验。"""
 

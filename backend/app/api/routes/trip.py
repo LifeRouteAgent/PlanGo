@@ -33,10 +33,13 @@ from app.agents.route_planner import (
 from app.services.amap_route_service import AmapRouteService
 from app.services.amap_weather_service import AmapWeatherService
 from app.services.calendar_service import build_plan_ics
+from app.services.checkpoint_store import CheckpointStore, TaskStatus, make_idempotency_key
 from app.services.memory_service import MemoryService
+from app.services.llm_semantic_extractor import extract_revision_constraints
 from app.services.poi_repository import PoiRepository
 from app.services.session_store import SessionStore
 from app.services.tool_harness import ToolHarness
+from app.services.tool_policy import RiskLevel
 from app.services.trace_recorder import TraceRecorder, new_id, record_trace_event, set_trace_context
 from app.state.plan_state import create_initial_state
 from app.agents.planner_agent import planner_agent_node
@@ -46,6 +49,7 @@ from app.tools.poi_activity_recommend import poi_activity_recommend_node
 from app.tools.poi_restaurant_recommend import poi_restaurant_recommend_node
 from app.tools.poi_lifestyle_recommend import poi_lifestyle_recommend_node
 from app.agents.route_planner import route_time_planner_node
+from app.agents.llm_critic import llm_critic_node
 from app.agents.verifier import verifier_node, verifier_route
 from app.agents.ranker import ranker_node
 from app.agents.response_generator import response_generator_node
@@ -80,6 +84,9 @@ def plan_trip(request: TripPlanRequest) -> TripPlanResponse:
     trace_id = request.trace_id or new_id("trace")
     run_id = request.run_id or new_id("run")
     set_trace_context(trace_id=trace_id, run_id=run_id, session_id=session_id)
+    checkpoint = CheckpointStore()
+    task = checkpoint.create(session_id=session_id, user_id=session_id, trace_id=trace_id)
+    task_id = str(task["task_id"])
     saved_session = session_store.load(session_id)
     effective_query = _effective_query_for_request(saved_session, request.user_query)
     memory.observe_user_query(request.user_query, user_id=session_id)
@@ -97,7 +104,9 @@ def plan_trip(request: TripPlanRequest) -> TripPlanResponse:
         session_id=session_id,
         trace_id=trace_id,
         run_id=run_id,
+        task_id=task_id,
     )
+    checkpoint.save_from_plan_state(initial_state, status=TaskStatus.CREATED, task_id=task_id)
     if effective_query != request.user_query:
         initial_state["logs"] = [
             *initial_state.get("logs", []),
@@ -111,6 +120,11 @@ def plan_trip(request: TripPlanRequest) -> TripPlanResponse:
         "life_route_graph.invoke",
         lambda: life_route_graph.invoke(initial_state),
         input_summary={"user_query": request.user_query},
+    )
+    checkpoint.save_from_plan_state(
+        result,
+        status=_checkpoint_status_from_state(result),
+        task_id=task_id,
     )
     response = _build_trip_response(result)
     session_store.save_turn(
@@ -145,6 +159,9 @@ def stream_plan_trip(request: TripPlanRequest) -> StreamingResponse:
         run_id = request.run_id or new_id("run")
         set_trace_context(trace_id=trace_id, run_id=run_id, session_id=session_id)
         # 加载之前保存的请求信息, 也有可能为 None
+        checkpoint = CheckpointStore()
+        task = checkpoint.create(session_id=session_id, user_id=session_id, trace_id=trace_id)
+        task_id = str(task["task_id"])
         saved_session = session_store.load(session_id)
         effective_query = _effective_query_for_request(saved_session, request.user_query)
         is_clarification_followup = effective_query != request.user_query
@@ -163,7 +180,9 @@ def stream_plan_trip(request: TripPlanRequest) -> StreamingResponse:
             session_id=session_id,
             trace_id=trace_id,
             run_id=run_id,
+            task_id=task_id,
         )
+        checkpoint.save_from_plan_state(current_state, status=TaskStatus.CREATED, task_id=task_id)
         if is_clarification_followup:
             current_state["logs"] = [
                 *current_state.get("logs", []),
@@ -192,6 +211,11 @@ def stream_plan_trip(request: TripPlanRequest) -> StreamingResponse:
                             },
                         )
                         current_state = _merge_stream_patch(current_state, patch)
+                        checkpoint.save_from_plan_state(
+                            current_state,
+                            status=_checkpoint_status_for_node(node_name, current_state),
+                            task_id=task_id,
+                        )
                         latest_log = patch.get("logs", [])[-1] if patch.get("logs") else ""
                         event_queue.put((
                             "agent_thinking",
@@ -281,6 +305,7 @@ def stream_plan_trip(request: TripPlanRequest) -> StreamingResponse:
                 "session_id": response.session_id,
                 "trace_id": response.trace_id,
                 "run_id": response.run_id,
+                "task_id": response.task_id,
             },
         )
 
@@ -327,6 +352,13 @@ def stream_revise_plan(request: RevisePlanRequest) -> StreamingResponse:
         run_id = new_id("run")
         revision_id = new_id("rev")
         set_trace_context(trace_id=trace_id, run_id=run_id, session_id=request.session_id)
+        checkpoint = CheckpointStore()
+        task = checkpoint.create(
+            session_id=request.session_id,
+            user_id=request.session_id,
+            trace_id=trace_id,
+        )
+        task_id = str(task["task_id"])
         memory.observe_user_query(request.user_query, user_id=request.session_id)
         recorder = TraceRecorder(trace_id=trace_id, run_id=run_id, session_id=request.session_id)
         current_state = _build_revision_state(
@@ -337,6 +369,7 @@ def stream_revise_plan(request: RevisePlanRequest) -> StreamingResponse:
             run_id,
             revision_id,
         )
+        current_state["task_id"] = task_id
         current_state["user_profile"] = memory.enrich_user_profile({
             **current_state.get("user_profile", {}),
             "last_query": request.user_query,
@@ -344,6 +377,12 @@ def stream_revise_plan(request: RevisePlanRequest) -> StreamingResponse:
             "user_id": request.session_id,
         })
         _apply_revision_constraints(current_state, request.user_query)
+        memory.observe_revision(
+            request.user_query,
+            current_state.get("constraints", {}),
+            user_id=request.session_id,
+        )
+        checkpoint.save_from_plan_state(current_state, status=TaskStatus.CREATED, task_id=task_id)
 
         yield _sse_event(
             "status",
@@ -353,6 +392,7 @@ def stream_revise_plan(request: RevisePlanRequest) -> StreamingResponse:
                 "trace_id": trace_id,
                 "run_id": run_id,
                 "revision_id": revision_id,
+                "task_id": task_id,
                 "message": "已读取上一版方案，正在基于新需求做局部/全局修正。",
             },
         )
@@ -367,6 +407,11 @@ def stream_revise_plan(request: RevisePlanRequest) -> StreamingResponse:
 
         try:
             current_state = _run_revision_pipeline(current_state, recorder, event_stream=True)
+            checkpoint.save_from_plan_state(
+                current_state,
+                status=_checkpoint_status_from_state(current_state),
+                task_id=task_id,
+            )
             response = _build_trip_response(current_state)
             session_store.save_turn(
                 session_id=request.session_id,
@@ -389,6 +434,7 @@ def stream_revise_plan(request: RevisePlanRequest) -> StreamingResponse:
                     "run_id": response.run_id,
                     "revision_id": response.revision_id,
                     "is_revision": response.is_revision,
+                    "task_id": response.task_id,
                     "plan_count": len(response.ranked_plans),
                 },
             )
@@ -422,12 +468,35 @@ def stream_execute_plan(request: ExecutePlanRequest) -> StreamingResponse:
         trace_id = request.trace_id or new_id("trace")
         run_id = request.run_id or new_id("run")
         set_trace_context(trace_id=trace_id, run_id=run_id, session_id=session_id)
+        checkpoint = CheckpointStore()
+        task_id = request.task_id or str(request.plan.get("task_id") or new_id("task"))
+        if not checkpoint.load(task_id):
+            checkpoint.create(session_id=session_id, user_id=session_id, trace_id=trace_id, task_id=task_id)
+        checkpoint.save_from_plan_state(
+            {
+                "task_id": task_id,
+                "session_id": session_id,
+                "trace_id": trace_id,
+                "user_profile": {"user_id": session_id},
+                "selected_plan": request.plan,
+                "ranked_plans": [request.plan],
+                "errors": [],
+                "constraints": {},
+                "candidate_pois": {},
+                "intent_type": "execution",
+                "answer_mode": "execution",
+                "target_categories": [],
+            },
+            status=TaskStatus.USER_CONFIRMED,
+            task_id=task_id,
+        )
         MemoryService().observe_selected_plan(request.plan, user_id=session_id)
         record_trace_event(
             "user_action",
             {
                 "action": "plan_executed",
                 "plan_id": request.plan.get("id"),
+                "task_id": task_id,
             },
         )
         harness = ToolHarness(
@@ -451,10 +520,33 @@ def stream_execute_plan(request: ExecutePlanRequest) -> StreamingResponse:
                 "session_id": session_id,
                 "trace_id": trace_id,
                 "run_id": run_id,
+                "task_id": task_id,
                 "message": "开始模拟执行当前方案。",
             },
         )
+        validated_item_ids = _validated_item_ids(request.plan)
         for step in steps:
+            risk_level = _risk_level_for_execution_step(step)
+            idempotency_key = make_idempotency_key(
+                user_id=session_id,
+                task_id=task_id,
+                action_type=str(step.get("type") or "step"),
+                target_id=str(step.get("poi_id") or step.get("id") or request.plan.get("id") or ""),
+                slot_time=str(step.get("start_time") or ""),
+                amount=str(request.plan.get("estimated_budget") or ""),
+            )
+            checkpoint.append_action(
+                task_id,
+                {
+                    "action_id": str(step.get("id") or new_id("action")),
+                    "type": str(step.get("type") or "step"),
+                    "risk_level": int(risk_level),
+                    "status": "running",
+                    "idempotency_key": idempotency_key,
+                    "request": step,
+                    "result": None,
+                },
+            )
             running = {**step, "status": "running"}
             yield _sse_event("execution_step", running)
             time.sleep(0.35)
@@ -464,11 +556,38 @@ def stream_execute_plan(request: ExecutePlanRequest) -> StreamingResponse:
                 max_retries=1,
                 fallback=lambda current_step=step: "模拟执行降级完成。",
             )
-            result = result_harness.run(_mock_execution_result, step)
+            tool_request = {
+                "tool_name": f"execution.mock.{step.get('type', 'step')}",
+                "risk_level": int(risk_level),
+                "user_id": session_id,
+                "session_id": session_id,
+                "task_id": task_id,
+                "idempotency_key": idempotency_key,
+                "params": {
+                    **step,
+                    "target_id": step.get("poi_id") or step.get("id") or request.plan.get("id"),
+                    "validated_item_ids": validated_item_ids,
+                    "confirmed": True,
+                },
+                "requires_confirmation": int(risk_level) >= 2,
+            }
+            result = result_harness.run_request(tool_request, _mock_execution_result, step)
+            checkpoint.append_action(
+                task_id,
+                {
+                    "action_id": str(step.get("id") or new_id("action")),
+                    "type": str(step.get("type") or "step"),
+                    "risk_level": int(risk_level),
+                    "status": "success" if result.get("success") else "failed",
+                    "idempotency_key": idempotency_key,
+                    "request": step,
+                    "result": result,
+                },
+            )
             done = {
                 **step,
                 "status": "done",
-                "result": result.data if result.success else "模拟执行完成。",
+                "result": result.get("data") if result.get("success") else "模拟执行完成。",
             }
             yield _sse_event("execution_step", done)
             if step.get("type") == "calendar_export":
@@ -555,6 +674,21 @@ def get_trace(trace_id: str) -> dict[str, Any]:
     """读取一次请求链路的 trace 事件，供调试页或 demo 复盘使用。"""
 
     return TraceRecorder.read(trace_id)
+
+
+@router.get("/task/{task_id}")
+def get_task_checkpoint(task_id: str) -> dict[str, Any]:
+    """读取任务 checkpoint，页面刷新或服务重启后用它恢复进度。"""
+
+    task = CheckpointStore().load(task_id)
+    return {"ok": bool(task), "task": task}
+
+
+@router.post("/task/{task_id}/resume")
+def resume_task_checkpoint(task_id: str) -> dict[str, Any]:
+    """生成任务恢复决策；只判断继续、重校验或补偿，不自动重复交易。"""
+
+    return CheckpointStore().resume(task_id)
 
 
 @router.delete("/memory")
@@ -673,11 +807,30 @@ def _build_revision_state(
 
 
 def _apply_revision_constraints(state: dict[str, Any], user_query: str) -> None:
-    """把常见自然语言修正转成结构化约束，作为 Planner/Skill/Route 的输入。"""
+    """把自然语言修正转成结构化约束，优先 LLM，规则只做兜底。"""
 
     constraints = state.get("constraints")
     if not isinstance(constraints, dict):
         constraints = {}
+    parsed = extract_revision_constraints(
+        user_query,
+        previous_constraints=constraints,
+        user_profile=state.get("user_profile", {}),
+    )
+    if parsed:
+        _apply_llm_revision_patch(constraints, parsed)
+        state["constraints"] = constraints
+        state["logs"] = [
+            *state.get("logs", []),
+            (
+                "已用 LLM 修正解析更新约束："
+                f"avoid_tags={constraints.get('avoid_tags', [])}, "
+                f"excluded_keywords={constraints.get('excluded_keywords', [])}, "
+                f"activity_intents={constraints.get('activity_intents', [])}"
+            ),
+        ]
+        return
+
     text = user_query.lower()
     avoid_tags = list(constraints.get("avoid_tags", []) or [])
     excluded_keywords = list(constraints.get("excluded_keywords", []) or [])
@@ -704,6 +857,39 @@ def _apply_revision_constraints(state: dict[str, Any], user_query: str) -> None:
             f" excluded_keywords={constraints.get('excluded_keywords', [])}"
         ),
     ]
+
+
+def _apply_llm_revision_patch(constraints: dict[str, Any], parsed: dict[str, Any]) -> None:
+    """应用 LLM Revision Parser 输出，并做字段白名单过滤。"""
+
+    avoid_tags = list(constraints.get("avoid_tags", []) or [])
+    excluded_keywords = list(constraints.get("excluded_keywords", []) or [])
+    if parsed.get("indoor_preferred") is True:
+        constraints["indoor_preferred"] = True
+    avoid_tags.extend(str(item) for item in parsed.get("avoid_tags", []) or [] if str(item).strip())
+    excluded_keywords.extend(str(item) for item in parsed.get("excluded_keywords", []) or [] if str(item).strip())
+    for key in ("budget_strategy", "price_preference", "movement_policy"):
+        value = parsed.get(key)
+        if value:
+            constraints[key] = str(value)
+    try:
+        if parsed.get("max_route_minutes") not in (None, ""):
+            constraints["max_route_minutes"] = int(float(parsed["max_route_minutes"]))
+            constraints["route_limit_is_hard"] = True
+    except (TypeError, ValueError):
+        pass
+    activity_intents = parsed.get("activity_intents")
+    if isinstance(activity_intents, list) and activity_intents:
+        constraints["activity_intents"] = [
+            item for item in activity_intents if isinstance(item, dict)
+        ][:8]
+    preferred_categories = parsed.get("preferred_categories")
+    if isinstance(preferred_categories, list) and preferred_categories:
+        constraints["preferred_categories"] = [
+            str(item) for item in preferred_categories if str(item).strip()
+        ][:8]
+    constraints["avoid_tags"] = sorted({str(item) for item in avoid_tags if item})
+    constraints["excluded_keywords"] = sorted({str(item) for item in excluded_keywords if item})
 
 
 def _run_revision_pipeline(
@@ -753,6 +939,8 @@ def _run_revision_pipeline(
         run_node("route_time_planner", route_time_planner_node)
         run_node("availability_checker", availability_checker_node)
         run_node("verifier", verifier_node)
+    if verifier_route(state) == "rank":
+        run_node("llm_critic", llm_critic_node)
     run_node("ranker", ranker_node)
     run_node("response_generator", response_generator_node)
     return state
@@ -779,6 +967,7 @@ def _build_trip_response(result: dict[str, Any]) -> TripPlanResponse:
         run_id=result.get("run_id", ""),
         revision_id=result.get("revision_id", ""),
         is_revision=bool(result.get("is_revision", False)),
+        task_id=result.get("task_id", ""),
     )
 
 
@@ -825,6 +1014,8 @@ def _merge_stream_patch(state: dict[str, Any], patch: dict[str, Any]) -> dict[st
             merged[key] = [*merged.get(key, []), *value]
         elif key in {"candidate_pois", "recommended_pois"}:
             merged[key] = {**merged.get(key, {}), **value}
+        elif key in {"tool_evidence", "booking_actions"}:
+            merged[key] = [*merged.get(key, []), *value]
         else:
             merged[key] = value
     return merged
@@ -1247,6 +1438,73 @@ def _summarize_patch(patch: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _checkpoint_status_for_node(node_name: str, state: dict[str, Any]) -> TaskStatus:
+    """把 LangGraph 节点映射到可恢复任务状态机。"""
+
+    del state
+    mapping = {
+        "intent_router": TaskStatus.INTENT_PARSED,
+        "intent_parser": TaskStatus.INTENT_PARSED,
+        "constraint_builder": TaskStatus.INTENT_PARSED,
+        "constraint_clarifier": TaskStatus.INTENT_PARSED,
+        "planner_agent": TaskStatus.INTENT_PARSED,
+        "poi_collector": TaskStatus.CANDIDATES_RECALLED,
+        "poi_mix_recommend": TaskStatus.CANDIDATES_RECALLED,
+        "poi_activity_recommend": TaskStatus.CANDIDATES_RECALLED,
+        "poi_restaurant_recommend": TaskStatus.CANDIDATES_RECALLED,
+        "poi_lifestyle_recommend": TaskStatus.CANDIDATES_RECALLED,
+        "route_time_planner": TaskStatus.PLAN_GENERATED,
+        "availability_checker": TaskStatus.PLAN_VALIDATED,
+        "verifier": TaskStatus.PLAN_VALIDATED,
+        "llm_critic": TaskStatus.PLAN_VALIDATED,
+        "ranker": TaskStatus.PLAN_VALIDATED,
+        "response_generator": TaskStatus.PLAN_VALIDATED,
+    }
+    return mapping.get(node_name, TaskStatus.CREATED)
+
+
+def _checkpoint_status_from_state(state: dict[str, Any]) -> TaskStatus:
+    """根据最终 PlanState 推断 checkpoint 状态。"""
+
+    if state.get("execution_status") in {"completed", "simulated"}:
+        return TaskStatus.COMPLETED
+    if state.get("ranked_plans"):
+        return TaskStatus.PLAN_VALIDATED
+    if state.get("candidate_plans"):
+        return TaskStatus.PLAN_GENERATED
+    if state.get("candidate_pois") or state.get("recommended_pois"):
+        return TaskStatus.CANDIDATES_RECALLED
+    if state.get("intent_type") or state.get("constraints"):
+        return TaskStatus.INTENT_PARSED
+    return TaskStatus.CREATED
+
+
+def _validated_item_ids(plan: dict[str, Any]) -> list[str]:
+    """交易类 mock 工具只允许操作已验证方案里的 POI 或当前 plan。"""
+
+    ids = {str(plan.get("id") or "")}
+    for item in plan.get("items", []) if isinstance(plan.get("items"), list) else []:
+        if isinstance(item, dict) and item.get("id") is not None:
+            ids.add(str(item.get("id")))
+    for segment in plan.get("route_segments", []) if isinstance(plan.get("route_segments"), list) else []:
+        if isinstance(segment, dict):
+            for key in ("from_item_id", "to_item_id"):
+                if segment.get(key) is not None:
+                    ids.add(str(segment.get(key)))
+    return sorted(item for item in ids if item)
+
+
+def _risk_level_for_execution_step(step: dict[str, Any]) -> RiskLevel:
+    """给执行 mock 步骤标记工具风险等级。"""
+
+    step_type = str(step.get("type") or "")
+    if step_type in {"restaurant_reservation", "ticket_purchase"}:
+        return RiskLevel.TRANSACTION
+    if step_type in {"ride_hailing", "calendar_export"}:
+        return RiskLevel.LIGHT_MUTATION
+    return RiskLevel.INTERNAL
+
+
 def _build_mock_execution_steps(plan: dict[str, Any]) -> list[dict[str, Any]]:
     """根据方案内容生成 mock 执行步骤。
 
@@ -1446,7 +1704,7 @@ def _rough_distance(a: dict[str, Any], b: dict[str, Any]) -> float:
             abs(float(a.get("lat", 0)) - float(b.get("lat", 0))) * 111
             + abs(float(a.get("lon", 0)) - float(b.get("lon", 0))) * 85
         )
-    except TypeError, ValueError:
+    except (TypeError, ValueError):
         return 99
 
 
@@ -1548,6 +1806,9 @@ def _recalculate_adjusted_plan(plan: dict[str, Any]) -> dict[str, Any]:
             max_route_minutes=45,
             duration_limit=duration_limit,
             budget=budget_limit,
+            route_limit_is_hard=False,
+            duration_is_hard=False,
+            budget_is_hard=False,
         )
     )
     return {

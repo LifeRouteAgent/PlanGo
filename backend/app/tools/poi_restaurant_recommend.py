@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from app.state.plan_state import PlanState, PlanStatePatch
 from app.services.memory_scoring import attach_memory_fields
+from app.state.plan_state import PlanState, PlanStatePatch
 from app.tools.poi_schema import (
     POI_RESTAURANT,
     price_level_budget_fit,
@@ -15,12 +15,9 @@ from app.tools.skill_registry import skill_enabled, skipped_skill_patch
 def poi_restaurant_recommend_node(state: PlanState) -> PlanStatePatch:
     """餐厅美食推荐 Skill。
 
-    餐厅是本地生活规划里的核心锚点，不能只按评分排序。
-    这里先做轻量规则：
-    - 用总预算 / 人数估算人均预算适配。
-    - 晚餐、周末、高评分餐厅提高排队风险。
-    - 家庭/朋友/情侣场景分别给不同场景适配分。
-    - 输出预计用餐时长、是否建议预约、拥挤风险和预算适配。
+    餐厅推荐不再直接从用户原句里判断“周末/晚餐”等词；主路径消费
+    Constraint Builder 规整后的时间、预算、人数、场景。没有结构化时间时，
+    才允许使用轻量 fallback。
     """
 
     if not skill_enabled(state, "poi_restaurant_recommend"):
@@ -33,17 +30,17 @@ def poi_restaurant_recommend_node(state: PlanState) -> PlanStatePatch:
         attach_memory_fields(
             recommend_poi(
                 item,
-                score_boost=_score_boost(item, scenario, per_person_budget, state["user_query"]),
+                score_boost=_score_boost(item, scenario, per_person_budget, constraints),
                 reason=_reason_for_restaurant(item, scenario),
                 estimated_duration_minutes=_estimated_meal_duration(scenario),
-                reservation_required=_reservation_required(item, state["user_query"]),
-                crowd_risk=_crowd_risk(item, state["user_query"]),
+                reservation_required=_reservation_required(item, constraints),
+                crowd_risk=_crowd_risk(item, constraints),
                 budget_fit=price_level_budget_fit(
                     str(item.get("price_level", "unknown")), per_person_budget
                 ),
                 scene_fit=_scene_fit(scenario),
                 distance_sensitive=True,
-                risk_flags=_risk_flags(item, per_person_budget, state["user_query"]),
+                risk_flags=_risk_flags(item, per_person_budget, constraints),
             ),
             state.get("user_profile", {}),
         )
@@ -69,12 +66,12 @@ def _score_boost(
     item: dict,
     scenario: str,
     per_person_budget: float | None,
-    query: str,
+    constraints: dict,
 ) -> float:
-    """餐厅推荐分由基础权重、预算适配、拥挤风险和场景适配共同决定。"""
+    """餐厅推荐分由预算适配、拥挤风险和场景适配共同决定。"""
 
     budget_fit = price_level_budget_fit(str(item.get("price_level", "unknown")), per_person_budget)
-    crowd_risk = _crowd_risk(item, query)
+    crowd_risk = _crowd_risk(item, constraints)
     return round(
         0.25
         + score_budget_fit(budget_fit)
@@ -94,26 +91,49 @@ def _estimated_meal_duration(scenario: str) -> int:
     return 80
 
 
-def _reservation_required(item: dict, query: str) -> bool:
-    """周末、晚餐和高评分餐厅都建议预约。"""
+def _reservation_required(item: dict, constraints: dict) -> bool:
+    """结构化时间显示为高峰餐段或高评分餐厅时，建议预约。"""
 
-    return (
-        "周末" in query
-        or "晚上" in query
-        or "晚餐" in query
-        or float(item.get("rating", 0) or 0) >= 4.6
-    )
+    return _is_peak_meal_time(constraints) or float(item.get("rating", 0) or 0) >= 4.6
 
 
-def _crowd_risk(item: dict, query: str) -> str:
+def _crowd_risk(item: dict, constraints: dict) -> str:
     """估算排队/拥挤风险。后续接入真实排队数据时替换这里。"""
 
     rating = float(item.get("rating", 0) or 0)
-    if ("周末" in query or "晚上" in query or "晚餐" in query) and rating >= 4.6:
+    if _is_peak_meal_time(constraints) and rating >= 4.6:
         return "high"
     if rating >= 4.4:
         return "medium"
     return "low"
+
+
+def _is_peak_meal_time(constraints: dict) -> bool:
+    """用结构化时间判断是否处于用餐高峰。
+
+    只要用户没有明确给时间，就不硬塞“晚餐/周末”等约束，避免把没有说明的
+    条件变成硬限制。
+    """
+
+    hour = _start_hour(constraints)
+    if hour is None:
+        return False
+    return 11 <= hour <= 13 or 17 <= hour <= 20
+
+
+def _start_hour(constraints: dict) -> int | None:
+    """从结构化 start_time 中解析小时数。"""
+
+    start_time = constraints.get("start_time")
+    if not start_time:
+        return None
+    text = str(start_time)
+    try:
+        if ":" in text:
+            return int(text.split(":", 1)[0][-2:])
+        return int(float(text))
+    except (TypeError, ValueError):
+        return None
 
 
 def _scene_fit(scenario: str) -> float:
@@ -139,14 +159,14 @@ def _reason_for_restaurant(item: dict, scenario: str) -> str:
     return f"餐厅推荐：{scene_text}，标签匹配 {tags}，建议提前确认排队或订位。"
 
 
-def _risk_flags(item: dict, per_person_budget: float | None, query: str) -> list[str]:
+def _risk_flags(item: dict, per_person_budget: float | None, constraints: dict) -> list[str]:
     """给 Verifier 提供结构化风险信号。"""
 
     flags: list[str] = []
     budget_fit = price_level_budget_fit(str(item.get("price_level", "unknown")), per_person_budget)
     if budget_fit == "over_budget":
         flags.append("budget_risk")
-    if _crowd_risk(item, query) == "high":
+    if _crowd_risk(item, constraints) == "high":
         flags.append("queue_risk")
     if item.get("open_status") == "unknown":
         flags.append("open_time_unknown")

@@ -1,7 +1,13 @@
 from __future__ import annotations
 
-from app.state.plan_state import PlanState, PlanStatePatch
 from app.services.memory_scoring import attach_memory_fields
+from app.services.semantic_constraints import (
+    has_semantic_intent,
+    item_matches_keywords,
+    semantic_keywords,
+    semantic_types,
+)
+from app.state.plan_state import PlanState, PlanStatePatch
 from app.tools.poi_schema import (
     POI_BEAUTY,
     POI_ENTERTAINMENT,
@@ -16,11 +22,9 @@ from app.tools.skill_registry import skill_enabled, skipped_skill_patch
 def poi_lifestyle_recommend_node(state: PlanState) -> PlanStatePatch:
     """生活方式推荐 Skill。
 
-    覆盖健身、娱乐、按摩美容等非餐饮类本地生活场景。
-    这些类别的业务约束差异很大：
-    - 娱乐通常有固定场次或包间人数，适合朋友/情侣。
-    - 健身只在用户明确偏运动时更适合进入方案。
-    - 美容养生更适合慢节奏放松，通常需要预约。
+    覆盖健身、娱乐、按摩美容等非餐饮本地生活场景。推荐主逻辑优先消费
+    LLM 提取出的 `activity_intents / preference_keywords`，避免在 Skill 内直接
+    判断“唱歌/按摩/麻将”等自然语言关键词。只有 LLM 字段缺失时才走规则兜底。
     """
 
     if not skill_enabled(state, "poi_lifestyle_recommend"):
@@ -38,7 +42,7 @@ def poi_lifestyle_recommend_node(state: PlanState) -> PlanStatePatch:
                     recommend_poi(
                         item,
                         score_boost=_score_boost(
-                            item, state["user_query"], scenario, per_person_budget
+                            item, constraints, state["user_query"], scenario, per_person_budget
                         ),
                         reason=_reason_for_lifestyle(item, scenario),
                         estimated_duration_minutes=_estimated_duration(item),
@@ -47,9 +51,11 @@ def poi_lifestyle_recommend_node(state: PlanState) -> PlanStatePatch:
                         budget_fit=price_level_budget_fit(
                             str(item.get("price_level", "unknown")), per_person_budget
                         ),
-                        scene_fit=_scene_fit(item, state["user_query"], scenario),
+                        scene_fit=_scene_fit(item, constraints, state["user_query"], scenario),
                         distance_sensitive=True,
-                        risk_flags=_risk_flags(item, state["user_query"], per_person_budget),
+                        risk_flags=_risk_flags(
+                            item, constraints, state["user_query"], per_person_budget
+                        ),
                     ),
                     state.get("user_profile", {}),
                 )
@@ -61,7 +67,7 @@ def poi_lifestyle_recommend_node(state: PlanState) -> PlanStatePatch:
 
 
 def _per_person_budget(constraints: dict) -> float | None:
-    """生活方式项目通常按人计价，先用人均预算粗略判断。"""
+    """按人数估算生活方式项目的人均预算。"""
 
     budget = constraints.get("budget")
     people_count = int(constraints.get("people_count") or 1)
@@ -71,7 +77,7 @@ def _per_person_budget(constraints: dict) -> float | None:
 
 
 def _estimated_duration(item: dict) -> int:
-    """按娱乐/健身/美容养生类别估算停留时长。"""
+    """按类别估算停留时长。"""
 
     category = item.get("category")
     if category == POI_ENTERTAINMENT:
@@ -90,44 +96,70 @@ def _reservation_required(item: dict) -> bool:
 
 
 def _crowd_risk(item: dict) -> str:
-    """高评分娱乐和美容养生点位按中等风险处理，后续可接实时库存。"""
+    """高评分生活方式 POI 按中等拥挤风险处理。"""
 
     if float(item.get("rating", 0) or 0) >= 4.6:
         return "medium"
     return "low"
 
 
-def _scene_fit(item: dict, query: str, scenario: str) -> float:
-    """生活方式类强依赖用户是否明确表达了偏好。"""
+def _scene_fit(item: dict, constraints: dict, query: str, scenario: str) -> float:
+    """计算生活方式 POI 与本轮语义偏好的适配度。
+
+    主路径消费 LLM 结构化字段；只有 LLM 未给出语义字段时，才用旧关键词兜底。
+    """
 
     category = item.get("category")
+    types = semantic_types(constraints)
+    keywords = semantic_keywords(constraints)
+    has_llm_semantics = has_semantic_intent(constraints)
     if category == POI_FITNESS:
-        return (
-            0.9
-            if any(keyword in query for keyword in ("健身", "运动", "瑜伽", "羽毛球", "爬山"))
-            else 0.45
-        )
+        if types & {"fitness", "sport", "yoga", "badminton", "climbing", "gym"}:
+            return 0.95 if item_matches_keywords(item, keywords) or not keywords else 0.8
+        if has_llm_semantics:
+            return 0.45
+        return 0.9 if any(
+            keyword in query for keyword in ("健身", "运动", "瑜伽", "羽毛球", "爬山")
+        ) else 0.45
     if category == POI_ENTERTAINMENT:
+        if types & {
+            "ktv",
+            "mahjong",
+            "cards",
+            "chess_cards",
+            "board_game",
+            "escape_room",
+            "cinema",
+        }:
+            return 0.95 if item_matches_keywords(item, keywords) or not keywords else 0.75
         return 0.9 if scenario in {"friends", "couple"} else 0.65
     if category == POI_BEAUTY:
-        return (
-            0.9
-            if any(keyword in query for keyword in ("放松", "按摩", "养生", "足疗", "美容"))
-            else 0.6
-        )
+        if types & {"massage", "spa", "beauty", "foot_bath", "nail"}:
+            return 0.95 if item_matches_keywords(item, keywords) or not keywords else 0.8
+        if has_llm_semantics:
+            return 0.55
+        return 0.9 if any(
+            keyword in query for keyword in ("放松", "按摩", "养生", "足疗", "美容")
+        ) else 0.6
     return 0.6
 
 
 def _score_boost(
     item: dict,
+    constraints: dict,
     query: str,
     scenario: str,
     per_person_budget: float | None,
 ) -> float:
-    """生活方式推荐分由偏好明确性、预算和场景适配共同决定。"""
+    """由语义适配、预算适配和基础分共同决定生活方式推荐分。"""
 
     budget_fit = price_level_budget_fit(str(item.get("price_level", "unknown")), per_person_budget)
-    return round(0.12 + score_budget_fit(budget_fit) + _scene_fit(item, query, scenario) * 0.15, 2)
+    return round(
+        0.12
+        + score_budget_fit(budget_fit)
+        + _scene_fit(item, constraints, query, scenario) * 0.15,
+        2,
+    )
 
 
 def _reason_for_lifestyle(item: dict, scenario: str) -> str:
@@ -148,16 +180,24 @@ def _reason_for_lifestyle(item: dict, scenario: str) -> str:
     return f"生活方式推荐：{scene_text}，预计停留 {duration} 分钟，建议提前预约。"
 
 
-def _risk_flags(item: dict, query: str, per_person_budget: float | None) -> list[str]:
+def _risk_flags(
+    item: dict,
+    constraints: dict,
+    query: str,
+    per_person_budget: float | None,
+) -> list[str]:
     """给 Verifier 提供生活方式类风险信号。"""
 
     flags: list[str] = []
     if _reservation_required(item):
         flags.append("reservation_required")
-    if item.get("category") == POI_FITNESS and not any(
-        keyword in query for keyword in ("健身", "运动", "瑜伽", "羽毛球", "爬山")
-    ):
-        flags.append("weak_preference_match")
+    if item.get("category") == POI_FITNESS:
+        types = semantic_types(constraints)
+        if has_semantic_intent(constraints):
+            if not (types & {"fitness", "sport", "yoga", "badminton", "climbing", "gym"}):
+                flags.append("weak_preference_match")
+        elif not any(keyword in query for keyword in ("健身", "运动", "瑜伽", "羽毛球", "爬山")):
+            flags.append("weak_preference_match")
     if (
         price_level_budget_fit(str(item.get("price_level", "unknown")), per_person_budget)
         == "over_budget"

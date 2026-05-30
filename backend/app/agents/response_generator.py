@@ -6,6 +6,7 @@ from typing import Any
 from app.agents.issue_utils import normalize_issues
 from app.services.context_builder import ContextBuilder
 from app.services.llm_service import call_chat_completion, extract_json_object
+from app.services.trace_recorder import record_trace_event
 from app.state.plan_state import PlanState, PlanStatePatch
 
 
@@ -204,8 +205,8 @@ def _llm_plan_enrichment(
                             for key, value in state.get("constraints", {}).items()
                             if key != "llm_understanding"
                         },
-                        "memory_context": (
-                            ContextBuilder().build_state_context(state).get("memory_context")
+                        "context_snapshot": ContextBuilder().build_for(
+                            "response_plan_enrichment", state
                         ),
                         "plans": compact_plans,
                         "required_schema": {
@@ -238,6 +239,14 @@ def _llm_plan_enrichment(
     )
     parsed = extract_json_object(raw)
     plans = parsed.get("plans") if parsed else None
+    record_trace_event(
+        "response_plan_enrichment",
+        {
+            "success": isinstance(plans, list),
+            "raw_preview": raw[:600] if raw else "",
+            "plan_count": len(plans) if isinstance(plans, list) else 0,
+        },
+    )
     return plans if isinstance(plans, list) else None
 
 
@@ -482,16 +491,9 @@ def _llm_response_text(
     这里限制模型只做表达：它只能使用 PlanState 里已有的方案、地点、路线、预算和错误信息。
     """
 
-    state_context = ContextBuilder().build_state_context(state)
+    context_snapshot = ContextBuilder().build_for("response_generator", state)
     response_context = {
-        "user_query": state.get("user_query"),
-        "intent_type": state.get("intent_type"),
-        "answer_mode": state.get("answer_mode"),
-        "need_clarification": state.get("need_clarification"),
-        "clarify_question": state.get("clarify_question"),
-        "constraints": state_context.get("constraints", {}),
-        "memory_context": state_context.get("memory_context", {}),
-        "llm_understanding": state.get("constraints", {}).get("llm_understanding"),
+        "context_snapshot": context_snapshot,
         "selected_plan": selected_plan if selected_plan is not None else state.get("selected_plan"),
         "ranked_plans": ranked_plans if ranked_plans is not None else state.get("ranked_plans"),
         "errors": state.get("errors"),
@@ -505,6 +507,7 @@ def _llm_response_text(
                     "你是本地生活规划系统的响应生成器。"
                     "只能基于用户提供的 PlanState 生成中文回复。"
                     "禁止编造 PlanState 中不存在的 POI、路线、营业状态、价格、预约结果。"
+                    "禁止新增 ranked_plans 之外的方案；如果事实缺失，必须明确说未知或待确认。"
                     "如果有 3 个方案，要清楚说明每个方案的推荐理由、优点和缺点。"
                     "每个地点只给一句简短推荐理由，不要写长篇。"
                 ),
@@ -516,6 +519,16 @@ def _llm_response_text(
         ],
         temperature=0.2,
         max_completion_tokens=1600,
+    )
+    record_trace_event(
+        "response_llm_preview",
+        {
+            "success": bool(raw),
+            "content_preview": raw[:600] if raw else "",
+            "selected_plan_id": (
+                selected_plan or state.get("selected_plan") or {}
+            ).get("id"),
+        },
     )
     if not raw:
         return None

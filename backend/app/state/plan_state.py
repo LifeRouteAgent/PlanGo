@@ -69,6 +69,9 @@ class PlanState(TypedDict):
     run_id: str
     revision_id: str
     is_revision: bool
+    task_id: str
+    tool_evidence: Annotated[list[dict[str, Any]], append_lists]
+    booking_actions: Annotated[list[dict[str, Any]], append_lists]
 
 
 class PlanStatePatch(TypedDict, total=False):
@@ -109,6 +112,9 @@ class PlanStatePatch(TypedDict, total=False):
     run_id: str
     revision_id: str
     is_revision: bool
+    task_id: str
+    tool_evidence: list[dict[str, Any]]
+    booking_actions: list[dict[str, Any]]
 
 
 class PoiRecord(TypedDict):
@@ -158,6 +164,7 @@ def create_initial_state(
     run_id: str = "",
     revision_id: str = "",
     is_revision: bool = False,
+    task_id: str = "",
 ) -> PlanState:
     """创建一次规划运行的初始状态。"""
 
@@ -203,4 +210,7 @@ def create_initial_state(
         "run_id": run_id,
         "revision_id": revision_id,
         "is_revision": is_revision,
+        "task_id": task_id,
+        "tool_evidence": [],
+        "booking_actions": [],
     }

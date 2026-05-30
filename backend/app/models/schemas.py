@@ -31,6 +31,7 @@ class TripPlanResponse(BaseModel):
     run_id: str = ""
     revision_id: str = ""
     is_revision: bool = False
+    task_id: str = ""
 
 
 class ExecutePlanRequest(BaseModel):
@@ -38,6 +39,7 @@ class ExecutePlanRequest(BaseModel):
     session_id: str | None = None
     trace_id: str | None = None
     run_id: str | None = None
+    task_id: str | None = None
 
 
 class ExportPlanRequest(BaseModel):

@@ -7,7 +7,15 @@ from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeout
 from dataclasses import dataclass, field
 from typing import Any, TypeVar
 
+from app.services.memory_store import (
+    FileMemoryStore,
+    expires_at_from_ttl,
+    make_cache_key,
+    make_request_hash,
+    ttl_seconds_for_tool,
+)
 from app.services.trace_recorder import record_trace_event
+from app.services.tool_policy import ToolCallRequest, ToolCallResult, ToolPolicy
 
 # todo: 这个类放在 services 文件夹下面是否合适呢?
 logger = logging.getLogger("liferoute.tool_harness")
@@ -66,6 +74,7 @@ class ToolHarness:
                 data = self._run_with_timeout(fn, *args, **kwargs)
                 latency = int((time.perf_counter() - started) * 1000)
                 self._record(True, latency, attempt, "live", None)
+                self._cache_result(args=args, kwargs=kwargs, data=data, source="live")
                 return HarnessResult(
                     success=True,
                     data=data,
@@ -88,6 +97,7 @@ class ToolHarness:
                 data = self.fallback(*args, **kwargs)
                 latency = int((time.perf_counter() - fallback_started) * 1000)
                 self._record(True, latency, -1, "fallback", None)
+                self._cache_result(args=args, kwargs=kwargs, data=data, source="fallback")
                 return HarnessResult(
                     success=True,
                     data=data,
@@ -105,6 +115,72 @@ class ToolHarness:
             source="failed",
             attempts=self.max_retries + 1,
         )
+
+    def run_request(
+        self,
+        request: ToolCallRequest,
+        fn: Callable[..., T],
+        *args: Any,
+        policy: ToolPolicy | None = None,
+        **kwargs: Any,
+    ) -> ToolCallResult:
+        """按 ToolPolicy 执行治理后的工具调用。
+
+        该方法用于新工具；旧调用仍可继续用 `run()`。它会记录请求、校验、确认、
+        成功/失败/fallback 等更细 trace 事件，并输出统一 ToolCallResult。
+        """
+
+        policy = policy or ToolPolicy()
+        request = dict(request)
+        request["requires_confirmation"] = policy.requires_confirmation(int(request.get("risk_level", 1)))
+        if int(request.get("risk_level", 1)) >= 3:
+            request["idempotency_key"] = policy.ensure_idempotency_key(request)
+        record_trace_event("tool_requested", _redact_request(request))
+        issues = policy.validate(request)
+        if issues:
+            record_trace_event("tool_failed", {**_redact_request(request), "issues": issues})
+            return {
+                "success": False,
+                "data": None,
+                "error_code": issues[0]["code"],
+                "source": "policy",
+                "fetched_at": _now_iso(),
+                "expires_at": None,
+                "confidence": 0.0,
+                "fallback_used": False,
+                "attempts": 0,
+                "latency_ms": 0,
+            }
+        if request.get("requires_confirmation"):
+            record_trace_event("tool_confirm_required", _redact_request(request))
+        record_trace_event("tool_started", _redact_request(request))
+        result = self.run(fn, *args, **kwargs)
+        error_code = None if result.success else policy.classify_error(result.error)
+        event_type = "tool_succeeded" if result.success else "tool_failed"
+        record_trace_event(
+            event_type,
+            {
+                **_redact_request(request),
+                "error_code": error_code,
+                "source": result.source,
+                "attempts": result.attempts,
+                "latency_ms": result.latency_ms,
+            },
+        )
+        if result.source == "fallback":
+            record_trace_event("tool_fallback_used", _redact_request(request))
+        return {
+            "success": bool(result.success),
+            "data": result.data if isinstance(result.data, dict) else {"value": result.data},
+            "error_code": error_code,
+            "source": result.source,
+            "fetched_at": _now_iso(),
+            "expires_at": None,
+            "confidence": 1.0 if result.success else 0.0,
+            "fallback_used": result.source == "fallback",
+            "attempts": result.attempts,
+            "latency_ms": result.latency_ms,
+        }
 
     def _run_with_timeout(self, fn: Callable[..., T], *args: Any, **kwargs: Any) -> T:
         """用线程池为同步函数加超时控制。"""
@@ -144,3 +220,104 @@ class ToolHarness:
             logger.info("%s success source=%s latency=%sms", self.name, source, latency_ms)
         else:
             logger.warning("%s failed attempt=%s error=%s", self.name, attempt, error)
+
+    def _cache_result(
+        self,
+        *,
+        args: tuple[Any, ...],
+        kwargs: dict[str, Any],
+        data: Any,
+        source: str,
+    ) -> None:
+        """把工具结果摘要写入 ToolCache。
+
+        完整数据只在可 JSON 序列化且体积可控时写入摘要；prompt 侧只通过 evidence_ref
+        引用缓存，不直接塞完整结果。
+        """
+
+        if self.name.startswith("llm."):
+            return
+        try:
+            request = {"args": _compact_value(args), "kwargs": _compact_value(kwargs)}
+            request_hash = make_request_hash(request)
+            cache_key = make_cache_key(self.name, request)
+            ttl = ttl_seconds_for_tool(self.name)
+            result_summary = _result_summary(data)
+            FileMemoryStore().put_tool_cache({
+                "cache_key": cache_key,
+                "tool_name": self.name,
+                "request_hash": request_hash,
+                "result_summary": result_summary,
+                "full_result_path": "",
+                "source": source,
+                "fetched_at": _now_iso(),
+                "expires_at": expires_at_from_ttl(ttl),
+                "confidence": 1.0 if source == "live" else 0.55,
+                "fallback_used": source == "fallback",
+            })
+            record_trace_event(
+                "tool_cache_put",
+                {
+                    "tool_name": self.name,
+                    "cache_key": cache_key,
+                    "expires_at": expires_at_from_ttl(ttl),
+                    "fallback_used": source == "fallback",
+                },
+            )
+        except Exception as exc:  # noqa: BLE001 - 缓存失败不能影响主工具调用。
+            record_trace_event("tool_cache_failed", {"tool_name": self.name, "error": str(exc)})
+
+
+def _redact_request(request: ToolCallRequest) -> dict[str, Any]:
+    """Trace 中只记录治理相关摘要，不记录完整敏感参数。"""
+
+    params = request.get("params", {}) or {}
+    return {
+        "tool_name": request.get("tool_name"),
+        "risk_level": request.get("risk_level"),
+        "user_id": request.get("user_id"),
+        "session_id": request.get("session_id"),
+        "task_id": request.get("task_id"),
+        "idempotency_key": request.get("idempotency_key"),
+        "requires_confirmation": request.get("requires_confirmation"),
+        "param_keys": sorted(params.keys()),
+        "target_id": params.get("target_id") or params.get("poi_id"),
+    }
+
+
+def _now_iso() -> str:
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+
+def _compact_value(value: Any) -> Any:
+    """把工具请求参数压缩到可缓存摘要。"""
+
+    if isinstance(value, dict):
+        return {
+            str(key): _compact_value(item)
+            for key, item in value.items()
+            if str(key).lower() not in {"api_key", "password", "token"}
+        }
+    if isinstance(value, (list, tuple)):
+        return [_compact_value(item) for item in list(value)[:20]]
+    if isinstance(value, (str, int, float, bool)) or value is None:
+        return value
+    return str(value)
+
+
+def _result_summary(data: Any) -> dict[str, Any]:
+    """生成工具结果摘要，避免缓存和 trace 过大。"""
+
+    if isinstance(data, dict):
+        return {
+            "type": "dict",
+            "keys": sorted(str(key) for key in data.keys())[:30],
+            "counts": {
+                str(key): len(value)
+                for key, value in data.items()
+                if isinstance(value, list)
+            },
+        }
+    if isinstance(data, list):
+        return {"type": "list", "count": len(data), "sample": _compact_value(data[:3])}
+    return {"type": type(data).__name__, "preview": str(data)[:300]}

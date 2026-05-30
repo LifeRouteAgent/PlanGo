@@ -5,6 +5,8 @@ import time
 from typing import Any
 
 from app.services.runtime_paths import MEMORY_DIR, ensure_runtime_dirs
+from app.services.llm_semantic_extractor import extract_memory_updates
+from app.services.memory_store import FileMemoryStore, ToolCacheEntry
 from app.services.vector_memory_store import VectorMemoryRecord, VectorMemoryStore
 
 
@@ -21,6 +23,7 @@ class MemoryService:
         self.profile_json = MEMORY_DIR / "user_profile.json"
         self.history_jsonl = MEMORY_DIR / "history.jsonl"
         self.vector_store = vector_store or VectorMemoryStore()
+        self.store = FileMemoryStore()
         if not self.memory_md.exists():
             self.memory_md.write_text("# LifeRoute Memory\n\n", encoding="utf-8")
         if not self.profile_json.exists():
@@ -55,8 +58,7 @@ class MemoryService:
         self, *, query: str, user_id: str = "default", limit: int = 5
     ) -> dict[str, Any]:
         """构建给上下文层使用的压缩记忆，只返回少量摘要。"""
-        # todo: `enrich_user_profile` 这里面调用了 `self.read_profile()`, 结果这里面有调用卡一下
-        #   完全不对啊,
+
         profile = self.read_profile()
         vector_hits = self.vector_store.search_memory(query, limit=limit, user_id=user_id)
         snippets = [str(hit.get("text", "")) for hit in vector_hits if hit.get("text")]
@@ -77,53 +79,42 @@ class MemoryService:
         try:
             data = json.loads(self.profile_json.read_text(encoding="utf-8"))
             return data if isinstance(data, dict) else _empty_profile()
-        except OSError, json.JSONDecodeError:
+        except (OSError, json.JSONDecodeError):
             return _empty_profile()
 
-    # todo: 不是, 这东西就是看关键字吗? 不需要综合上下文理解吗?
-    #   换一个表述方式不就立刻不行了, 比如说 "室外不要", "要不要室外呢? 要" 这不完蛋了!
     def observe_user_query(self, query: str, *, user_id: str = "default") -> None:
-        """从用户自然语言里沉淀显式偏好，并同步写入向量记忆。"""
+        """从用户自然语言里沉淀显式偏好，并同步写入向量记忆。
+
+        优先由 LLM 判断是否应写入长期画像；规则只作为 LLM 不可用时的保守兜底。
+        """
 
         profile = self.read_profile()
-        changed: list[str] = []
-        disliked_keywords = profile.get("disliked_keywords", [])
-        # todo: 还需要做类型检查吗??? 也许这也算 python 一个不好的地方?
-        if not isinstance(disliked_keywords, list):
-            disliked_keywords = []
-
-        if any(word in query for word in ("不要室外", "别室外", "太热", "下雨", "室内")):
-            profile["indoor_preference"] = True
-            if "室外" not in disliked_keywords:
-                disliked_keywords.append("室外")
-            changed.append("偏好室内/避免室外")
-
-        for marker in ("不要", "不想要", "别要"):
-            if marker in query:
-                term = query.split(marker, 1)[1].strip()[:12]
-                if term and term not in disliked_keywords:
-                    disliked_keywords.append(term)
-                    changed.append(f"不喜欢 {term}")
-
-        if "预算" in query and any(word in query for word in ("低", "省钱", "便宜", "200", "300")):
-            profile["budget_level"] = "low"
-            changed.append("偏好低预算")
-
-        profile["disliked_keywords"] = disliked_keywords
+        extracted = extract_memory_updates(query, user_profile=profile)
+        changed = _apply_llm_memory_updates(profile, extracted)
+        source = "llm"
+        if extracted is None:
+            changed = _apply_rule_memory_updates(profile, query)
+            source = "rule_fallback"
         if changed:
             self._write_profile(profile)
-            self._append_memory("用户偏好更新：" + "；".join(changed))
+            self._append_memory(f"用户偏好更新({source})：" + "；".join(changed))
             self._upsert_profile_vector(user_id, profile)
         self._append_history({"type": "user_query", "query": query})
+        self.store.append_session_event(user_id, {"type": "user_query", "query": query})
         self.vector_store.upsert_memory(
             VectorMemoryRecord(
                 user_id=user_id,
                 memory_type="user_query",
-                text=f"用户输入：{query}",
-                tags=_extract_tags(query),
+                text=(str(extracted.get("memory_text")) if extracted and extracted.get("memory_text") else f"用户输入：{query}"),
+                tags=_extract_tags(query) if not extracted else _dedupe([*_extract_tags(query), *[str(tag) for tag in extracted.get("tags", [])]]),
                 category="query",
                 source_event="user_query",
-                metadata={"query": query, "profile_after": _safe_profile_metadata(profile)},
+                metadata={
+                    "query": query,
+                    "profile_after": _safe_profile_metadata(profile),
+                    "memory_extraction_source": source,
+                    "llm_extraction": extracted or {},
+                },
             )
         )
 
@@ -152,6 +143,14 @@ class MemoryService:
         self._append_history(
             {"type": "plan_selected", "plan": profile["last_selected_plan_summary"]}
         )
+        self.store.append_session_event(
+            user_id,
+            {
+                "type": "plan_selected",
+                "plan_id": plan.get("id"),
+                "plan_summary": profile["last_selected_plan_summary"],
+            },
+        )
         self._upsert_profile_vector(user_id, profile)
         self.vector_store.upsert_memory(
             VectorMemoryRecord(
@@ -165,6 +164,49 @@ class MemoryService:
                 metadata={"plan": profile["last_selected_plan_summary"]},
             )
         )
+
+    def observe_rejected_plan(
+        self,
+        plan_id: str,
+        *,
+        reason: str = "",
+        user_id: str = "default",
+    ) -> None:
+        """记录会话内用户拒绝过的方案。"""
+
+        self.store.append_session_event(
+            user_id,
+            {"type": "plan_rejected", "plan_id": plan_id, "reason": reason},
+        )
+
+    def observe_revision(
+        self,
+        query: str,
+        parsed_patch: dict[str, Any],
+        *,
+        user_id: str = "default",
+    ) -> None:
+        """记录会话内需求变更，供“和上次差不多但别...”召回。"""
+
+        self.store.append_session_event(
+            user_id,
+            {"type": "revision", "query": query, "parsed_patch": parsed_patch},
+        )
+
+    def load_session_memory(self, session_id: str) -> dict[str, Any]:
+        """读取会话内规划记忆。"""
+
+        return self.store.load_session(session_id)
+
+    def get_tool_cache(self, key: str) -> ToolCacheEntry | None:
+        """读取未过期工具缓存。"""
+
+        return self.store.get_tool_cache(key)
+
+    def put_tool_cache(self, entry: ToolCacheEntry) -> None:
+        """写入工具缓存。"""
+
+        self.store.put_tool_cache(entry)
 
     def search(self, query: str, *, limit: int = 5) -> list[str]:
         """关键词检索 MEMORY.md 和最近历史，不依赖向量库。"""
@@ -306,7 +348,6 @@ class MemoryService:
             file.write(json.dumps(payload, ensure_ascii=False, default=str) + "\n")
 
 
-# todo: 为什么这个不叫做默认画像? 而且这个应该变成一个常量
 def _empty_profile() -> dict[str, Any]:
     return {
         "preferred_city": "北京",
@@ -318,6 +359,93 @@ def _empty_profile() -> dict[str, Any]:
         "group_patterns": {},
         "last_selected_plan_summary": {},
     }
+
+
+def _apply_llm_memory_updates(profile: dict[str, Any], extracted: dict[str, Any] | None) -> list[str]:
+    """把 LLM 记忆抽取结果写入画像，低置信度或临时约束不写长期画像。"""
+
+    if not extracted:
+        return []
+    confidence = _safe_float(extracted.get("confidence"), 0.0)
+    scope = str(extracted.get("scope") or "temporary")
+    if not extracted.get("should_update_profile") or scope != "long_term" or confidence < 0.65:
+        return []
+    updates = extracted.get("profile_updates")
+    if not isinstance(updates, dict):
+        return []
+
+    changed: list[str] = []
+    if updates.get("indoor_preference") is True:
+        profile["indoor_preference"] = True
+        changed.append("长期偏好室内")
+    budget_level = str(updates.get("budget_level") or "").strip()
+    if budget_level in {"low", "medium", "high"}:
+        profile["budget_level"] = budget_level
+        changed.append(f"预算等级 {budget_level}")
+    _extend_profile_list(profile, "preferred_areas", updates.get("preferred_areas"), changed, "常去区域")
+    _extend_profile_list(profile, "disliked_keywords", updates.get("disliked_keywords"), changed, "不喜欢")
+    favorite_categories = updates.get("favorite_categories")
+    if isinstance(favorite_categories, list):
+        categories = profile.get("favorite_categories", {})
+        if not isinstance(categories, dict):
+            categories = {}
+        for category in favorite_categories:
+            category_text = str(category).strip()
+            if category_text:
+                categories[category_text] = int(categories.get(category_text, 0) or 0) + 1
+                changed.append(f"喜欢类别 {category_text}")
+        profile["favorite_categories"] = categories
+    return _dedupe(changed)
+
+
+def _apply_rule_memory_updates(profile: dict[str, Any], query: str) -> list[str]:
+    """LLM 不可用时的保守兜底，避免旧规则过度写入长期画像。"""
+
+    changed: list[str] = []
+    disliked_keywords = profile.get("disliked_keywords", [])
+    if not isinstance(disliked_keywords, list):
+        disliked_keywords = []
+    long_term_markers = ("一直", "通常", "经常", "以后", "长期", "我喜欢", "我不喜欢", "偏好")
+    is_long_term = any(marker in query for marker in long_term_markers)
+    if is_long_term and any(word in query for word in ("室内", "不要室外", "别室外")):
+        profile["indoor_preference"] = True
+        if "室外" not in disliked_keywords:
+            disliked_keywords.append("室外")
+        changed.append("长期偏好室内")
+    if is_long_term and "预算" in query and any(word in query for word in ("低", "省钱", "便宜")):
+        profile["budget_level"] = "low"
+        changed.append("偏好低预算")
+    profile["disliked_keywords"] = disliked_keywords
+    return changed
+
+
+def _extend_profile_list(
+    profile: dict[str, Any],
+    field: str,
+    values: Any,
+    changed: list[str],
+    label: str,
+) -> None:
+    """扩展画像中的列表字段。"""
+
+    if not isinstance(values, list):
+        return
+    current = profile.get(field, [])
+    if not isinstance(current, list):
+        current = []
+    for value in values:
+        text = str(value).strip()
+        if text and text not in current:
+            current.append(text)
+            changed.append(f"{label} {text}")
+    profile[field] = current
+
+
+def _safe_float(value: Any, fallback: float) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return fallback
 
 
 def _user_id(profile: dict[str, Any]) -> str:

@@ -43,3 +43,59 @@ def test_context_builder_state_context_excludes_full_tool_payloads() -> None:
     assert context["recommended_counts"] == {"lifestyle": 1}
     assert "llm_understanding" not in context["constraints"]
     assert "candidate_pois" not in context
+
+
+def test_context_snapshot_preserves_hard_constraints_and_clips_pois() -> None:
+    """ContextSnapshot 应保留硬约束，同时只给 LLM top-k 工具证据。"""
+
+    state = {
+        "user_query": "明天两个人去环球影城再唱歌，预算1000",
+        "intent_type": "full_trip_plan",
+        "target_categories": ["poi_attraction", "poi_entertainment"],
+        "constraints": {
+            "people_count": 2,
+            "budget": 1000,
+            "must_pois": [{"name": "北京环球度假区"}],
+            "excluded_keywords": ["火锅"],
+            "llm_understanding": {"large": "payload"},
+        },
+        "dag_plan": {"planning_template": "couple_date"},
+        "candidate_pois": {
+            "poi_entertainment": [
+                {"id": str(index), "name": f"KTV-{index}", "score": 100 - index}
+                for index in range(12)
+            ]
+        },
+        "recommended_pois": {},
+        "ranked_plans": [{"id": "plan_1"}],
+        "errors": [],
+    }
+
+    snapshot = ContextBuilder().build_for("planner_agent", state, top_k_per_category=5)
+
+    assert snapshot["user_constraints"]["hard_constraints"]["people_count"] == 2
+    assert snapshot["user_constraints"]["hard_constraints"]["budget"] == 1000
+    assert snapshot["user_constraints"]["negative_constraints"]["excluded_keywords"] == ["火锅"]
+    assert len(snapshot["tool_evidence"]) == 1
+    assert snapshot["tool_evidence"][0]["result_summary"]["candidate_counts"]["poi_entertainment"] == 12
+    assert "llm_understanding" not in snapshot["user_constraints"]["hard_constraints"]
+
+
+def test_merge_revision_into_intent_appends_negative_constraints() -> None:
+    """多轮需求修正要合并到当前 intent，明确排除项不能丢。"""
+
+    previous = {
+        "hard_constraints": {"people_count": 2, "budget": 1000},
+        "soft_preferences": {"preferences": ["唱歌"]},
+        "negative_constraints": {"excluded_keywords": ["火锅"]},
+    }
+    revision = {
+        "soft_preferences": {"preferences": ["KTV"]},
+        "negative_constraints": {"excluded_keywords": ["室外"]},
+    }
+
+    merged = ContextBuilder.merge_revision_into_intent(previous, revision)
+
+    assert merged["hard_constraints"]["people_count"] == 2
+    assert merged["soft_preferences"]["preferences"] == ["KTV"]
+    assert merged["negative_constraints"]["excluded_keywords"] == ["火锅", "室外"]
