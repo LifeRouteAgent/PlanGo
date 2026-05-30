@@ -1108,7 +1108,7 @@ def _estimate_item_budget(item: dict[str, Any]) -> int:
     try:
         if avg_price not in (None, "") and float(avg_price) > 0:
             return round(float(avg_price))
-    except TypeError, ValueError:
+    except (TypeError, ValueError):
         pass
 
     category = str(item.get("category", ""))
