@@ -1,6 +1,8 @@
 ﻿from __future__ import annotations
 
 import json
+import os
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -14,20 +16,41 @@ def _load_config() -> dict[str, Any]:
     """从文件读取运行配置。
 
     读取优先级：
-    1. backend/config.local.json：本机真实配置，包含 key 和数据库密码，不提交 Git。
-    2. backend/config.example.json：仓库内示例配置，只放非敏感默认值和空占位。
+    1. LIFEROUTE_CONFIG_PATH：容器或部署环境显式指定的配置文件。
+    2. backend/config.local.json：本机真实配置，包含 key 和数据库密码，不提交 Git。
+    3. backend/config.example.json：仓库内示例配置，只放非敏感默认值和空占位。
 
     业务代码统一从 settings 读取配置，不再直接依赖系统环境变量。
     """
 
-    for path in (CONFIG_LOCAL_PATH, CONFIG_EXAMPLE_PATH):
+    explicit_path = os.environ.get("LIFEROUTE_CONFIG_PATH")
+    candidates = [Path(explicit_path)] if explicit_path else []
+    candidates.extend([CONFIG_LOCAL_PATH, CONFIG_EXAMPLE_PATH])
+    for path in candidates:
         if not path.exists():
             continue
         with path.open("r", encoding="utf-8-sig") as file:
             data = json.load(file)
         if isinstance(data, dict):
-            return data
+            return _expand_env_placeholders(data)
     return {}
+
+
+def _expand_env_placeholders(value: Any) -> Any:
+    """展开配置文件中的 `${ENV_NAME}` 占位符。
+
+    这样 Docker 配置仍由文件声明字段结构，但敏感值由运行环境注入，不需要提交真实 key。
+    """
+
+    if isinstance(value, dict):
+        return {key: _expand_env_placeholders(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_expand_env_placeholders(item) for item in value]
+    if isinstance(value, str):
+        match = re.fullmatch(r"\$\{([A-Z0-9_]+)\}", value)
+        if match:
+            return os.environ.get(match.group(1), "")
+    return value
 
 
 def _get(config: dict[str, Any], key: str, default: Any) -> Any:

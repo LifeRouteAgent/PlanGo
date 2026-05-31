@@ -10,6 +10,7 @@ from app.services.llm_output_schemas import (
     ResponsePlansEnrichmentOutput,
     validate_llm_output,
 )
+from app.services.prompt_registry import load_prompt_template
 from app.services.trace_recorder import record_trace_event
 from app.state.plan_state import PlanState, PlanStatePatch
 
@@ -193,7 +194,8 @@ def _llm_plan_enrichment(
         [
             {
                 "role": "system",
-                "content": (
+                "content": load_prompt_template(
+                    "response_plan_enrichment",
                     "你是本地生活规划方案展示文案生成器。"
                     "只能基于输入 JSON 解释已有方案，禁止新增地点、禁止修改路线、禁止修改预算。"
                     "必须只输出 JSON 对象，不要 Markdown。"
@@ -519,7 +521,8 @@ def _llm_response_text(
         [
             {
                 "role": "system",
-                "content": (
+                "content": load_prompt_template(
+                    "response_generator",
                     "你是本地生活规划系统的响应生成器。"
                     "只能基于用户提供的 PlanState 生成中文回复。"
                     "禁止编造 PlanState 中不存在的 POI、路线、营业状态、价格、预约结果。"

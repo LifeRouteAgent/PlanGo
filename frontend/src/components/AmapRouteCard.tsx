@@ -1,6 +1,6 @@
 import { Maximize2, Minus, Plus, Route } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { isAmapConfigured, loadAmap } from "../lib/amap";
+import { loadAmap } from "../lib/amap";
 import type { Plan, RouteSegment } from "../types/agent";
 
 interface AmapRouteCardProps {
@@ -60,16 +60,15 @@ export function AmapRouteCard({ plan, large = false, onOpenFullMap }: AmapRouteC
   const mapRef = useRef<HTMLDivElement | null>(null);
   const mapInstanceRef = useRef<AMapAny>(null);
   const [activeSegment, setActiveSegment] = useState("all");
+  const [configured, setConfigured] = useState<boolean | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const segments = useMemo(() => getSegments(plan), [plan]);
   const visibleSegments = useMemo(
     () => (activeSegment === "all" ? segments : segments.filter((item) => item.type === activeSegment)),
     [activeSegment, segments]
   );
-  const configured = isAmapConfigured();
-
   useEffect(() => {
-    if (!configured || !mapRef.current) {
+    if (!mapRef.current) {
       return;
     }
 
@@ -81,6 +80,7 @@ export function AmapRouteCard({ plan, large = false, onOpenFullMap }: AmapRouteC
         if (disposed || !mapRef.current) {
           return;
         }
+        setConfigured(true);
 
         mapInstanceRef.current?.destroy?.();
         const firstPoint =
@@ -167,7 +167,9 @@ export function AmapRouteCard({ plan, large = false, onOpenFullMap }: AmapRouteC
         }
         setStatus(null);
       } catch (error) {
-        setStatus((error as Error).message);
+        const message = (error as Error).message;
+        setConfigured(!message.includes("未配置"));
+        setStatus(message);
       }
     }
 
@@ -178,7 +180,7 @@ export function AmapRouteCard({ plan, large = false, onOpenFullMap }: AmapRouteC
       mapInstanceRef.current?.destroy?.();
       mapInstanceRef.current = null;
     };
-  }, [activeSegment, configured, large, plan, visibleSegments]);
+  }, [activeSegment, large, plan, visibleSegments]);
 
   return (
     <article className={`route-card amap-route-card ${large ? "is-large" : ""}`}>
@@ -208,14 +210,14 @@ export function AmapRouteCard({ plan, large = false, onOpenFullMap }: AmapRouteC
       </div>
 
       <div className="amap-container" ref={mapRef}>
-        {!configured && (
+        {configured === false && (
           <div className="map-config-state">
             <Route size={26} />
             <strong>高德地图未配置</strong>
-            <p>请在前端环境变量中设置 VITE_AMAP_JS_KEY，必要时设置 VITE_AMAP_SECURITY_CODE。</p>
+            <p>请在 frontend/public/app-config.json 中配置公开的高德 JS Key。</p>
           </div>
         )}
-        {configured && status && (
+        {configured !== false && status && (
           <div className="map-config-state">
             <Route size={26} />
             <strong>高德地图加载失败</strong>

@@ -8,6 +8,7 @@ from fastapi.responses import StreamingResponse
 from app.api.routes.trip import stream_plan_trip
 from app.models.schemas import TripPlanRequest
 from app.services.memory_service import MemoryService
+from app.services.trace_recorder import record_trace_event
 
 router = APIRouter(prefix="/api", tags=["compat"])
 
@@ -95,3 +96,74 @@ def compat_plan_stream(payload: dict[str, Any] = Body(default_factory=dict)) -> 
         run_id=payload.get("run_id") or payload.get("runId"),
     )
     return stream_plan_trip(request)
+
+
+@router.post("/plans/{plan_id}/{action}")
+def compat_plan_action(plan_id: str, action: str) -> dict[str, Any]:
+    """兼容前端的方案操作接口。
+
+    前端历史版本会调用 `/api/plans/{planId}/{action}` 处理保存、收藏、分享、加入日历、
+    导航和模拟预订。正式执行流仍走 `/trip/execute/stream`；这里仅返回稳定的轻量结果，
+    避免前后端接口不一致导致按钮报错。
+    """
+
+    allowed = {"save", "favorite", "share", "book", "calendar", "navigate"}
+    if action not in allowed:
+        raise HTTPException(status_code=404, detail=f"不支持的方案操作：{action}")
+
+    record_trace_event(
+        "compat_plan_action",
+        {
+            "plan_id": plan_id,
+            "action": action,
+            "source": "api_compat",
+        },
+    )
+    base_plan = {
+        "id": plan_id,
+        "saved": action == "save",
+        "favorited": action == "favorite",
+        "actions": [],
+        "route": {"segments": [], "stops": []},
+    }
+    if action == "save":
+        return {"plan": base_plan, "saved": True}
+    if action == "favorite":
+        return {"plan": base_plan, "favorited": True}
+    if action == "share":
+        return {
+            "share_id": f"share-{plan_id}",
+            "share_url": f"/share/{plan_id}",
+            "share_message": "这是我生成的本地生活方案。",
+        }
+    if action == "calendar":
+        return {
+            "calendar_event_id": f"calendar-{plan_id}",
+            "title": "本地生活方案",
+            "start_time": "",
+            "end_time": "",
+            "status": "created",
+        }
+    if action == "navigate":
+        return base_plan["route"]
+    return {
+        "plan": {
+            **base_plan,
+            "actions": [
+                {
+                    "id": f"mock-book-{plan_id}",
+                    "type": "mock_booking",
+                    "status": "confirmed",
+                    "order_id": f"MOCK-{plan_id}",
+                }
+            ],
+        },
+        "actions": [
+            {
+                "id": f"mock-book-{plan_id}",
+                "type": "mock_booking",
+                "status": "confirmed",
+                "order_id": f"MOCK-{plan_id}",
+            }
+        ],
+    }

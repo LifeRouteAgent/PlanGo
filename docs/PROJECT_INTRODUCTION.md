@@ -60,7 +60,7 @@ LifeRouteAgent 解决的是“本地生活周末/半日活动怎么安排”的�
 | 路线 | 常常缺失 | 生成 route_segments，并可接高德路线；失败回退 Haversine |
 | 执行 | 通常没有 | 预留并实现 mock 预约、票务、打车、日历导出 |
 | 可观测 | 少量日志 | trace_id/run_id/session_id、tool trace、node metrics |
-| 记忆 | 单轮上下文 | 文件 Memory + 可选 Milvus 向量记忆 |
+| 记忆 | 单轮上下文 | 文件 Memory + Milvus 向量记忆接口 |
 
 ### 当前代码实际实现程度
 
@@ -84,7 +84,7 @@ LifeRouteAgent 解决的是“本地生活周末/半日活动怎么安排”的�
 - PDF / ICS 导出；
 - AMap 路线、天气、前端地图接入入口；
 - RuntimeStore：MySQL 主存储 + 文件 fallback；
-- Memory：文件画像 + Milvus 可选增强；
+- Memory：文件画像 + Milvus 向量记忆接口；
 - TraceRecorder、ToolHarness、ToolPolicy、PromptRegistry；
 - 后端测试 100+ 条。
 
@@ -92,12 +92,12 @@ LifeRouteAgent 解决的是“本地生活周末/半日活动怎么安排”的�
 
 - 餐厅预约、购票、打车都是 mock，不调用真实平台 API；
 - 支付/退款只做风险等级设计，不执行真实动作；
-- PDF 是最小 PDF 生成，中文支持有限；
-- Milvus 是可选增强，Python 3.13 下 `pymilvus` 依赖被条件跳过，可能不可用；
-- 前端高德 JS 地图需要 `VITE_AMAP_JS_KEY`，但后端也有 `/trip/client-config`，当前前端代码仍主要读 Vite 环境变量；
-- 部分 Python 和前端文件的中文注释/文案存在编码乱码，这是当前明显不足；
-- `backend/app/models/db_models.py` 当前为空；
-- API 层虽然已拆出 `TripPlanningService`、`TripStreamingService`、`TripRevisionService`，但 `trip.py` 仍保留大量辅助函数和兼容逻辑，仍偏厚。
+- PDF 已改为 Markdown 内容源 + ReportLab 中文排版，包含概览表、时间线、地点详情和路线信息；
+- Milvus 依赖已作为后端正式依赖声明，docker-compose 也包含 Milvus Standalone；
+- 前端高德 JS 地图已统一读取 `frontend/public/app-config.json`，并兼容后端 `/trip/client-config`；
+- 当前文件按 UTF-8 读取时中文注释和文案正常；若终端显示乱码，通常是 PowerShell 默认编码问题；
+- 空的 `backend/app/models/db_models.py` 已删除；当前项目使用 Pydantic schema + repository；
+- API 层的规划/流式/修正/执行已拆到 Service，`trip.py` 主要保留路由、请求响应转换和兼容入口。
 
 ## 2. 项目运行方式
 
@@ -181,8 +181,8 @@ Vite 代理配置在 `frontend/vite.config.ts`：
 
 前端高德 JS 地图当前读取：
 
-- `VITE_AMAP_JS_KEY`
-- `VITE_AMAP_SECURITY_CODE`
+- `frontend/public/app-config.json`
+- 兼容后端 `GET /trip/client-config`
 
 相关代码在 `frontend/src/lib/amap.ts`。
 
@@ -198,11 +198,12 @@ Vite 代理配置在 `frontend/vite.config.ts`：
 - `httpx`
 - `pytest`
 - `pymysql`
-- `pymilvus; python_version < "3.13"`
+- `pymilvus`
 - `sentence-transformers`
 - `numpy`
+- `reportlab`
 
-注意：`pymilvus` 在 Python 3.13 下不会安装，因此 Milvus 相关能力会降级。
+注意：`pymilvus` 已作为正式依赖声明；如果本机安装失败，应优先调整 Python/依赖版本或使用 Docker，而不是把 Milvus 当成不可用能力。
 
 ### 前端依赖
 
@@ -217,7 +218,7 @@ Vite 代理配置在 `frontend/vite.config.ts`：
 
 ### Docker Compose
 
-仓库有 `docker-compose.milvus.yml`，用于启动 Milvus Standalone：
+仓库有完整 `docker-compose.yml`，用于启动 MySQL、Milvus、后端和前端；也保留 `docker-compose.milvus.yml` 只启动 Milvus Standalone：
 
 ```powershell
 docker compose -f docker-compose.milvus.yml up -d
@@ -229,7 +230,15 @@ docker compose -f docker-compose.milvus.yml up -d
 - minio
 - milvus
 
-没有发现用于完整后端/前端/MySQL 一键启动的 docker-compose。
+完整一键启动使用：
+
+```powershell
+$env:MYSQL_ROOT_PASSWORD="your-local-password"
+$env:MINIO_SECRET_KEY="your-minio-secret"
+$env:DEEPSEEK_API_KEY="your-deepseek-key"
+$env:AMAP_API_KEY="your-amap-key"
+docker compose up --build
+```
 
 ### 数据库依赖
 
@@ -267,7 +276,7 @@ cd C:\Users\dengp\project\LifeRouteAgent\backend
 ### Redis / 向量库
 
 - Redis：当前代码未使用。
-- Milvus：可选，用于向量记忆；不可用时回退文件记忆。
+- Milvus：用于向量记忆、相似画像和语义检索；开发环境异常时仍保留文件记忆 fallback，避免主流程中断。
 
 ### Mock 数据在哪里
 
@@ -276,7 +285,7 @@ cd C:\Users\dengp\project\LifeRouteAgent\backend
 - 执行 mock：`backend/app/api/routes/trip.py` 中的 `/trip/execute/stream` 相关逻辑；
 - 高德路线 fallback：`backend/app/services/amap_route_service.py`；
 - 高德天气 fallback：`backend/app/services/amap_weather_service.py`；
-- PDF 最小生成：`backend/app/api/routes/export.py`；
+- PDF 中文 Markdown 排版：`backend/app/services/markdown_pdf_service.py` + `backend/app/api/routes/export.py`；
 - 兼容城市列表：`backend/app/api/routes/compat.py`；
 - 部分测试用例使用内联样本。
 
@@ -300,10 +309,9 @@ npm run build
 
 ### 当前运行方式缺失项
 
-- 没有完整 Docker Compose 一键启动 MySQL + 后端 + 前端 + Milvus；
-- 没有数据库迁移工具，POI 表 SQL 和 runtime 表脚本分离；
-- 前端地图 key 和后端 `/trip/client-config` 尚未完全统一；
-- README 之前与实际技术栈不一致，本次已重写。
+- MySQL runtime 已有表初始化脚本，但还不是 Flyway/Alembic 这类完整迁移体系；
+- 前端地图 key 已统一为公开配置文件 + 后端兼容接口，但真实 key 不建议提交到 GitHub；
+- README 已按当前 React + FastAPI + LangGraph 技术栈重写。
 
 ## 3. 项目目录结构详解
 
@@ -317,6 +325,7 @@ LifeRouteAgent/
 ├── docs/
 ├── frontend/
 ├── scripts/
+├── docker-compose.yml
 ├── docker-compose.milvus.yml
 ├── README.md
 ├── CHANGELOG.md
@@ -397,6 +406,7 @@ frontend/
 
 - `backend/config.example.json`：后端示例配置；
 - `backend/config/*.yaml`：业务策略配置，但实际采用 JSON-compatible YAML，即内容按 JSON 解析；
+- `docker-compose.yml`：MySQL + Milvus + 后端 + 前端；
 - `docker-compose.milvus.yml`：Milvus standalone；
 - `frontend/vite.config.ts`：前端 dev server 和代理。
 
@@ -452,13 +462,14 @@ frontend/
 当前状态：
 
 - 已经拆出 `TripPlanningService`、`TripStreamingService`、`TripRevisionService`、`TripExecutionService`、`TaskRecoveryService`；
-- 但 `trip.py` 仍保留执行 mock、局部调整、兼容转换等较多逻辑，API 层仍偏厚。
+- `trip.py` 目前以路由、请求响应转换和少量兼容入口为主；规划、流式、修正和执行编排已拆到 Service 层。
 
 兼容 API：`backend/app/api/routes/compat.py`
 
 - `/api/cities`
 - `/api/user/profile`
 - `/api/plan-stream`
+- `/api/plans/{plan_id}/{action}`
 
 用于兼容旧前端请求。
 
@@ -467,7 +478,7 @@ frontend/
 - `/export/health`
 - `/export/plan/pdf`
 
-PDF 导出是最小 PDF 实现，中文以 unicode escape 方式保底，未完全产品级。
+PDF 导出已升级为 Markdown 内容源 + ReportLab 中文排版，支持概览表、时间线、地点详情、路线信息和中文文本。
 
 ### Service 层
 
@@ -573,7 +584,7 @@ Tool 层输出 `RecommendedPoiRecord`，供 Route Planner 组合。
 - `RevisePlanRequest`
 - `DataSourceStatusResponse`
 
-`backend/app/models/db_models.py` 当前为空，未实现 ORM 模型。
+项目当前不使用空 ORM 模型文件；`backend/app/models/db_models.py` 已删除，领域输入输出主要由 `schemas.py`、`PlanState` 和 repository 层承载。
 
 ### Memory 层
 
@@ -660,7 +671,7 @@ Tool 层输出 `RecommendedPoiRecord`，供 Route Planner 组合。
 - 个人中心
 - 观测面板
 
-注意：当前文件中文文案存在编码乱码，但结构是上述含义。
+注意：仓库文件按 UTF-8 读取时中文文案正常；如果终端显示乱码，优先检查 PowerShell/终端编码。
 
 ### 核心组件
 
@@ -747,7 +758,7 @@ Tool 层输出 `RecommendedPoiRecord`，供 Route Planner 组合。
   - `/api/user/profile`
   - 以及若干 `/api/plans/{planId}/{action}` 风格接口。
 
-注意：后端当前未完整实现所有 `/api/plans/{planId}/{action}`，这部分存在前后端接口不完全一致的风险，需要进一步确认和补齐。
+注意：后端已在 `compat.py` 中兼容 `/api/plans/{planId}/{action}`，用于保存、收藏、分享、加入日历、导航和轻量 mock 预订；正式执行流仍以 `/trip/execute/stream` 为准。
 
 ### 类型定义
 
@@ -782,7 +793,7 @@ Tool 层输出 `RecommendedPoiRecord`，供 Route Planner 组合。
 - chat panel；
 - observability page。
 
-当前不足：文案乱码严重影响 UI 展示，需要优先修复编码。
+当前说明：文件按 UTF-8 读取正常，若本地终端显示乱码，需要调整终端编码；这不再作为核心代码不足。
 
 ## 6. 核心业务流程
 
@@ -1010,19 +1021,19 @@ PlanState = {
 - MySQL 失败：返回空候选；
 - AMap 失败：Haversine fallback；
 - Milvus 失败：文件 Memory fallback；
-- PDF harness 失败：重新最小生成；
+- PDF harness 失败：记录 trace 并返回明确错误；正常路径使用 ReportLab 中文 PDF；
 - 执行 mock 失败：fallback 步骤；
 - Verifier 不通过：回退 Planner 或生成无法满足说明。
 
 ### 当前实现和理想设计差距
 
-- 部分中文文案/注释乱码；
-- API 层仍偏厚；
+- 本地终端编码可能导致中文显示异常，仓库文件以 UTF-8 存储；
+- API 层已完成主要服务拆分，后续可继续把少量兼容逻辑下沉；
 - Prompt 仍散落在代码里，没有独立 prompt 文件；
 - Skill 仍主要规则排序，不是真正 LLM Tool Agent；
 - 真实交易 API 未接；
 - Runtime Store 有 MySQL，但还不是完整平台级 Observability；
-- 前后端部分兼容接口不完全一致；
+- 历史前端兼容接口已补齐，正式能力仍建议逐步迁移到 `/trip/*` 接口；
 - 部分配置 YAML 实际按 JSON 解析，容易误导。
 
 ## 8. Tool / Recommender 设计
@@ -1356,7 +1367,7 @@ Skill 排序中也会使用 Memory 加权。
 ### 优点
 
 - 文件层可读；
-- Milvus 可选，不阻塞主流程；
+- Milvus 是正式向量记忆能力，开发异常时文件记忆兜底不阻塞主流程；
 - Memory 是软约束；
 - 支持相似画像和 profile cluster 的基础能力；
 - 支持会话内“上次差不多但别去某地”这一类扩展。
@@ -1366,19 +1377,23 @@ Skill 排序中也会使用 Memory 加权。
 - 多用户隔离已有目录结构，但仍需要更完整的 user_id 体系；
 - Memory 更新的长期/临时边界依赖 LLM + fallback，仍需评测校准；
 - Milvus schema 是运行时自动创建，生产环境应迁移到显式 migration；
-- Python 3.13 下向量库依赖可能不可用；
-- 部分 Memory 文件和注释存在乱码。
+- 向量库依赖已正式声明，生产/演示推荐使用 Docker 保证版本一致；
+- Memory 文件以 UTF-8 存储，终端显示异常时需调整终端编码。
 
 ## 11. Prompt 设计
 
 ### Prompt 文件
 
-当前没有独立 prompt 文件。Prompt 内联在：
+当前已经有独立 prompt 文件，位于 `backend/app/prompts/`：
 
-- `backend/app/agents/llm_understanding.py`
-- `backend/app/services/llm_semantic_extractor.py`
-- `backend/app/agents/llm_critic.py`
-- `backend/app/agents/response_generator.py`
+- `intent_understanding.md`
+- `revision_parser.md`
+- `memory_extractor.md`
+- `llm_critic.md`
+- `response_plan_enrichment.md`
+- `response_generator.md`
+
+代码仍会在调用处补充动态 JSON 上下文，但角色、边界和输出要求已经外置，便于版本对比和评审。
 
 ### Prompt Registry
 
@@ -1437,8 +1452,8 @@ LLM 输出经 `llm_output_schemas.py` 校验。
 
 不足：
 
-- Prompt 与代码耦合，未外置；
-- Prompt 文案存在乱码；
+- Prompt 已外置，但还没有形成灰度发布、A/B 版本和回滚平台；
+- Prompt 文件以 UTF-8 存储，调用时通过 `PromptRegistry` 加载并记录版本；
 - Prompt diff、灰度和 A/B 框架还没有；
 - `PROMPT_VERSION_ENFORCED` 配置存在，但强制治理深度需要进一步确认。
 
@@ -1573,7 +1588,7 @@ POST /export/plan/pdf
 
 输出 `application/pdf`。
 
-当前是最小 PDF，不是完整中文排版。
+当前实现是 Markdown 内容源 + ReportLab 中文排版 PDF，不再是最小 PDF 占位。
 
 ### 用户画像接口
 
@@ -1659,7 +1674,7 @@ GET /trip/data-source
 - 后端返回 `ranked_plans`，前端转成 `Plan`；
 - 后端 SSE 事件包括 `agent_thinking/node_update/metadata/final`，前端 `StreamEvent` 类型没有完整覆盖这些事件；
 - 前端仍有 `/api/plans/{planId}/{action}` 风格调用，后端当前未完整提供所有对应接口；
-- 中文字段展示文案存在乱码。
+- 中文字段按 UTF-8 存储，若本地终端显示异常，优先检查终端编码。
 
 ## 14. Mock 数据与真实 API 扩展
 
@@ -1812,7 +1827,7 @@ LLM 输出有 PromptRegistry 和 Pydantic schema 校验，失败不污染 state�
 
 ### Memory 亮点
 
-文件记忆 + Milvus 可选增强，支持用户画像、语义检索、相似画像。对应代码：
+文件记忆 + Milvus 向量增强，支持用户画像、语义检索、相似画像。对应代码：
 
 - `memory_service.py`
 - `memory_store.py`
@@ -1836,17 +1851,17 @@ Collector 和 Skill 分离，七类 POI 可以独立扩展。对应代码：
 
 ## 17. 当前不足
 
-1. 部分中文乱码严重，影响答辩展示和可维护性。
-2. API 层仍偏厚，`trip.py` 仍有大量 helper 和 mock 执行逻辑。
-3. 前端部分接口和后端不完全一致。
-4. Prompt 内联在代码中，不利于版本对比和灰度。
+1. 真实订座、购票、打车还没有接入，目前是 mock 执行。
+2. API 层虽然已完成主要服务拆分，但少量兼容入口仍可继续下沉。
+3. 前端历史接口已补齐兼容，后续应统一迁移到 `/trip/*` 正式接口。
+4. Prompt 已外置，但还没有形成灰度发布、A/B 版本和回滚平台。
 5. Skill 仍是规则推荐，不是真正独立 LLM Agent。
 6. 真实预订/购票/打车未接入。
-7. PDF 中文排版未产品化。
-8. Milvus 是可选且依赖环境，Python 3.13 可能不可用。
+7. PDF 已支持中文排版，但还可以继续增强页眉页脚、品牌样式和多页目录。
+8. Milvus 已接入，但生产环境还需要固定镜像、索引迁移和监控。
 9. MySQL runtime 已有，但还不是完整生产级迁移体系。
-10. 没有完整 docker-compose 一键启动。
-11. `db_models.py` 为空，没有 ORM 或领域模型。
+10. 已有完整 docker-compose，但生产部署还需要密钥管理和 CI/CD。
+11. 当前不使用 ORM 模型，后续如引入 SQLAlchemy 可重新补领域模型。
 12. 前端状态管理是局部 state，复杂交互增长后会难维护。
 13. Observability 是本地 trace，不是平台级。
 14. 测试不少，但端到端浏览器测试和真实 API mock server 仍不足。
@@ -1859,11 +1874,9 @@ Collector 和 Skill 分离，七类 POI 可以独立扩展。对应代码：
 
 建议修改：
 
-- 修复乱码：
+- UI 与文档 polish：
   - `frontend/src/**/*.tsx`
-  - `backend/app/services/*.py`
-  - `backend/app/agents/*.py`
-  - `backend/app/tools/*.py`
+  - `docs/PROJECT_INTRODUCTION.md`
 - 前后端接口对齐：
   - `frontend/src/api/streamClient.ts`
   - `backend/app/api/routes/compat.py`
@@ -1929,11 +1942,11 @@ Collector 和 Skill 分离，七类 POI 可以独立扩展。对应代码：
 
 我们项目不只是把大模型接进来，还做了一些工程化治理。第一是 ToolHarness，所有外部调用都尽量走 timeout、retry、fallback 和 trace。比如 LLM、MySQL、高德路线、高德天气、PDF、mock 执行都可以记录工具调用结果。第二是 ToolPolicy，把工具按风险分级，查询可以自动执行，日历和分享属于轻状态变更，预订、取消和支付需要更严格的确认和幂等键。第三是 RuntimeStore，运行态数据可以优先写入 MySQL，包括 session、task、tool cache、trace event 和 node metrics，如果 MySQL 不可用会回退文件存储。第四是 Checkpoint，规划和执行任务都有 task_id，可以记录状态，避免服务重启或执行中断后重复执行已经成功的订单动作。
 
-记忆系统也是一个重点。我们实现了文件型长期记忆和可选 Milvus 向量记忆。长期画像记录用户常用城市、偏好、预算习惯、讨厌的关键词和喜欢的类别；会话记忆记录用户拒绝过的方案、最近修改和当前选中的方案；工具缓存记录路线、天气、POI 查询等结果。规划时不会把所有历史都塞给大模型，而是通过 ContextBuilder 生成结构化上下文，只注入当前 intent、硬约束、软偏好、top-k 工具证据和少量相关记忆。
+记忆系统也是一个重点。我们实现了文件型长期记忆和 Milvus 向量记忆接口。长期画像记录用户常用城市、偏好、预算习惯、讨厌的关键词和喜欢的类别；会话记忆记录用户拒绝过的方案、最近修改和当前选中的方案；工具缓存记录路线、天气、POI 查询等结果。规划时不会把所有历史都塞给大模型，而是通过 ContextBuilder 生成结构化上下文，只注入当前 intent、硬约束、软偏好、top-k 工具证据和少量相关记忆。
 
 前端采用 React + Vite。界面是左侧产品化方案展示，右侧对话助手。规划时通过 SSE 流式接收后端事件，右侧会显示系统正在理解、召回、规划、校验；左侧展示推荐卡片、路线地图、时间线、费用和可执行动作。还有观测面板，可以看到 LLM 调用、工具调用、节点运行耗时和 trace 信息。
 
-项目当前也有一些不足。第一，部分文件中文编码出现乱码，需要优先修复。第二，真实订座、购票、打车还没有接入，目前是 mock 执行。第三，Prompt 还写在代码里，后续应该外置并做版本灰度。第四，Observability 还是本地 trace，没有接 OpenTelemetry 和平台级监控。第五，前后端还有部分接口需要进一步对齐。
+项目当前也有一些不足。第一，真实订座、购票、打车还没有接入，目前是 mock 执行。第二，Prompt 虽然已经外置，但还没有做灰度发布和 A/B 实验平台。第三，Observability 还是本地 trace，没有接 OpenTelemetry 和平台级监控。第四，MySQL runtime 已有表初始化脚本，但还不是完整迁移体系。第五，前端状态管理仍以局部 state 为主，复杂交互继续增长后需要更系统的状态管理。
 
 总结一下，这个项目的亮点是：它不是一个只会聊天的 demo，而是把自然语言理解、POI 召回、推荐排序、路线规划、可执行校验、长期记忆、工具治理和观测恢复串成了一个完整的 Agent 工程原型。后续如果接入真实库存、订座、票务和支付，它可以继续演进成更接近生产级的本地生活规划系统。
 
@@ -1945,7 +1958,7 @@ LifeRouteAgent 是一个用 LangGraph 编排的本地生活规划 Agent，可以
 
 ### 30 秒版本
 
-LifeRouteAgent 面向家庭、朋友和情侣的本地生活规划场景。它用 LLM 理解用户需求，用 MySQL POI 数据召回候选，再通过多类推荐 Skill、路线规划、Verifier 校验和 Ranker 排序，生成 3 个可执行方案，并支持流式展示、mock 执行、日历/PDF 导出、Memory 和 Trace 观测。
+LifeRouteAgent 面向家庭、朋友和情侣的本地生活规划场景。它用 LLM 理解用户需求，用 MySQL POI 数据召回候选，再通过多类推荐 Skill、路线规划、Verifier 校验和 Ranker 排序，生成 3 个可执行方案，并支持流式展示、mock 执行、日历/中文 PDF 导出、Memory 和 Trace 观测。
 
 ### 1 分钟版本
 
@@ -1953,7 +1966,7 @@ LifeRouteAgent 是一个本地生活规划 Agent。用户输入一句话，系�
 
 ### 简历版本
 
-设计并实现 LifeRouteAgent 本地生活规划 Agent，基于 FastAPI + LangGraph + React + MySQL 构建多 Agent DAG，支持自然语言意图识别、七类 POI 召回、并行推荐 Skill、路线与时间线规划、Verifier/Critic 校验、SSE 流式输出、长期 Memory、Checkpoint 恢复、ToolHarness 治理和 Trace 观测；实现 mock 预约/购票/打车、PDF/ICS 导出，并预留高德路线/天气和 Milvus 向量记忆扩展。
+设计并实现 LifeRouteAgent 本地生活规划 Agent，基于 FastAPI + LangGraph + React + MySQL 构建多 Agent DAG，支持自然语言意图识别、七类 POI 召回、并行推荐 Skill、路线与时间线规划、Verifier/Critic 校验、SSE 流式输出、长期 Memory、Checkpoint 恢复、ToolHarness 治理和 Trace 观测；实现 mock 预约/购票/打车、中文 PDF/ICS 导出，并接入高德路线/天气和 Milvus 向量记忆接口。
 
 ### GitHub README 开头版本
 
@@ -2052,7 +2065,7 @@ sequenceDiagram
    讲清楚 timeout、retry、fallback、trace、tool cache 和 demo 稳定性。
 
 5. `backend/app/services/memory_service.py`  
-   讲清楚长期画像、会话记忆、Milvus 可选增强和 Memory 作为软约束。
+   讲清楚长期画像、会话记忆、Milvus 向量增强和 Memory 作为软约束。
 
 ## 附录 5：答辩时最容易被问到的 10 个问题及回答
 
@@ -2094,5 +2107,4 @@ sequenceDiagram
 
 ### 10. 当前最大不足是什么？
 
-答：最大不足是部分中文乱码、真实履约 API 未接入、Prompt 未外置、前后端接口仍有不一致，距离生产级还需要补齐监控、迁移、权限和真实业务接口。
-
+答：最大不足是真实履约 API 未接入、Prompt 还没有灰度/A-B 平台、Observability 仍是本地 trace、MySQL runtime 还不是完整迁移体系，距离生产级还需要补齐监控、迁移、权限和真实业务接口。

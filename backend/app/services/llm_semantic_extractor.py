@@ -9,6 +9,7 @@ from app.services.llm_output_schemas import (
     RevisionConstraintOutput,
     validate_llm_output,
 )
+from app.services.prompt_registry import load_prompt_template
 from app.services.trace_recorder import record_trace_event
 
 
@@ -163,7 +164,10 @@ def _call_json_extractor(
         [
             {
                 "role": "system",
-                "content": "你是结构化信息抽取器。必须只输出一个 JSON 对象。",
+                "content": load_prompt_template(
+                    "memory_extractor" if "memory" in tool_name else "revision_parser",
+                    "你是结构化信息抽取器。必须只输出一个 JSON 对象。",
+                ),
             },
             {"role": "user", "content": prompt},
         ],

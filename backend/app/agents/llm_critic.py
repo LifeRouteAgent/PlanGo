@@ -7,6 +7,7 @@ from app.agents.issue_utils import dedupe_issues, make_issue, normalize_issues
 from app.services.context_builder import ContextBuilder
 from app.services.llm_service import call_chat_completion, extract_json_object
 from app.services.llm_output_schemas import CriticOutput, validate_llm_output
+from app.services.prompt_registry import load_prompt_template
 from app.services.trace_recorder import record_trace_event
 from app.state.plan_state import PlanState, PlanStatePatch
 
@@ -39,7 +40,8 @@ def llm_critic_node(state: PlanState) -> PlanStatePatch:
         [
             {
                 "role": "system",
-                "content": (
+                "content": load_prompt_template(
+                    "llm_critic",
                     "你是本地生活行程方案 Critic。只能审查输入 JSON 中已有方案。"
                     "禁止新增地点、价格、路线、天气、营业状态。"
                     "只输出 JSON 对象，不要 Markdown。"

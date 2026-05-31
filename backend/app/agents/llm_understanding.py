@@ -6,6 +6,7 @@ from typing import Any
 from app.services.context_builder import ContextBuilder
 from app.services.llm_service import call_chat_completion, extract_json_object
 from app.services.llm_output_schemas import IntentUnderstandingOutput, validate_llm_output
+from app.services.prompt_registry import load_prompt_template
 from app.services.trace_recorder import record_trace_event
 from app.tools.poi_schema import (
     POI_ACTIVITY,
@@ -95,7 +96,8 @@ def build_llm_understanding(
     messages = [
         {
             "role": "system",
-            "content": (
+            "content": load_prompt_template(
+                "intent_understanding",
                 "你是本地生活规划系统的意图与约束理解器。"
                 "你只做结构化理解，不推荐具体商家，不编造 POI、路线、价格或营业信息。"
                 "必须只输出一个 JSON 对象，不要输出 Markdown。"

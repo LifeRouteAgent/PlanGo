@@ -1,6 +1,6 @@
 # LifeRouteAgent
 
-LifeRouteAgent 是一个面向本地生活周末活动的 Agentic Planning 项目。它不是简单的 POI 搜索或聊天机器人，而是通过 **FastAPI + LangGraph + MySQL + React**，把自然语言需求拆解成可执行的本地生活方案：召回地点、推荐组合、规划路线、校验预算和时长、生成用户可读解释，并提供 mock 执行、Memory、Trace 和评测能力。
+LifeRouteAgent 是一个面向本地生活周末活动的 Agentic Planning 项目。它不是简单的 POI 搜索或聊天机器人，而是通过 **FastAPI + LangGraph + MySQL + React**，把自然语言需求拆解成可执行的本地生活方案：召回地点、推荐组合、规划路线、校验预算和时长、生成用户可读解释，并提供 mock 执行、Memory、Trace、PDF/ICS 导出和评测能力。
 
 完整项目介绍、代码讲解、答辩稿和 Mermaid 图见：[docs/PROJECT_INTRODUCTION.md](docs/PROJECT_INTRODUCTION.md)。
 
@@ -14,20 +14,11 @@ LifeRouteAgent 是一个面向本地生活周末活动的 Agentic Planning 项�
 - 路线与时间线：生成 `timeline`、`route_segments`、预算和总时长。
 - 高德增强：路线和天气接口已接入，失败回退 Haversine/默认天气。
 - 流式输出：后端 SSE 推送节点进度、文本片段和最终方案。
-- 执行入口：预约、购票、打车为 mock；日历 ICS 和 PDF 导出已实现。
-- Memory：文件画像 + 会话记忆 + 可选 Milvus 向量记忆。
+- 执行入口：预约、购票、打车为 mock；日历 ICS 和中文 Markdown PDF 导出已实现。
+- Memory：文件画像 + 会话记忆 + Milvus 向量记忆接口。
 - 运行治理：ToolHarness、ToolPolicy、Checkpoint、RuntimeStore、TraceRecorder、Node Metrics。
+- Prompt 治理：Prompt 文本放在 `backend/app/prompts`，并由 `PromptRegistry` 记录版本。
 - 评测：后端测试覆盖 intent、planner、route、verifier、memory、runtime、eval 等模块。
-
-## 当前边界
-
-- 真实订座、购票、打车、支付未接入，当前是 mock。
-- PDF 是最小可打开版本，中文排版不是产品级。
-- Milvus 是可选增强；Python 3.13 下 `pymilvus` 依赖不会安装，会回退文件记忆。
-- 前端部分中文文案和部分 Python 注释存在编码乱码，需要优先修复。
-- `backend/app/models/db_models.py` 当前为空，没有 ORM 模型。
-- API 层已拆 service，但 `trip.py` 仍保留较多兼容与 mock 辅助逻辑。
-- 前端仍有部分 `/api/plans/{planId}/{action}` 风格调用，后端接口需要继续对齐。
 
 ## 技术栈
 
@@ -39,7 +30,8 @@ LifeRouteAgent 是一个面向本地生活周末活动的 Agentic Planning 项�
 - Pydantic
 - PyMySQL
 - HTTPX
-- Milvus / sentence-transformers 可选
+- Milvus / sentence-transformers
+- ReportLab
 
 前端：
 
@@ -49,7 +41,39 @@ LifeRouteAgent 是一个面向本地生活周末活动的 Agentic Planning 项�
 - lucide-react
 - 原生 CSS
 
-## 后端启动
+## 一键 Docker Compose
+
+仓库提供完整 `docker-compose.yml`，包含：
+
+- MySQL
+- Milvus Standalone（etcd + minio + milvus）
+- FastAPI 后端
+- Vite 前端
+
+出于安全原因，真实 LLM / 高德 / MySQL / MinIO 密钥不提交到 GitHub。请在本机环境或 `.env` 中设置：
+
+```powershell
+$env:MYSQL_ROOT_PASSWORD="your-local-password"
+$env:MINIO_SECRET_KEY="your-minio-secret"
+$env:DEEPSEEK_API_KEY="your-deepseek-key"
+$env:AMAP_API_KEY="your-amap-key"
+docker compose up --build
+```
+
+访问：
+
+```text
+后端：http://127.0.0.1:8000
+前端：http://127.0.0.1:5173
+```
+
+如果只需要 Milvus，可继续使用：
+
+```powershell
+docker compose -f docker-compose.milvus.yml up -d
+```
+
+## 后端本地启动
 
 ```powershell
 cd C:\Users\dengp\project\LifeRouteAgent
@@ -66,7 +90,7 @@ cd backend
 GET http://127.0.0.1:8000/health
 ```
 
-## 前端启动
+## 前端本地启动
 
 ```powershell
 cd C:\Users\dengp\project\LifeRouteAgent\frontend
@@ -86,10 +110,9 @@ http://127.0.0.1:5173
 
 读取优先级：
 
-1. `backend/config.local.json`
-2. `backend/config.example.json`
-
-建议复制一份本地配置：
+1. `LIFEROUTE_CONFIG_PATH` 指定的配置文件；
+2. `backend/config.local.json`；
+3. `backend/config.example.json`。
 
 ```powershell
 Copy-Item backend\config.example.json backend\config.local.json
@@ -117,12 +140,16 @@ Copy-Item backend\config.example.json backend\config.local.json
 }
 ```
 
-前端高德 JS 地图当前读取：
+前端高德 JS 地图读取 `frontend/public/app-config.json`，该文件可以提交到仓库作为字段模板；真实 key 建议由本机或部署流程写入，不建议提交到 GitHub。
 
-```text
-VITE_AMAP_JS_KEY
-VITE_AMAP_SECURITY_CODE
+```json
+{
+  "amap_key": "",
+  "amap_security_js_code": ""
+}
 ```
+
+后端也提供 `GET /trip/client-config` 作为兼容配置源；前端优先读取 `app-config.json`，失败后再读取后端接口。
 
 ## 数据库
 
@@ -154,13 +181,12 @@ cd C:\Users\dengp\project\LifeRouteAgent\backend
 - `runtime_trace_events`
 - `runtime_node_metrics`
 
-## Milvus 向量记忆
+## PDF / Prompt / API 对齐
 
-Milvus 是增强能力，不启动时系统会自动回退文件记忆。
-
-```powershell
-docker compose -f docker-compose.milvus.yml up -d
-```
+- PDF：`backend/app/services/markdown_pdf_service.py` 先把方案转换为 Markdown，再用 ReportLab 生成中文 PDF，包含概览表、时间线、地点详情和路线信息。
+- Prompt：外置在 `backend/app/prompts`，`PromptRegistry` 维护 prompt/schema 版本。
+- API 兼容：前端历史接口 `/api/plan-stream`、`/api/cities`、`/api/user/profile`、`/api/plans/{planId}/{action}` 已在 `compat.py` 中兼容。
+- `backend/app/models/db_models.py` 已删除；当前项目使用 Pydantic schema + repository，不使用空 ORM 文件。
 
 ## 核心流程
 
@@ -189,6 +215,7 @@ flowchart TD
 backend/app/api/        FastAPI 路由
 backend/app/agents/     LangGraph 节点
 backend/app/dag/        DAG 配置
+backend/app/prompts/    外置 Prompt 模板
 backend/app/services/   LLM、Memory、Runtime、Trace、ToolHarness、POI 仓储
 backend/app/tools/      推荐 Skill 与 POI schema
 backend/app/state/      PlanState
@@ -220,6 +247,7 @@ docs/                   项目介绍和答辩文档
 - `GET /api/cities`
 - `GET /api/user/profile`
 - `POST /api/plan-stream`
+- `POST /api/plans/{planId}/{action}`
 
 ## 测试
 
@@ -236,17 +264,3 @@ cd C:\Users\dengp\project\LifeRouteAgent\backend
 cd C:\Users\dengp\project\LifeRouteAgent\frontend
 npm run build
 ```
-
-最近一次验证结果：
-
-- 后端：`109 passed, 1 warning`
-- 前端：build passed
-
-## 答辩重点文件
-
-1. `backend/app/dag/langgraph_dag_config.py`
-2. `backend/app/state/plan_state.py`
-3. `backend/app/services/trip_services.py`
-4. `backend/app/services/tool_harness.py`
-5. `backend/app/services/memory_service.py`
-

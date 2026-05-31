@@ -6,6 +6,7 @@ python-dotenv
 httpx
 pytest
 pymysql
-pymilvus; python_version < "3.13"
+pymilvus
 sentence-transformers
 numpy
+reportlab

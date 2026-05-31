@@ -1,4 +1,12 @@
 let amapPromise: Promise<unknown> | null = null;
+let configPromise: Promise<AmapPublicConfig> | null = null;
+
+interface AmapPublicConfig {
+  amap_key?: string;
+  amapJsKey?: string;
+  amap_security_js_code?: string;
+  amapSecurityCode?: string;
+}
 
 declare global {
   interface Window {
@@ -9,22 +17,54 @@ declare global {
   }
 }
 
-export function getAmapKey() {
-  return import.meta.env.VITE_AMAP_JS_KEY as string | undefined;
+async function loadPublicConfig() {
+  if (configPromise) {
+    return configPromise;
+  }
+
+  configPromise = (async () => {
+    const candidates = ["/app-config.json", "/trip/client-config"];
+    for (const url of candidates) {
+      try {
+        const response = await fetch(url, { cache: "no-store" });
+        if (!response.ok) {
+          continue;
+        }
+        const payload = (await response.json()) as AmapPublicConfig;
+        if (payload.amap_key || payload.amapJsKey) {
+          return payload;
+        }
+      } catch {
+        // 公开配置读取失败时继续尝试下一个来源。
+      }
+    }
+    return {
+      amap_key: import.meta.env.VITE_AMAP_JS_KEY as string | undefined,
+      amap_security_js_code: import.meta.env.VITE_AMAP_SECURITY_CODE as string | undefined
+    };
+  })();
+
+  return configPromise;
 }
 
-export function getAmapSecurityCode() {
-  return import.meta.env.VITE_AMAP_SECURITY_CODE as string | undefined;
+export async function getAmapKey() {
+  const config = await loadPublicConfig();
+  return config.amap_key || config.amapJsKey;
 }
 
-export function isAmapConfigured() {
-  return Boolean(getAmapKey());
+export async function getAmapSecurityCode() {
+  const config = await loadPublicConfig();
+  return config.amap_security_js_code || config.amapSecurityCode;
 }
 
-export function loadAmap() {
-  const key = getAmapKey();
+export async function isAmapConfigured() {
+  return Boolean(await getAmapKey());
+}
+
+export async function loadAmap() {
+  const key = await getAmapKey();
   if (!key) {
-    return Promise.reject(new Error("高德地图未配置：请设置 VITE_AMAP_JS_KEY。"));
+    return Promise.reject(new Error("高德地图未配置：请检查 frontend/public/app-config.json。"));
   }
 
   if (window.AMap) {
@@ -35,7 +75,7 @@ export function loadAmap() {
     return amapPromise;
   }
 
-  const securityCode = getAmapSecurityCode();
+  const securityCode = await getAmapSecurityCode();
   if (securityCode) {
     window._AMapSecurityConfig = { securityJsCode: securityCode };
   }

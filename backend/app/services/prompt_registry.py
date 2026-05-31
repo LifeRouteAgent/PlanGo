@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 
 from app.services.trace_recorder import record_trace_event
+
+PROMPT_DIR = Path(__file__).resolve().parents[1] / "prompts"
 
 
 @dataclass(frozen=True)
@@ -34,3 +37,17 @@ def get_prompt_spec(prompt_name: str | None) -> PromptSpec:
         return PROMPT_SPECS[name]
     record_trace_event("prompt_version_missing", {"prompt_name": prompt_name or ""})
     return PromptSpec(name or "ad_hoc", "unversioned", "unknown", "0")
+
+
+def load_prompt_template(prompt_name: str, fallback: str = "") -> str:
+    """从 app/prompts 读取外置 prompt 模板。
+
+    Prompt 文本外置后，版本对比、评审和灰度会比散落在代码字符串里更清晰。
+    如果文件不存在，记录 trace 并返回调用方提供的 fallback。
+    """
+
+    path = PROMPT_DIR / f"{prompt_name}.md"
+    if not path.exists():
+        record_trace_event("prompt_template_missing", {"prompt_name": prompt_name, "path": str(path)})
+        return fallback
+    return path.read_text(encoding="utf-8").strip()
