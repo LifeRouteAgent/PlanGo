@@ -137,7 +137,7 @@ function buildRouteSegments(routeSegments: Record<string, unknown>[]) {
     return {
       type: "travel" as const,
       title: asString(segment.transport_mode, `第 ${index + 1} 段交通`),
-      color: "#ff6b35",
+      color: index % 2 ? "#7EDFC0" : "#5BA8FF",
       polyline,
       distance_km: asNumber(segment.distance_km, 0),
       duration_min: asNumber(segment.duration_minutes, 0),
@@ -285,7 +285,7 @@ function normalizeSseEvent(raw: { event: string; data: unknown }): StreamEvent |
   }
 
   if (raw.event === "progress") {
-    return { event: "status", data: { message: asString(asRecord(raw.data).message, "规划仍在运行。") } };
+    return { event: "progress", data: { message: asString(asRecord(raw.data).message, "规划仍在运行。") } };
   }
 
   if (raw.event === "agent_thinking") {
@@ -444,6 +444,29 @@ export function getNavigation(planId: string) {
 
 export function favoritePlan(planId: string) {
   return postPlanAction<{ plan: Plan; favorited: boolean }>(planId, "favorite");
+}
+
+export async function exportPlanPdf(plan: Plan) {
+  const response = await fetch("/export/plan/pdf", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      plan,
+      session_id: plan.session_id,
+      trace_id: plan.trace_id
+    })
+  });
+  await ensureOk(response, "PDF 导出失败");
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `${plan.recommendation?.title || "PlanGo行程方案"}.pdf`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+  return { ok: true };
 }
 
 export async function createSession() {

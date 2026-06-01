@@ -1,4 +1,4 @@
-import { Maximize2, Minus, Plus, Route } from "lucide-react";
+import { MapPinned, Maximize2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { loadAmap } from "../lib/amap";
 import type { Plan, RouteSegment } from "../types/agent";
@@ -6,18 +6,12 @@ import type { Plan, RouteSegment } from "../types/agent";
 interface AmapRouteCardProps {
   plan: Plan;
   large?: boolean;
+  activeStopId?: string;
+  onStopSelect?: (stopId: string) => void;
   onOpenFullMap?: () => void;
 }
 
 type AMapAny = any;
-
-const segmentLabels: Record<string, string> = {
-  all: "全部路线",
-  travel: "出行",
-  activity: "活动",
-  meal: "餐饮",
-  return: "返程"
-};
 
 function getSegments(plan: Plan): RouteSegment[] {
   if (plan.route?.segments?.length) {
@@ -27,7 +21,7 @@ function getSegments(plan: Plan): RouteSegment[] {
     {
       type: "travel",
       title: "完整路线",
-      color: "#5b6cff",
+      color: "#5BA8FF",
       polyline: plan.route?.polyline ?? []
     }
   ];
@@ -53,102 +47,93 @@ function markerTimeText(start?: string, end?: string) {
   if (start && start !== "--:--") {
     return start;
   }
-  return "时间待确认";
+  return "时间待定";
 }
 
-export function AmapRouteCard({ plan, large = false, onOpenFullMap }: AmapRouteCardProps) {
+export function AmapRouteCard({ plan, large = false, activeStopId, onStopSelect, onOpenFullMap }: AmapRouteCardProps) {
   const mapRef = useRef<HTMLDivElement | null>(null);
   const mapInstanceRef = useRef<AMapAny>(null);
-  const [activeSegment, setActiveSegment] = useState("all");
-  const [configured, setConfigured] = useState<boolean | null>(null);
   const [status, setStatus] = useState<string | null>(null);
+  const [configured, setConfigured] = useState<boolean | null>(null);
   const segments = useMemo(() => getSegments(plan), [plan]);
-  const visibleSegments = useMemo(
-    () => (activeSegment === "all" ? segments : segments.filter((item) => item.type === activeSegment)),
-    [activeSegment, segments]
-  );
+
   useEffect(() => {
-    if (!mapRef.current) {
-      return;
-    }
+    if (!mapRef.current) return;
 
     let disposed = false;
 
     async function drawMap() {
       try {
         const AMap = (await loadAmap()) as AMapAny;
-        if (disposed || !mapRef.current) {
-          return;
-        }
-        setConfigured(true);
+        if (disposed || !mapRef.current) return;
 
+        setConfigured(true);
         mapInstanceRef.current?.destroy?.();
+
         const firstPoint =
-          visibleSegments.flatMap((segment) => segment.polyline)[0] ??
+          segments.flatMap((segment) => segment.polyline)[0] ??
           plan.route?.stops.find((stop) => stop.location)?.location;
 
         const map = new AMap.Map(mapRef.current, {
           zoom: 13,
-          center: firstPoint ? [firstPoint.lng, firstPoint.lat] : [116.480, 39.996],
+          center: firstPoint ? [firstPoint.lng, firstPoint.lat] : [116.48, 39.996],
           viewMode: "2D",
-          mapStyle: "amap://styles/normal",
+          mapStyle: "amap://styles/light",
           features: ["bg", "road", "building", "point"],
           resizeEnable: true
         });
         mapInstanceRef.current = map;
 
-        if (AMap.ToolBar) {
-          map.addControl(new AMap.ToolBar({ position: "RB" }));
-        }
-        if (AMap.Scale) {
-          map.addControl(new AMap.Scale());
-        }
-
         const bounds: AMapAny[] = [];
-        visibleSegments.forEach((segment) => {
+
+        segments.forEach((segment, index) => {
           const path = segment.polyline.map(toLngLat);
           path.forEach((point) => bounds.push(point));
           if (path.length > 1) {
-            const polyline = new AMap.Polyline({
-              path,
-              strokeColor: segment.color,
-              strokeWeight: large ? 8 : 6,
-              strokeOpacity: 0.92,
-              lineJoin: "round",
-              lineCap: "round"
-            });
-            map.add(polyline);
+            map.add(
+              new AMap.Polyline({
+                path,
+                strokeColor: segment.color || (index % 2 ? "#7EDFC0" : "#5BA8FF"),
+                strokeWeight: large ? 8 : 6,
+                strokeOpacity: 0.88,
+                lineJoin: "round",
+                lineCap: "round"
+              })
+            );
           }
         });
 
         const infoWindow = new AMap.InfoWindow({
-          offset: new AMap.Pixel(0, -36),
+          offset: new AMap.Pixel(0, -38),
           closeWhenClickMap: true
         });
 
-        plan.route?.stops.forEach((stop) => {
-          if (!stop.location) {
-            return;
-          }
+        plan.route?.stops.forEach((stop, index) => {
+          if (!stop.location) return;
+          const sourceStep = plan.steps[index];
+          const stopId = sourceStep?.target_id || `${index}`;
+          const label = String.fromCharCode(65 + index);
           const safeTitle = escapeHtml(stop.title);
           const safeAddress = escapeHtml(stop.location.address ?? "");
           const safeTime = escapeHtml(markerTimeText(stop.start_time, stop.end_time));
+          const activeClass = activeStopId === stopId ? " is-active" : "";
           const marker = new AMap.Marker({
             position: [stop.location.lng, stop.location.lat],
             title: stop.title,
             zIndex: 100 + stop.order,
             content: `
-              <div class="amap-stop-marker">
-                <div class="amap-stop-index">${stop.order}</div>
+              <div class="amap-stop-marker${activeClass}">
+                <div class="amap-stop-index">${label}</div>
                 <div class="amap-stop-bubble">
                   <strong>${safeTitle}</strong>
                   <span>${safeTime}</span>
                 </div>
               </div>
             `,
-            offset: new AMap.Pixel(-16, -36)
+            offset: new AMap.Pixel(-16, -42)
           });
           marker.on("click", () => {
+            onStopSelect?.(stopId);
             infoWindow.setContent(`
               <div class="amap-info-window">
                 <strong>${safeTitle}</strong>
@@ -180,59 +165,37 @@ export function AmapRouteCard({ plan, large = false, onOpenFullMap }: AmapRouteC
       mapInstanceRef.current?.destroy?.();
       mapInstanceRef.current = null;
     };
-  }, [activeSegment, large, plan, visibleSegments]);
+  }, [activeStopId, large, onStopSelect, plan, segments]);
 
   return (
-    <article className={`route-card amap-route-card ${large ? "is-large" : ""}`}>
-      <div className="panel-title-row">
+    <article className={`amap-route-card ${large ? "is-large" : ""}`}>
+      <div className="map-card-head">
         <div>
-          <h2>路线概览</h2>
-          <p>真实地图、地点标注与高德路线</p>
+          <span>地图路线</span>
+          <h2>真实地图与节点时间</h2>
         </div>
         {onOpenFullMap && (
-          <button type="button" onClick={onOpenFullMap}>
-            查看完整地图 <Maximize2 size={15} />
+          <button type="button" className="apple-button apple-button-ghost apple-button-sm" onClick={onOpenFullMap}>
+            <Maximize2 size={15} />
+            放大
           </button>
         )}
       </div>
-
-      <div className="route-switcher" aria-label="切换路线">
-        {["all", "travel", "activity", "meal", "return"].map((type) => (
-          <button
-            type="button"
-            className={activeSegment === type ? "is-active" : ""}
-            key={type}
-            onClick={() => setActiveSegment(type)}
-          >
-            {segmentLabels[type]}
-          </button>
-        ))}
-      </div>
-
       <div className="amap-container" ref={mapRef}>
         {configured === false && (
           <div className="map-config-state">
-            <Route size={26} />
+            <MapPinned size={30} />
             <strong>高德地图未配置</strong>
-            <p>请在 frontend/public/app-config.json 中配置公开的高德 JS Key。</p>
+            <p>请在 frontend/public/app-config.json 中配置公开的 AMap JS Key。</p>
           </div>
         )}
         {configured !== false && status && (
           <div className="map-config-state">
-            <Route size={26} />
-            <strong>高德地图加载失败</strong>
+            <MapPinned size={30} />
+            <strong>地图加载失败</strong>
             <p>{status}</p>
           </div>
         )}
-      </div>
-
-      <div className="map-controls-hint" aria-hidden="true">
-        <button type="button">
-          <Plus size={16} />
-        </button>
-        <button type="button">
-          <Minus size={16} />
-        </button>
       </div>
     </article>
   );

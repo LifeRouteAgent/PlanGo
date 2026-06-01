@@ -1,63 +1,137 @@
-import { Activity, Calendar, CalendarClock, Heart, History, Home, User } from "lucide-react";
-import { useState } from "react";
-import { AppShell } from "./components/AppShell";
-import type { TimelineEvent } from "./hooks/usePlanStream";
-import { ObservabilityPage } from "./pages/ObservabilityPage";
-import { OperationsConsole } from "./pages/OperationsConsole";
-import { PlannerWorkspace } from "./pages/PlannerWorkspace";
-import { UserSectionPage } from "./pages/UserSectionPage";
-import type { Plan } from "./types/agent";
+import { useEffect, useMemo, useState } from "react";
+import { ChatHome } from "./pages/ChatHome";
+import { PlanDetail } from "./pages/PlanDetail";
+import { PlanOverview } from "./pages/PlanOverview";
+import { SharePage } from "./pages/SharePage";
+import type { Plan, PlanAlternative } from "./types/agent";
+import { planToViewModel, type PlanViewModel } from "./utils/planViewModel";
 
+type AppRoute = "/" | "/plan" | "/plan/detail" | "/share";
 export type AppView = "planner" | "plans" | "favorites" | "history" | "calendar" | "profile" | "observability";
 
-const navigation = [
-  { id: "planner", label: "首页", icon: Home },
-  { id: "plans", label: "我的规划", icon: CalendarClock },
-  { id: "favorites", label: "收藏夹", icon: Heart },
-  { id: "history", label: "历史记录", icon: History },
-  { id: "calendar", label: "日历", icon: Calendar },
-  { id: "profile", label: "个人中心", icon: User },
-  { id: "observability", label: "观测面板", icon: Activity }
-] as const;
+function normalizePath(pathname: string): AppRoute {
+  if (pathname === "/plan" || pathname === "/plan/detail" || pathname === "/share") {
+    return pathname;
+  }
+  return "/";
+}
 
-const pageTitle: Record<AppView, string> = {
-  planner: "首页",
-  plans: "我的规划",
-  favorites: "收藏夹",
-  history: "历史记录",
-  calendar: "日历",
-  profile: "个人中心",
-  observability: "观测面板"
-};
+function alternativeToPlan(plan: Plan, alternative: PlanAlternative): Plan {
+  return {
+    ...plan,
+    id: alternative.id,
+    total_cost: alternative.total_cost ?? plan.total_cost,
+    total_duration_min: alternative.duration_min || plan.total_duration_min,
+    steps: alternative.steps?.length ? alternative.steps : plan.steps,
+    recommendation: {
+      title: alternative.title,
+      rating: alternative.rating,
+      distance_km: alternative.distance_km,
+      tags: alternative.tags,
+      cover_image: alternative.image_url ?? plan.recommendation?.cover_image ?? null
+    },
+    route: alternative.route ?? plan.route,
+    rationale: [
+      alternative.recommendation_reason || alternative.description || "这是一个地点组合不同的备选方案。",
+      ...(alternative.pros ?? [])
+    ].filter(Boolean),
+    risk_flags: alternative.cons ?? plan.risk_flags
+  };
+}
+
+function badgeFor(index: number) {
+  if (index === 0) return "主推方案";
+  if (index === 1) return "更省心";
+  return "不同路线";
+}
 
 export function App() {
-  const [activeView, setActiveView] = useState<AppView>("planner");
+  const [route, setRoute] = useState<AppRoute>(() => normalizePath(window.location.pathname));
   const [latestPlan, setLatestPlan] = useState<Plan | null>(null);
-  const [latestEvents, setLatestEvents] = useState<TimelineEvent[]>([]);
-  const [city, setCity] = useState("beijing");
+  const [selectedPlan, setSelectedPlan] = useState<PlanViewModel | null>(null);
+  const [feedbackMessage, setFeedbackMessage] = useState("");
+
+  useEffect(() => {
+    const onPopState = () => setRoute(normalizePath(window.location.pathname));
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, []);
+
+  const navigate = (nextRoute: AppRoute) => {
+    if (window.location.pathname !== nextRoute) {
+      window.history.pushState({}, "", nextRoute);
+    }
+    setRoute(nextRoute);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  const planOptions = useMemo(() => {
+    if (!latestPlan) {
+      return [];
+    }
+
+    const primary = planToViewModel(latestPlan, badgeFor(0), 0);
+    const alternatives =
+      latestPlan.alternatives?.slice(0, 2).map((alternative, index) =>
+        planToViewModel(alternativeToPlan(latestPlan, alternative), badgeFor(index + 1), index + 1)
+      ) ?? [];
+
+    return [primary, ...alternatives].slice(0, 3);
+  }, [latestPlan]);
+
+  useEffect(() => {
+    if (!selectedPlan && planOptions.length) {
+      setSelectedPlan(planOptions[0]);
+    }
+  }, [planOptions, selectedPlan]);
+
+  const handlePlanReady = (plan: Plan) => {
+    setLatestPlan(plan);
+    const first = planToViewModel(plan, badgeFor(0), 0);
+    setSelectedPlan(first);
+    navigate("/plan");
+  };
+
+  const handleSelectPlan = (plan: PlanViewModel) => {
+    setSelectedPlan(plan);
+    navigate("/plan/detail");
+  };
 
   return (
-    <AppShell
-      activeView={activeView}
-      navigation={navigation}
-      city={city}
-      pageTitle={pageTitle[activeView]}
-      onCityChange={setCity}
-      onNavigate={setActiveView}
-    >
-      {activeView === "planner" && (
-        <PlannerWorkspace
-          city={city}
-          onCityChange={setCity}
-          onPlanChange={setLatestPlan}
-          onTraceChange={setLatestEvents}
+    <main className="plango-app">
+      {route === "/" && <ChatHome onPlanReady={handlePlanReady} />}
+
+      {route === "/plan" && (
+        <PlanOverview
+          plans={planOptions}
+          onBackHome={() => navigate("/")}
+          onOpenDetail={handleSelectPlan}
+          onShare={(plan) => {
+            setSelectedPlan(plan);
+            navigate("/share");
+          }}
         />
       )}
-      {activeView === "plans" && <OperationsConsole plan={latestPlan} />}
-      {activeView === "observability" && <ObservabilityPage plan={latestPlan} events={latestEvents} />}
-      {activeView !== "planner" && activeView !== "plans" && activeView !== "observability" && (
-        <UserSectionPage section={activeView} />
+
+      {route === "/plan/detail" && (
+        <PlanDetail
+          plan={selectedPlan}
+          onBack={() => navigate("/plan")}
+          onBackHome={() => navigate("/")}
+          onShare={() => navigate("/share")}
+          onPlanUpdate={setSelectedPlan}
+        />
       )}
-    </AppShell>
+
+      {route === "/share" && (
+        <SharePage
+          plan={selectedPlan ?? planOptions[0] ?? null}
+          feedbackMessage={feedbackMessage}
+          onFeedback={setFeedbackMessage}
+          onBack={() => navigate(selectedPlan ? "/plan/detail" : "/plan")}
+          onBackHome={() => navigate("/")}
+        />
+      )}
+    </main>
   );
 }

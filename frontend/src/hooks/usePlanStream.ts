@@ -7,70 +7,42 @@ export interface TimelineEvent {
   label: string;
   detail: string;
   level: "info" | "success" | "warning" | "error";
-  phase:
-    | "request"
-    | "understanding"
-    | "searching"
-    | "routing"
-    | "validating"
-    | "executing"
-    | "done"
-    | "error";
+  phase: "request" | "understanding" | "searching" | "routing" | "validating" | "executing" | "done" | "error";
 }
 
-const scenarioLabel: Record<string, string> = {
-  family: "亲子",
-  friends: "朋友",
-  couple: "情侣",
-  unknown: "待识别"
-};
-
-const constraintLabel: Record<string, string> = {
-  child_friendly: "适合孩子",
-  diet_friendly: "低脂饮食",
-  four_to_six_hours: "4-6 小时",
-  light_food: "清淡餐食",
-  low_queue: "少排队",
-  nearby: "距离近",
-  group_friendly: "适合多人",
-  social: "适合聊天"
-};
-
-const validationLabel: Record<string, string> = {
-  duration_out_of_range: "时长超出预期",
-  timeline_overlap: "时间线存在重叠"
-};
-
-const SESSION_STORAGE_KEY = "liferoute_agent_session_id";
+const SESSION_STORAGE_KEY = "plango_session_id";
 
 function getOrCreateSessionId() {
   const cached = window.localStorage.getItem(SESSION_STORAGE_KEY);
-  if (cached) {
-    return cached;
-  }
+  if (cached) return cached;
   const sessionId = crypto.randomUUID();
   window.localStorage.setItem(SESSION_STORAGE_KEY, sessionId);
   return sessionId;
 }
 
-function translateList(values: string[], dictionary: Record<string, string>) {
-  return values.map((value) => dictionary[value] ?? value).join(" / ");
+function eventPhase(message: string): TimelineEvent["phase"] {
+  if (message.includes("理解") || message.includes("意图") || message.includes("约束")) return "understanding";
+  if (message.includes("活动") || message.includes("餐厅") || message.includes("候选") || message.includes("召回") || message.includes("筛选")) {
+    return "searching";
+  }
+  if (message.includes("路线") || message.includes("地图") || message.includes("时间线")) return "routing";
+  if (message.includes("校验") || message.includes("验证") || message.includes("检查")) return "validating";
+  if (message.includes("执行") || message.includes("预约") || message.includes("购票") || message.includes("日历")) return "executing";
+  return "searching";
 }
 
-function statusPhase(message: string): TimelineEvent["phase"] {
-  if (message.includes("识别") || message.includes("理解")) {
-    return "understanding";
-  }
-  if (message.includes("路线") || message.includes("高德")) {
-    return "routing";
-  }
-  if (message.includes("校验")) {
-    return "validating";
-  }
-  if (message.includes("执行") || message.includes("预订")) {
-    return "executing";
-  }
-  return "searching";
+function eventLabel(phase: TimelineEvent["phase"]) {
+  const labels: Record<TimelineEvent["phase"], string> = {
+    request: "创建请求",
+    understanding: "理解需求",
+    searching: "筛选地点",
+    routing: "规划路线",
+    validating: "校验方案",
+    executing: "执行动作",
+    done: "生成完成",
+    error: "处理失败"
+  };
+  return labels[phase];
 }
 
 export function usePlanStream() {
@@ -88,50 +60,47 @@ export function usePlanStream() {
     level: TimelineEvent["level"] = "info",
     phase: TimelineEvent["phase"] = "request"
   ) {
-    setEvents((current) => [
-      ...current,
-      {
-        id: crypto.randomUUID(),
-        label,
-        detail,
-        level,
-        phase
+    setEvents((current) => {
+      const last = current.at(-1);
+      if (last?.label === label && last.detail === detail && last.phase === phase) {
+        return current;
       }
-    ]);
+      return [
+        ...current,
+        {
+          id: crypto.randomUUID(),
+          label,
+          detail,
+          level,
+          phase
+        }
+      ];
+    });
   }
 
   function handleStreamEvent(message: StreamEvent) {
-    if (message.event === "status") {
-      append("系统状态", message.data.message, "info", statusPhase(message.data.message));
+    if (message.event === "progress" || message.event === "status") {
+      const phase = eventPhase(message.data.message);
+      append(eventLabel(phase), message.data.message, "info", phase);
       return;
     }
 
     if (message.event === "intent") {
       setIntent(message.data.intent);
       setTrace((current) => [...current, ...message.data.trace]);
-      append(
-        "理解您的需求",
-        `场景：${scenarioLabel[message.data.intent.scenario]}，人数：${message.data.intent.people.length}，约束：${translateList(message.data.intent.constraints, constraintLabel) || "无"}`,
-        "success",
-        "understanding"
-      );
+      append("理解需求", "已识别场景、人群、时间、预算和偏好约束。", "success", "understanding");
       return;
     }
 
     if (message.event === "capability") {
-      append(
-        "能力边界",
-        message.data.message,
-        message.data.llm === "mimo" ? "success" : "warning",
-        "routing"
-      );
+      append("能力说明", message.data.message, message.data.llm === "rule" ? "warning" : "success", "understanding");
       return;
     }
 
     if (message.event === "plan") {
       setPlan(message.data.plan);
       setTrace(message.data.trace);
-      append("生成方案", "已生成活动、餐厅、路线和时间线，正在继续校验。", "success", "routing");
+      append("生成方案", "已生成活动、餐饮、路线和时间线，正在做最终校验。", "success", "routing");
       return;
     }
 
@@ -139,9 +108,7 @@ export function usePlanStream() {
       setTrace((current) => [...current, ...message.data.trace]);
       append(
         "校验方案",
-        message.data.ok
-          ? "时间、偏好和可用性校验通过。"
-          : `存在风险：${translateList(message.data.errors, validationLabel)}`,
+        message.data.ok ? "时间、预算、路线和可执行性校验通过。" : `发现 ${message.data.errors.length} 个待确认问题。`,
         message.data.ok ? "success" : "warning",
         "validating"
       );
@@ -158,7 +125,7 @@ export function usePlanStream() {
             }
           : current
       );
-      append("执行结果", "预订动作已返回，订单状态已更新。", "success", "executing");
+      append("执行动作", "预约、购票、打车或日历动作已返回模拟结果。", "success", "executing");
       return;
     }
 
@@ -170,14 +137,12 @@ export function usePlanStream() {
     if (message.event === "done") {
       setPlan(message.data.plan);
       setTrace(message.data.trace);
-      if (!assistantText && message.data.plan?.share_message) {
-        setAssistantText(message.data.plan.share_message);
+      if (message.data.plan?.share_message) {
+        setAssistantText((current) => current || message.data.plan?.share_message || "");
       }
       append(
-        "请求处理完成",
-        message.data.plan
-          ? "最终方案已生成，可继续导航、保存、分享或预订。"
-          : "文本回复已生成，本轮不需要展示行程方案。",
+        "生成完成",
+        message.data.plan ? "方案已经生成，可以查看总览、地图、详情或导出分享。" : "已生成文字回复，本轮不需要展示行程方案。",
         "success",
         "done"
       );
@@ -186,7 +151,7 @@ export function usePlanStream() {
     }
 
     if (message.event === "error") {
-      append("错误", message.data.message, "error", "error");
+      append("处理失败", message.data.message, "error", "error");
       setIsRunning(false);
     }
   }
@@ -200,7 +165,7 @@ export function usePlanStream() {
     setPlan(null);
     setTrace([]);
     setAssistantText("");
-    append("请求创建", "已向 Agent 发送流式规划请求。", "info", "request");
+    append("创建请求", "PlanGo 已收到需求，正在启动规划流程。", "info", "request");
 
     try {
       await streamPlan(
@@ -219,7 +184,7 @@ export function usePlanStream() {
   function cancel() {
     abortRef.current?.abort();
     setIsRunning(false);
-    append("已中止", "当前流式请求已取消。", "warning", "error");
+    append("已停止", "当前流式请求已取消。", "warning", "error");
   }
 
   return {

@@ -168,6 +168,7 @@ export interface ChatHistoryItem {
 
 export type StreamEvent =
   | { event: "status"; data: { message: string } }
+  | { event: "progress"; data: { message: string } }
   | {
       event: "capability";
       data: {

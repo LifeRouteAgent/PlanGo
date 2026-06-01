@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronRight, SendHorizontal } from "lucide-react";
+import { ChevronDown, ChevronRight, Loader2, SendHorizontal } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import type { TimelineEvent } from "../hooks/usePlanStream";
 import type { ChatHistoryItem, Plan } from "../types/agent";
@@ -135,6 +135,7 @@ export function ChatAssistantPanel({ events, isRunning, plan, assistantText, onS
           <section className="progress-message">
             <button type="button" onClick={() => setProgressCollapsed((value) => !value)}>
               <span>{progressCollapsed ? "规划过程已完成" : "规划中..."}</span>
+              {isRunning && !progressCollapsed && <Loader2 className="spin" size={14} />}
               {progressCollapsed ? <ChevronRight size={16} /> : <ChevronDown size={16} />}
             </button>
             {!progressCollapsed && (
