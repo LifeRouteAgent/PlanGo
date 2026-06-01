@@ -179,6 +179,7 @@ def _build_prompt(query: str, user_profile: dict[str, Any]) -> str:
 5. 预算和出发区域可以缺省，不要只因为缺预算或缺位置追问。
 6. start_time 和 duration_hours 只有用户明确说了钟点、上午/下午/晚上、几小时、半天、一天或起止时间时才填写；不要自行补 14:00 或 6 小时。
 7. 历史画像里的室内、低预算、常去区域只能影响后续排序，不得写入 preferences，除非本轮用户明确提到。
+8. budget 必须做语义归一化：预算1k/1K/一千=1000，0.8万=8000；如果多轮输入里出现预算更正，以最后一次为准。
 
 target_categories 可选：
 - poi_restaurant

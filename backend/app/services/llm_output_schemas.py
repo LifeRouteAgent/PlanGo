@@ -48,11 +48,24 @@ class RevisionConstraintOutput(BaseModel):
     avoid_tags: list[str] = Field(default_factory=list)
     excluded_keywords: list[str] = Field(default_factory=list)
     budget_strategy: str | None = None
+    budget: int | None = Field(default=None, ge=0)
     price_preference: str | None = None
     max_route_minutes: int | None = Field(default=None, ge=0)
     movement_policy: str | None = None
     preferred_categories: list[str] = Field(default_factory=list)
     activity_intents: list[ActivityIntentOutput] = Field(default_factory=list)
+    reason: str = ""
+
+
+class FollowupContextOutput(BaseModel):
+    current_turn_type: Literal[
+        "direct_answer",
+        "new_request",
+        "clarification_answer",
+        "planning_revision",
+    ] = "new_request"
+    should_merge_previous_planning: bool = False
+    use_pending_clarification: bool = False
     reason: str = ""
 
 

@@ -20,7 +20,7 @@ from app.models.schemas import TripPlanRequest, TripPlanResponse
 from app.models.schemas import RevisePlanRequest
 from app.services.amap_weather_service import AmapWeatherService
 from app.services.checkpoint_store import CheckpointStore, TaskStatus
-from app.services.llm_semantic_extractor import extract_revision_constraints
+from app.services.llm_semantic_extractor import classify_followup_context, extract_revision_constraints
 from app.services.memory_service import MemoryService
 from app.services.policy_config import policy_config
 from app.services.runtime_store import get_runtime_store
@@ -89,7 +89,7 @@ class TripPlanningService:
             initial_state["logs"] = [
                 *initial_state.get("logs", []),
                 (
-                    "Clarification Follow-up: merged user reply into previous pending request:"
+                    "Context Follow-up: merged user reply into previous planning request:"
                     f" {request.user_query}"
                 ),
             ]
@@ -144,7 +144,7 @@ class TripStreamingService:
         task_id = str(task["task_id"])
         saved_session = self.session_store.load(session_id)
         effective_query = effective_query_for_request(saved_session, request.user_query)
-        is_clarification_followup = effective_query != request.user_query
+        is_context_followup = effective_query != request.user_query
         self.memory.observe_user_query(request.user_query, user_id=session_id)
         user_profile = self.memory.enrich_user_profile({
             **request.user_profile,
@@ -163,11 +163,11 @@ class TripStreamingService:
             task_id=task_id,
         )
         self.checkpoint.save_from_plan_state(current_state, status=TaskStatus.CREATED, task_id=task_id)
-        if is_clarification_followup:
+        if is_context_followup:
             current_state["logs"] = [
                 *current_state.get("logs", []),
                 (
-                    "Clarification Follow-up: merged user reply into previous pending request:"
+                    "Context Follow-up: merged user reply into previous planning request:"
                     f" {request.user_query}"
                 ),
             ]
@@ -236,10 +236,10 @@ class TripStreamingService:
         yield sse_event(
             "status",
             {
-                "stage": "clarification_followup" if is_clarification_followup else "start",
+                "stage": "context_followup" if is_context_followup else "start",
                 "message": (
-                    "已接上上一轮追问，把你的补充信息合并进原始规划需求。"
-                    if is_clarification_followup
+                    "已接上上一轮规划，把你的补充/更正合并进原始需求。"
+                    if is_context_followup
                     else "已收到需求，开始理解意图并构建本地生活规划 DAG。"
                 ),
             },
@@ -484,16 +484,83 @@ def effective_query_for_request(
     saved_session: dict[str, Any] | None,
     current_query: str,
 ) -> str:
-    """把澄清追问后的短回答合并回上一轮待补全需求。"""
+    """把澄清回复或需求更正合并回上一轮规划需求。
+
+    关键场景：
+    - 上一轮 Agent 追问“还缺人数/预算”，用户回“两个人，预算1000”；
+    - 上一轮已经生成失败/风险回复，用户回“预算是1000元，其他需求不变”；
+    - 用户中间问过“你是什么模型”，再继续更正预算时，仍然应该修正最近一次规划上下文。
+    """
+
+    llm_decision = classify_followup_context(
+        current_query,
+        pending_clarification_query=_query_from_state(
+            latest_pending_clarification_state(saved_session)
+        ),
+        latest_planning_query=_query_from_state(latest_planning_state(saved_session))
+        or latest_planning_query_from_turns(saved_session),
+        latest_turns=_latest_turn_summaries(saved_session),
+        user_profile=_user_profile_from_session(saved_session),
+    )
+    if llm_decision:
+        return _effective_query_from_llm_decision(saved_session, current_query, llm_decision)
+
+    return _fallback_effective_query_for_request(saved_session, current_query)
+
+
+def _effective_query_from_llm_decision(
+    saved_session: dict[str, Any] | None,
+    current_query: str,
+    decision: dict[str, Any],
+) -> str:
+    """根据 LLM 多轮上下文判断结果决定是否合并上一轮规划。"""
+
+    turn_type = str(decision.get("current_turn_type") or "new_request")
+    if turn_type == "direct_answer":
+        return current_query
+    if decision.get("use_pending_clarification") or turn_type == "clarification_answer":
+        previous_state = latest_pending_clarification_state(saved_session)
+        if previous_state:
+            return _merge_followup_query(previous_state, current_query, "补充信息")
+    if decision.get("should_merge_previous_planning") or turn_type == "planning_revision":
+        planning_state = latest_planning_state(saved_session)
+        if planning_state:
+            return _merge_followup_query(planning_state, current_query, "用户更正/补充（以后者为准）")
+        planning_query = latest_planning_query_from_turns(saved_session)
+        if planning_query:
+            return f"{planning_query}\n用户更正/补充（以后者为准）：{current_query.strip()}"
+    return current_query
+
+
+def _fallback_effective_query_for_request(
+    saved_session: dict[str, Any] | None,
+    current_query: str,
+) -> str:
+    """LLM 不可用时的保守兜底，不作为多轮判断主路径。"""
 
     previous_state = latest_pending_clarification_state(saved_session)
-    if not previous_state:
+    if previous_state:
+        return _merge_followup_query(previous_state, current_query, "补充信息")
+    if _fallback_looks_like_direct_answer(current_query):
         return current_query
+    if _fallback_looks_like_planning_followup(current_query):
+        planning_state = latest_planning_state(saved_session)
+        if planning_state:
+            return _merge_followup_query(planning_state, current_query, "用户更正/补充（以后者为准）")
+        planning_query = latest_planning_query_from_turns(saved_session)
+        if planning_query:
+            return f"{planning_query}\n用户更正/补充（以后者为准）：{current_query.strip()}"
+    return current_query
+
+
+def _merge_followup_query(previous_state: dict[str, Any], current_query: str, label: str) -> str:
+    """合并上一轮 query 和本轮补充，保留“以后者为准”的语义。"""
+
     previous_query = str(previous_state.get("user_query") or "").strip()
     reply = current_query.strip()
     if not previous_query or not reply:
         return current_query
-    return f"{previous_query}\n补充信息：{reply}"
+    return f"{previous_query}\n{label}：{reply}"
 
 
 def latest_pending_clarification_state(
@@ -514,6 +581,148 @@ def latest_pending_clarification_state(
     if state_waiting or response_waiting:
         return latest_state
     return None
+
+
+def latest_planning_state(saved_session: dict[str, Any] | None) -> dict[str, Any] | None:
+    """读取最近一次真正的规划状态，忽略简单问答状态。"""
+
+    if not isinstance(saved_session, dict):
+        return None
+    for key in ("latest_planning_state", "latest_state"):
+        state = saved_session.get(key)
+        if isinstance(state, dict) and _is_planning_like_state(state):
+            return state
+    return None
+
+
+def latest_planning_query_from_turns(saved_session: dict[str, Any] | None) -> str:
+    """从历史 turn 中找最近一次看起来像规划需求的用户输入。
+
+    这是对旧 session 的兼容：旧版本没有保存 `latest_planning_state` 时，仍能用最近一次
+    规划类 query 恢复“其他需求不变”的上下文。
+    """
+
+    if not isinstance(saved_session, dict):
+        return ""
+    turns = saved_session.get("turns")
+    if not isinstance(turns, list):
+        return ""
+    for turn in reversed(turns):
+        if not isinstance(turn, dict):
+            continue
+        query = str(turn.get("user_query") or "").strip()
+        if query and _fallback_looks_like_original_planning_query(query):
+            return query
+    return ""
+
+
+def _is_planning_like_state(state: dict[str, Any]) -> bool:
+    intent_type = str(state.get("intent_type") or "")
+    answer_mode = str(state.get("answer_mode") or "")
+    if intent_type in {"simple_qa", "capability"} or answer_mode in {"simple_qa", "capability"}:
+        return False
+    return bool(
+        intent_type in {"full_trip_plan", "category_recommend", "poi_search"}
+        or state.get("ranked_plans")
+        or state.get("candidate_plans")
+        or state.get("candidate_pois")
+    )
+
+
+def _fallback_looks_like_direct_answer(query: str) -> bool:
+    text = query.strip().lower()
+    direct_keywords = (
+        "你是什么模型",
+        "你用的什么模型",
+        "当前模型",
+        "什么大模型",
+        "你支持什么功能",
+        "你能做什么",
+        "怎么使用",
+        "如何使用",
+    )
+    return any(keyword in query for keyword in direct_keywords) or text in {"你好", "hi", "hello", "谢谢"}
+
+
+def _fallback_looks_like_planning_followup(query: str) -> bool:
+    """LLM 不可用时判断当前输入是否是在修正上一轮规划。"""
+
+    if _fallback_looks_like_direct_answer(query):
+        return False
+    followup_keywords = (
+        "预算",
+        "改成",
+        "更正",
+        "不是",
+        "接着",
+        "继续",
+        "继续规划",
+        "重新规划",
+        "其他需求不变",
+        "其余不变",
+        "前面",
+        "刚才",
+        "上面",
+        "上一轮",
+        "不变",
+        "换成",
+        "不要",
+        "别去",
+        "更近",
+        "更便宜",
+        "时间短",
+    )
+    return any(keyword in query for keyword in followup_keywords)
+
+
+def _fallback_looks_like_original_planning_query(query: str) -> bool:
+    """旧 session 兼容兜底：找最近一次看起来像规划的 query。"""
+
+    if _fallback_looks_like_direct_answer(query):
+        return False
+    planning_keywords = (
+        "规划",
+        "行程",
+        "路线",
+        "安排",
+        "然后",
+        "再去",
+        "帮我",
+        "周末",
+        "明天",
+        "后天",
+        "预算",
+    )
+    activity_keywords = ("环球影城", "唱歌", "KTV", "ktv", "吃饭", "电影", "麻将", "打牌", "餐厅")
+    return any(item in query for item in planning_keywords) and any(item in query for item in activity_keywords)
+
+
+def _query_from_state(state: dict[str, Any] | None) -> str:
+    return str((state or {}).get("user_query") or "").strip()
+
+
+def _latest_turn_summaries(saved_session: dict[str, Any] | None) -> list[dict[str, Any]]:
+    if not isinstance(saved_session, dict):
+        return []
+    turns = saved_session.get("turns")
+    if not isinstance(turns, list):
+        return []
+    result: list[dict[str, Any]] = []
+    for item in turns[-6:]:
+        if isinstance(item, dict):
+            result.append({
+                "user_query": item.get("user_query", ""),
+                "response_preview": str(item.get("response_text", ""))[:160],
+                "ranked_plan_count": item.get("ranked_plan_count", 0),
+            })
+    return result
+
+
+def _user_profile_from_session(saved_session: dict[str, Any] | None) -> dict[str, Any]:
+    if not isinstance(saved_session, dict):
+        return {}
+    state = saved_session.get("latest_planning_state") or saved_session.get("latest_state")
+    return state.get("user_profile", {}) if isinstance(state, dict) else {}
 
 
 def build_trip_response(result: dict[str, Any]) -> TripPlanResponse:
@@ -757,6 +966,13 @@ def apply_llm_revision_patch(constraints: dict[str, Any], parsed: dict[str, Any]
     excluded_keywords = list(constraints.get("excluded_keywords", []) or [])
     if parsed.get("indoor_preferred") is True:
         constraints["indoor_preferred"] = True
+    if parsed.get("budget") not in (None, ""):
+        try:
+            constraints["budget"] = int(float(parsed["budget"]))
+            constraints["budget_source"] = "llm_revision"
+            constraints["budget_is_hard"] = True
+        except (TypeError, ValueError):
+            pass
     avoid_tags.extend(str(item) for item in parsed.get("avoid_tags", []) or [] if str(item).strip())
     excluded_keywords.extend(str(item) for item in parsed.get("excluded_keywords", []) or [] if str(item).strip())
     for key in ("budget_strategy", "price_preference", "movement_policy"):

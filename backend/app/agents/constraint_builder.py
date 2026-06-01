@@ -36,17 +36,17 @@ def constraint_builder_node(state: PlanState) -> PlanStatePatch:
     duration_hours, duration_source = _resolve_duration_hours(query, llm_understanding)
     constraints.setdefault("duration_hours", duration_hours)
     constraints.setdefault("duration_source", duration_source)
-    constraints.setdefault("duration_is_hard", duration_source == "user")
+    constraints.setdefault("duration_is_hard", duration_source in {"llm", "fallback_rule"})
 
     budget, budget_source = _resolve_budget(query, llm_understanding)
     constraints.setdefault("budget", budget)
     constraints.setdefault("budget_source", budget_source)
-    constraints.setdefault("budget_is_hard", budget_source == "user")
+    constraints.setdefault("budget_is_hard", budget_source in {"llm", "fallback_rule"})
 
     max_route_minutes, route_source = _resolve_max_route_minutes(query, llm_understanding)
     constraints.setdefault("max_route_minutes", max_route_minutes)
     constraints.setdefault("max_route_minutes_source", route_source)
-    constraints.setdefault("route_limit_is_hard", route_source == "user")
+    constraints.setdefault("route_limit_is_hard", route_source in {"llm", "fallback_rule"})
 
     if llm_understanding and llm_understanding.get("location_area"):
         constraints.setdefault("location_area", llm_understanding["location_area"])
@@ -77,20 +77,15 @@ def constraint_builder_node(state: PlanState) -> PlanStatePatch:
 
 
 def _resolve_start_time(query: str, llm_understanding: dict[str, Any] | None) -> tuple[str, str]:
-    parsed = _parse_start_time(query)
-    if parsed:
-        return parsed, "user"
-    # 只有用户明确给出钟点/上午/下午/晚上时，才接受 LLM 抽出的 start_time。
-    if (
-        _has_explicit_start_time(query)
-        and llm_understanding
-        and llm_understanding.get("start_time")
-    ):
+    if llm_understanding and llm_understanding.get("start_time"):
         return str(llm_understanding["start_time"]), "llm"
+    parsed = _fallback_parse_start_time(query)
+    if parsed:
+        return parsed, "fallback_rule"
     if any(word in query for word in ("上午", "早上")):
-        return "10:00", "user"
+        return "10:00", "fallback_rule"
     if any(word in query for word in ("晚上", "今晚")):
-        return "18:00", "user"
+        return "18:00", "fallback_rule"
     # 默认值只用于排版时间线，不代表用户限定了下午 2 点。
     return "10:00", "default"
 
@@ -98,31 +93,33 @@ def _resolve_start_time(query: str, llm_understanding: dict[str, Any] | None) ->
 def _resolve_duration_hours(
     query: str, llm_understanding: dict[str, Any] | None
 ) -> tuple[int, str]:
-    parsed = _parse_duration_hours(query)
+    if llm_understanding and llm_understanding.get("duration_hours") not in (None, ""):
+        return int(float(llm_understanding["duration_hours"])), "llm"
+    parsed = _fallback_parse_duration_hours(query)
     if parsed is not None:
-        return parsed, "user"
+        return parsed, "fallback_rule"
     # 如果没有明确时长或起止时间，不接受 LLM 自行补出的 duration_hours。
     # 用较宽松的 10 小时作为本地一日活动排版窗口，但 Verifier 不把它当硬约束。
     return 10, "default"
 
 
 def _resolve_budget(query: str, llm_understanding: dict[str, Any] | None) -> tuple[int, str]:
-    parsed = _parse_budget(query)
-    if parsed is not None:
-        return parsed, "user"
     if llm_understanding and llm_understanding.get("budget"):
         return int(float(llm_understanding["budget"])), "llm"
+    parsed = _fallback_parse_budget(query)
+    if parsed is not None:
+        return parsed, "fallback_rule"
     return 600, "default"
 
 
 def _resolve_max_route_minutes(
     query: str, llm_understanding: dict[str, Any] | None
 ) -> tuple[int, str]:
-    explicit = _parse_route_minutes(query)
+    explicit = _fallback_parse_route_minutes(query)
     if explicit is not None:
-        return explicit, "user"
+        return explicit, "fallback_rule"
     if any(word in query for word in ("别太远", "近一点", "附近", "少折腾", "少走路")):
-        return 30, "user"
+        return 30, "fallback_rule"
     # 默认路程阈值只是排序偏好，不是失败条件。
     return 90, "system_default"
 
@@ -143,7 +140,9 @@ def _fallback_scenario(text: str) -> str:
     return "unknown"
 
 
-def _parse_start_time(text: str) -> str | None:
+def _fallback_parse_start_time(text: str) -> str | None:
+    """LLM 不可用时解析明确钟点；正常路径应使用 LLM 结构化结果。"""
+
     match = re.search(r"(\d{1,2})\s*(?::|点|：)\s*(\d{2})?", text)
     if not match:
         return None
@@ -152,8 +151,10 @@ def _parse_start_time(text: str) -> str | None:
     return f"{hour:02d}:{minute:02d}"
 
 
-def _parse_duration_hours(text: str) -> int | None:
-    range_hours = _parse_time_range_hours(text)
+def _fallback_parse_duration_hours(text: str) -> int | None:
+    """LLM 不可用时解析明确时长；正常路径应使用 LLM 结构化结果。"""
+
+    range_hours = _fallback_parse_time_range_hours(text)
     if range_hours:
         return range_hours
     match = re.search(r"(\d+)\s*(小时|个小时)", text)
@@ -166,14 +167,51 @@ def _parse_duration_hours(text: str) -> int | None:
     return None
 
 
-def _parse_budget(text: str) -> int | None:
-    match = re.search(r"预算\s*(\d+)|(\d+)\s*元", text)
-    if match:
-        return int(match.group(1) or match.group(2))
-    return None
+def _fallback_parse_budget(text: str) -> int | None:
+    """LLM 不可用时的预算兜底解析。
+
+    正常链路必须优先消费 `llm_understanding.budget`。这里仅用于模型不可用、
+    schema 校验失败或离线测试，避免系统完全失去预算约束。
+    """
+
+    matches: list[tuple[int, float, str]] = []
+    patterns = (
+        r"(?:预算|预算是|预算为|预算改成|预算调整到|预算更正为)\s*(\d+(?:\.\d+)?)\s*([kK千wW万]?)",
+        r"(\d+(?:\.\d+)?)\s*([kK千wW万]?)\s*(?:元|块|人民币)",
+    )
+    for pattern in patterns:
+        for match in re.finditer(pattern, text):
+            unit = match.group(2) or ""
+            matches.append((match.start(), float(match.group(1)), unit))
+    chinese_match = re.search(r"(?:预算|预算是|预算为|预算改成|预算调整到|预算更正为)\s*(一千|两千|二千|三千|四千|五千|六千|七千|八千|九千)", text)
+    if chinese_match:
+        mapping = {
+            "一千": 1000,
+            "两千": 2000,
+            "二千": 2000,
+            "三千": 3000,
+            "四千": 4000,
+            "五千": 5000,
+            "六千": 6000,
+            "七千": 7000,
+            "八千": 8000,
+            "九千": 9000,
+        }
+        matches.append((chinese_match.start(), float(mapping[chinese_match.group(1)]), ""))
+    if not matches:
+        return None
+    _, amount, unit = sorted(matches, key=lambda item: item[0])[-1]
+    multiplier = 1
+    if unit in {"k", "K", "千"}:
+        multiplier = 1000
+    elif unit in {"w", "W", "万"}:
+        multiplier = 10000
+    return int(amount * multiplier)
 
 
-def _parse_route_minutes(text: str) -> int | None:
+def _fallback_parse_route_minutes(text: str) -> int | None:
+    """LLM 不可用时解析明确路程上限；正常路径应使用 LLM/Revision 结构化结果。"""
+
     match = re.search(r"(?:路程|交通|移动|车程|通勤|路上)[^\d]{0,6}(\d+)\s*(?:分钟|分)", text)
     if match:
         return int(match.group(1))
@@ -187,8 +225,8 @@ def _parse_route_minutes(text: str) -> int | None:
     return None
 
 
-def _parse_time_range_hours(text: str) -> int | None:
-    """解析“下午 2 点到 6 点”这类起止时间。"""
+def _fallback_parse_time_range_hours(text: str) -> int | None:
+    """LLM 不可用时解析“下午 2 点到 6 点”这类起止时间。"""
 
     match = re.search(
         r"(\d{1,2})\s*(?:(?:点|:|：)\s*(\d{2})?)?\s*(?:到|至|-|~)\s*"

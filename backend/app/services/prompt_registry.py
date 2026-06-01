@@ -22,6 +22,7 @@ PROMPT_SPECS: dict[str, PromptSpec] = {
     "intent_understanding": PromptSpec("intent_understanding", "2026-05-31.1", "IntentUnderstandingOutput", "1"),
     "revision_parser": PromptSpec("revision_parser", "2026-05-31.1", "RevisionConstraintOutput", "1"),
     "memory_extractor": PromptSpec("memory_extractor", "2026-05-31.1", "MemoryExtractionOutput", "1"),
+    "followup_context": PromptSpec("followup_context", "2026-05-31.1", "FollowupContextOutput", "1"),
     "planner_dag": PromptSpec("planner_dag", "2026-05-31.1", "DagPlanOutput", "1"),
     "llm_critic": PromptSpec("llm_critic", "2026-05-31.1", "CriticOutput", "1"),
     "response_plan_enrichment": PromptSpec("response_plan_enrichment", "2026-05-31.1", "ResponsePlansEnrichmentOutput", "1"),

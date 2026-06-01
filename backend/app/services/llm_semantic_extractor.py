@@ -5,6 +5,7 @@ from typing import Any
 from app.services.context_builder import ContextBuilder
 from app.services.llm_service import call_chat_completion, extract_json_object
 from app.services.llm_output_schemas import (
+    FollowupContextOutput,
     MemoryExtractionOutput,
     RevisionConstraintOutput,
     validate_llm_output,
@@ -105,6 +106,7 @@ def extract_revision_constraints(
   "indoor_preferred": null,
   "avoid_tags": [],
   "excluded_keywords": [],
+  "budget": null,
   "budget_strategy": null,
   "price_preference": null,
   "max_route_minutes": null,
@@ -119,6 +121,7 @@ def extract_revision_constraints(
 字段约定：
 - indoor_preferred 只有用户明确要求室内、不要室外、天气影响时才填 true。
 - excluded_keywords 只放用户明确不要的内容。
+- budget 只在用户明确更正预算时填写整数元，例如 1k/一千 输出 1000。
 - max_route_minutes 只有用户明确说更近、少走路、别太远时才填。
 - activity_intents 用来表达唱歌=ktv、麻将=chess_cards、电影=cinema 等语义垂类。
 """
@@ -127,6 +130,59 @@ def extract_revision_constraints(
         prompt,
         max_tokens=1000,
         schema=RevisionConstraintOutput,
+    )
+
+
+def classify_followup_context(
+    query: str,
+    *,
+    pending_clarification_query: str = "",
+    latest_planning_query: str = "",
+    latest_turns: list[dict[str, Any]] | None = None,
+    user_profile: dict[str, Any] | None = None,
+) -> dict[str, Any] | None:
+    """用 LLM 判断当前输入是否应该合并上一轮规划上下文。
+
+    这是多轮上下文续跑的主路径。关键词判断只能作为 LLM 不可用时的保守兜底。
+    """
+
+    prompt = f"""
+请判断当前用户输入是否应该复用上一轮本地生活规划上下文。
+
+当前用户输入：
+{query}
+
+上一轮待澄清规划需求：
+{pending_clarification_query or "无"}
+
+最近一次真实规划需求：
+{latest_planning_query or "无"}
+
+最近几轮对话摘要：
+{latest_turns or []}
+
+用户画像（只能作为软参考）：
+{user_profile or {}}
+
+输出格式：
+{{
+  "current_turn_type": "direct_answer | new_request | clarification_answer | planning_revision",
+  "should_merge_previous_planning": false,
+  "use_pending_clarification": false,
+  "reason": "一句话说明判断依据"
+}}
+
+判断要求：
+1. “预算是1000元”“预算改成1k”“其他需求不变”“接着规划”“继续刚才的方案”通常是 planning_revision。
+2. “两个人，预算1000”如果上一轮在追问人数/预算，通常是 clarification_answer。
+3. “你是什么模型”“你支持什么功能”是 direct_answer，不能合并规划。
+4. 如果当前输入本身已经是完整新规划需求，则输出 new_request。
+"""
+    return _call_json_extractor(
+        "llm.followup_context",
+        prompt,
+        max_tokens=700,
+        schema=FollowupContextOutput,
     )
 
 
@@ -165,7 +221,7 @@ def _call_json_extractor(
             {
                 "role": "system",
                 "content": load_prompt_template(
-                    "memory_extractor" if "memory" in tool_name else "revision_parser",
+                    _prompt_name_for_tool(tool_name),
                     "你是结构化信息抽取器。必须只输出一个 JSON 对象。",
                 ),
             },
@@ -193,3 +249,11 @@ def _call_json_extractor(
         return parsed
     validation = validate_llm_output(schema, parsed, source=tool_name)
     return validation.data if validation.ok else None
+
+
+def _prompt_name_for_tool(tool_name: str) -> str:
+    if "memory" in tool_name:
+        return "memory_extractor"
+    if "followup" in tool_name:
+        return "followup_context"
+    return "revision_parser"
