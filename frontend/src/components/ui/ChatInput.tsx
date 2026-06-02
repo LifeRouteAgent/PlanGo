@@ -29,7 +29,7 @@ export function ChatInput({ disabled = false, running = false, placeholder, onSu
         id="plango-chat-input"
         value={value}
         disabled={disabled}
-        rows={2}
+        rows={1}
         placeholder={placeholder ?? "想去哪儿？和谁一起？预算和时间大概多少？"}
         onChange={(event) => setValue(event.target.value)}
         onKeyDown={(event) => {
@@ -41,11 +41,11 @@ export function ChatInput({ disabled = false, running = false, placeholder, onSu
       />
       {running ? (
         <button type="button" className="chat-input-action is-cancel" onClick={onCancel} aria-label="停止生成">
-          <StopCircle size={20} />
+          <StopCircle size={18} />
         </button>
       ) : (
         <button type="button" className="chat-input-action" disabled={!canSubmit} onClick={submit} aria-label="发送需求">
-          <ArrowUp size={20} />
+          <ArrowUp size={18} />
         </button>
       )}
     </div>

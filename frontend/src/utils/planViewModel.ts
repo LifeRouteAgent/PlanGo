@@ -50,6 +50,7 @@ export interface PlanViewModel {
   budgetText: string;
   distanceText: string;
   reason: string;
+  highlightTags: string[];
   pros: string[];
   cons: string[];
   metrics: PlanMetric[];
@@ -115,6 +116,7 @@ function stepTraffic(step: PlanStep) {
 
 function stepToStop(step: PlanStep, index: number): PlanStopView {
   const rating = step.metadata?.rating;
+  const imageUrl = step.detail?.image_url ?? step.detail?.images?.[0] ?? null;
   return {
     id: step.target_id || `${index}`,
     order: index + 1,
@@ -125,7 +127,7 @@ function stepToStop(step: PlanStep, index: number): PlanStopView {
     reason: step.reason || step.detail?.description || "符合本次偏好和行程节奏。",
     cost: step.cost || step.detail?.cost || 0,
     traffic: stepTraffic(step),
-    imageUrl: step.detail?.image_url ?? null,
+    imageUrl,
     tags: step.detail?.tags?.filter(Boolean).slice(0, 5) ?? [],
     lat: step.location?.lat ?? null,
     lng: step.location?.lng ?? null,
@@ -144,25 +146,27 @@ function styleTagFromBadge(badge: string, indexHint: number) {
 }
 
 function titleFromPlan(plan: Plan, stops: PlanStopView[], indexHint: number) {
-  const stopText = stops.map((stop) => `${stop.title} ${stop.tags.join(" ")}`).join(" ");
-  const hasUniversal = /环球|乐园|度假区/.test(stopText);
-  const hasKtv = /KTV|唱歌|欢唱|量贩|温莎/.test(stopText);
-  const hasFood = /餐|菜|火锅|烧烤|咖啡|茶/.test(stopText);
-  const hasBoard = /桌游|棋牌|麻将|打牌/.test(stopText);
-  const scenario = plan.scenario;
-
-  const pools: Record<string, string[]> = {
-    couple: hasUniversal && hasKtv
-      ? ["《乐园与歌声之间》", "《星光散场后的合唱》", "《两个人的蓝色夜场》"]
-      : ["《慢慢靠近的约会》", "《晚风和甜味路线》", "《两个人的轻松半日》"],
-    friends: hasBoard || hasKtv
-      ? ["《饭局与欢唱之间》", "《朋友局快乐拼图》", "《桌边与麦克风》"]
-      : ["《附近的快乐集合》", "《松弛朋友局》", "《城市周末小队》"],
-    family: ["《轻松亲子半日》", "《不赶路的家庭时光》", "《一起慢慢玩》"],
-    unknown: hasFood ? ["《先吃再玩刚刚好》", "《附近生活小路线》", "《轻松城市半日》"] : ["《附近生活小路线》", "《轻松城市半日》", "《今天就这样玩》"]
-  };
-  const key = scenario === "couple" || scenario === "friends" || scenario === "family" ? scenario : "unknown";
-  return pools[key][indexHint % pools[key].length];
+  const stopNames = stops.map((stop) => stop.title.replace(/[（(].*?[）)]/g, "").trim()).filter(Boolean);
+  const tagText = stops.flatMap((stop) => stop.tags).join(" ");
+  const primary = stopNames[0] || "城市";
+  const secondary = stopNames[1] || "好去处";
+  const noun = /KTV|唱歌|欢唱|量贩|温莎/.test(`${stopNames.join(" ")} ${tagText}`)
+    ? "歌声"
+    : /桌游|棋牌|麻将|打牌/.test(`${stopNames.join(" ")} ${tagText}`)
+      ? "牌局"
+      : /咖啡|茶|餐|菜|火锅|烧烤/.test(`${stopNames.join(" ")} ${tagText}`)
+        ? "烟火"
+        : /乐园|环球|展|馆|影城/.test(`${stopNames.join(" ")} ${tagText}`)
+          ? "星光"
+          : "微风";
+  const fragments = [
+    `${primary}与${noun}`,
+    `${secondary}边的${noun}`,
+    `${noun}落在${primary}`,
+    `${primary}之后去${secondary}`,
+    `${noun}和一段小路`
+  ];
+  return `《${fragments[indexHint % fragments.length]}》`;
 }
 
 function routeSummary(plan: Plan, stops: PlanStopView[], distance: string): PlanRouteSummary {
@@ -201,12 +205,13 @@ export function planToViewModel(plan: Plan, badge = "推荐", indexHint = 0): Pl
     id: plan.id || "plan-main",
     badge,
     styleTag: styleTagFromBadge(badge, indexHint),
-    title: plan.recommendation?.title || fallbackTitleFromStops(stops),
+    title: titleFromPlan(plan, stops, indexHint) || plan.recommendation?.title || fallbackTitleFromStops(stops),
     audience: scenarioText(plan),
     durationText: duration,
     budgetText: budget,
     distanceText: distance,
     reason,
+    highlightTags: Array.from(new Set(plan.highlight_tags?.map((tag) => tag.trim()).filter(Boolean) ?? [])).slice(0, 4),
     pros: pros.length ? pros : ["地点组合紧凑", "路线和时间已做可执行性校验"],
     cons: cons.length ? cons : ["部分营业或预约信息建议出发前再次确认"],
     metrics: [

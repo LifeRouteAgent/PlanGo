@@ -1,60 +1,100 @@
-import { useEffect, useState } from "react";
+import { Building2, Flame, MapPin, RefreshCw, Sparkles } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { usePlanStream } from "../../hooks/usePlanStream";
 import type { Plan } from "../../types/agent";
-import type { ConversationRecord, StoredChatMessage } from "../../utils/conversationStore";
+import type { StoredChatMessage } from "../../utils/conversationStore";
 import { ChatPanelV2 } from "./ChatPanelV2";
-import { RequirementCards } from "./RequirementCards";
-import { ChatSidebar } from "./ChatSidebar";
 import { WelcomeHero } from "./WelcomeHero";
+
+interface HomeInspirationPoi {
+  id: string;
+  name: string;
+  tag: string;
+  tags: string[];
+  image_url: string;
+  duration_text: string;
+}
 
 interface ChatHomeProps {
   conversationId: string;
   messages: StoredChatMessage[];
-  conversations: ConversationRecord[];
   hasPlan: boolean;
   onMessagesChange: (messages: StoredChatMessage[]) => void;
   onPlanReady: (plan: Plan) => void;
   onOpenPlans: () => void;
   onOpenDetail: () => void;
-  onNewConversation: () => void;
-  onLoadConversation: (conversationId: string) => void;
+  onStreamComplete: (conversationId: string, messages: StoredChatMessage[], plan: Plan | null) => void;
+  pendingSubmit?: string;
+  onPendingSubmitConsumed?: () => void;
 }
+
+const quickStartItems = [
+  { label: "附近推荐", prompt: "帮我推荐附近适合今天去的本地生活地点。", icon: MapPin },
+  { label: "热门榜单", prompt: "帮我找几个北京热门的吃喝玩乐地点。", icon: Flame },
+  { label: "今日特惠", prompt: "想找今天比较划算、预算友好的活动和餐厅。", icon: Sparkles },
+  { label: "室内活动", prompt: "今天想安排室内活动，别太晒，路线轻松一点。", icon: Building2 }
+];
 
 export function ChatHome({
   conversationId,
   messages,
-  conversations,
   hasPlan,
   onMessagesChange,
-  onPlanReady,
   onOpenPlans,
   onOpenDetail,
-  onNewConversation,
-  onLoadConversation
+  onStreamComplete,
+  pendingSubmit,
+  onPendingSubmitConsumed
 }: ChatHomeProps) {
   const { isRunning, events, plan, assistantText, run, cancel } = usePlanStream();
-  const [lastAssistantText, setLastAssistantText] = useState("");
+  const [streamConversationId, setStreamConversationId] = useState<string | null>(null);
+  const streamBaseMessagesRef = useRef<StoredChatMessage[]>(messages);
+  const streamRunIdRef = useRef("");
+  const processedRunIdRef = useRef("");
+  const [inspirationPois, setInspirationPois] = useState<HomeInspirationPoi[]>([]);
+  const [inspirationOffset, setInspirationOffset] = useState(0);
+  const isCurrentConversationRunning = isRunning && streamConversationId === conversationId;
 
   useEffect(() => {
-    if (!isRunning && assistantText && assistantText !== lastAssistantText) {
-      onMessagesChange([
-        ...messages,
-        {
-          id: crypto.randomUUID(),
-          role: "assistant",
-          content: assistantText
-        }
-      ]);
-      setLastAssistantText(assistantText);
-    }
-  }, [assistantText, isRunning, lastAssistantText, messages, onMessagesChange]);
+    let disposed = false;
+    fetch("/api/home/inspirations?limit=12")
+      .then((response) => (response.ok ? response.json() : null))
+      .then((payload: { items?: HomeInspirationPoi[] } | null) => {
+        if (!disposed) setInspirationPois(payload?.items ?? []);
+      })
+      .catch(() => {
+        if (!disposed) setInspirationPois([]);
+      });
+    return () => {
+      disposed = true;
+    };
+  }, []);
 
   useEffect(() => {
-    if (!isRunning && plan) {
-      const timer = window.setTimeout(() => onPlanReady(plan), 360);
-      return () => window.clearTimeout(timer);
+    if (isRunning || !streamConversationId || processedRunIdRef.current === streamRunIdRef.current) {
+      return;
     }
-  }, [isRunning, onPlanReady, plan]);
+    if (!assistantText && !plan) {
+      return;
+    }
+
+    processedRunIdRef.current = streamRunIdRef.current;
+    const completedMessages = assistantText
+      ? [
+          ...streamBaseMessagesRef.current,
+          {
+            id: crypto.randomUUID(),
+            role: "assistant" as const,
+            content: assistantText
+          }
+        ]
+      : streamBaseMessagesRef.current;
+
+    window.setTimeout(() => {
+      onStreamComplete(streamConversationId, completedMessages, plan);
+      setStreamConversationId(null);
+    }, 240);
+  }, [assistantText, isRunning, onStreamComplete, plan, streamConversationId]);
 
   const submit = (goal: string) => {
     const nextMessages: StoredChatMessage[] = [
@@ -65,7 +105,13 @@ export function ChatHome({
         content: goal
       }
     ];
+
     onMessagesChange(nextMessages);
+    streamBaseMessagesRef.current = nextMessages;
+    streamRunIdRef.current = crypto.randomUUID();
+    processedRunIdRef.current = "";
+    setStreamConversationId(conversationId);
+
     void run({
       goal,
       city: "beijing",
@@ -79,27 +125,36 @@ export function ChatHome({
     });
   };
 
+  useEffect(() => {
+    if (!pendingSubmit || isRunning) return;
+    onPendingSubmitConsumed?.();
+    submit(pendingSubmit);
+  }, [pendingSubmit, isRunning, onPendingSubmitConsumed]);
+
+  const visibleInspirations = inspirationPois.length
+    ? Array.from(
+        { length: Math.min(4, inspirationPois.length) },
+        (_, index) => inspirationPois[(inspirationOffset + index) % inspirationPois.length]
+      )
+    : [];
+
   return (
     <div className="chat-home">
-      <ChatSidebar
-        conversationId={conversationId}
-        conversations={conversations}
-        onNewConversation={onNewConversation}
-        onLoadConversation={onLoadConversation}
-      />
-
       <div className="chat-home-main">
         <div className="chat-home-inner">
           <WelcomeHero />
           <div className="chat-workbench">
             <ChatPanelV2
               messages={messages}
-              assistantDraft={isRunning ? assistantText : ""}
-              events={events}
-              isRunning={isRunning}
+              assistantDraft={isCurrentConversationRunning ? assistantText : ""}
+              events={isCurrentConversationRunning ? events : []}
+              isRunning={isCurrentConversationRunning}
               hasPlan={hasPlan}
               onSubmit={submit}
-              onCancel={cancel}
+              onCancel={() => {
+                cancel();
+                setStreamConversationId(null);
+              }}
               onOpenPlans={onOpenPlans}
               onOpenDetail={onOpenDetail}
             />
@@ -107,31 +162,45 @@ export function ChatHome({
               <section>
                 <strong>快速开始</strong>
                 <div className="inspiration-actions">
-                  {["附近推荐", "热门聚会", "今日特色", "收藏地点"].map((item) => (
-                    <button type="button" key={item} onClick={() => submit(item)}>
-                      {item}
-                    </button>
-                  ))}
+                  {quickStartItems.map((item) => {
+                    const Icon = item.icon;
+                    return (
+                      <button type="button" key={item.label} onClick={() => submit(item.prompt)}>
+                        <span className="inspiration-action-icon">
+                          <Icon size={22} />
+                        </span>
+                        <span>{item.label}</span>
+                      </button>
+                    );
+                  })}
                 </div>
               </section>
               <section>
-                <strong>灵感推荐</strong>
-                <button type="button" className="inspiration-route" onClick={() => submit("周末想安排一个轻松的 Citywalk 半日游，预算适中，路线别太绕。")}>
-                  <span>Citywalk 半日游</span>
-                  <small>经典路线 · 适合拍照 · 3 个地点</small>
-                </button>
-                <button type="button" className="inspiration-route" onClick={() => submit("想找亲子室内乐园，再配一个适合孩子的餐厅。")}>
-                  <span>亲子室内乐园</span>
-                  <small>轻松有趣 · 孩子喜欢 · 2-3 个地点</small>
-                </button>
-                <button type="button" className="inspiration-route" onClick={() => submit("和朋友出去吃饭唱歌，预算适中，别太远。")}>
-                  <span>美食聚会之旅</span>
-                  <small>吃饭唱歌 · 朋友局 · 2 个地点</small>
-                </button>
+                <div className="inspiration-section-head">
+                  <strong>灵感推荐</strong>
+                  <button type="button" onClick={() => setInspirationOffset((value) => value + 3)} aria-label="换一批灵感推荐">
+                    <RefreshCw size={16} />
+                  </button>
+                </div>
+                {visibleInspirations.map((poi) => (
+                  <button
+                    type="button"
+                    className="inspiration-poi-card"
+                    key={`${poi.id}-${poi.name}`}
+                    onClick={() => submit(`我想去 ${poi.name}，帮我搭配一个本地生活方案。`)}
+                  >
+                    <img src={poi.image_url} alt={poi.name} loading="lazy" />
+                    <span>
+                      <strong>{poi.name}</strong>
+                      <small>
+                        {poi.tag || poi.tags[0] || "本地生活"} · {poi.duration_text}
+                      </small>
+                    </span>
+                  </button>
+                ))}
               </section>
             </aside>
           </div>
-          <RequirementCards onPick={submit} />
         </div>
       </div>
     </div>

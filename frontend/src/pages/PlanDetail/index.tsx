@@ -1,6 +1,6 @@
-import { ArrowLeft, Map, Route, SlidersHorizontal } from "lucide-react";
+import { ArrowLeft, Clock3, MapPin, WalletCards } from "lucide-react";
 import { useState } from "react";
-import { AppleButton, EmptyState, SegmentedControl } from "../../components/ui";
+import { AppleButton, EmptyState, SoftTag } from "../../components/ui";
 import type { PlanStopView, PlanViewModel } from "../../utils/planViewModel";
 import { BottomActionBar } from "./BottomActionBar";
 import { MapView } from "./MapView";
@@ -14,10 +14,20 @@ interface PlanDetailProps {
   onBackHome: () => void;
   onShare: () => void;
   onPlanUpdate: (plan: PlanViewModel | null) => void;
+  onPreferenceSubmit: (message: string) => void;
 }
 
-export function PlanDetail({ plan, onBack, onBackHome, onShare }: PlanDetailProps) {
-  const [tab, setTab] = useState<"timeline" | "map">("map");
+function compactHighlight(text: string): string {
+  if (text.includes("距离") || text.includes("路程") || text.includes("交通")) return "距离合适";
+  if (text.includes("预算") || text.includes("价格") || text.includes("花费")) return "预算友好";
+  if (text.includes("时间") || text.includes("节奏") || text.includes("不赶")) return "节奏轻松";
+  if (text.includes("室内") || text.includes("天气")) return "室内友好";
+  if (text.includes("餐") || text.includes("吃") || text.includes("美食")) return "餐饮顺路";
+  if (text.includes("朋友") || text.includes("对象") || text.includes("亲子")) return "人群匹配";
+  return text.replace(/[，。；、,.!?！？\s]/g, "").slice(0, 6);
+}
+
+export function PlanDetail({ plan, onBack, onBackHome, onShare, onPreferenceSubmit }: PlanDetailProps) {
   const [activeStopId, setActiveStopId] = useState<string | null>(null);
   const [selectedStop, setSelectedStop] = useState<PlanStopView | null>(null);
   const [modifyOpen, setModifyOpen] = useState(false);
@@ -44,62 +54,94 @@ export function PlanDetail({ plan, onBack, onBackHome, onShare }: PlanDetailProp
     setSelectedStop(stop);
     setActiveStopId(stop.id);
   };
-  const previewStop = selectedStop ?? plan.stops.find((stop) => stop.id === activeStopId) ?? plan.stops[0] ?? null;
 
   return (
     <section className="detail-page page-enter">
-      <header className="page-header detail-header sticky-top">
+      <header className="detail-hero-header">
         <AppleButton type="button" variant="ghost" size="sm" onClick={onBack} aria-label="返回方案总览">
           <ArrowLeft size={18} />
+          返回
         </AppleButton>
-        <div>
-          <span>
-            {plan.durationText} · {plan.budgetText} · {plan.distanceText}
-          </span>
-          <h1>{plan.title}</h1>
+        <div className="detail-title-block">
+          <h2>{plan.title}</h2>
+          <div className="detail-metric-pills" aria-label="行程指标">
+            {plan.durationText ? (
+              <SoftTag tone="blue">
+                <Clock3 size={15} />
+                {plan.durationText}
+              </SoftTag>
+            ) : null}
+            {plan.budgetText && !plan.budgetText.includes("待") ? (
+              <SoftTag tone="mint">
+                <WalletCards size={15} />
+                {plan.budgetText}
+              </SoftTag>
+            ) : null}
+            {plan.distanceText && !plan.distanceText.includes("待") ? (
+              <SoftTag tone="blue">
+                <MapPin size={15} />
+                {plan.distanceText}
+              </SoftTag>
+            ) : null}
+          </div>
         </div>
-        <AppleButton type="button" variant="secondary" onClick={() => openModify()}>
-          <SlidersHorizontal size={17} />
-          调整偏好
-        </AppleButton>
       </header>
 
       {modifyMessage && <div className="soft-notice">{modifyMessage}</div>}
 
-      <div className="detail-shell">
-        <aside className="detail-left">
-          <SegmentedControl
-            label="行程详情视图"
-            value={tab}
-            onChange={setTab}
-            options={[
-              { value: "timeline", label: "时间轴", icon: <Route size={16} /> },
-              { value: "map", label: "地图", icon: <Map size={16} /> }
-            ]}
-          />
+      <div className="detail-layout-v2">
+        <section className="detail-timeline-panel" aria-label="行程时间轴">
+          <div className="detail-panel-title">
+            <span>时间轴</span>
+          </div>
           <TimelineView
             stops={plan.stops}
+            routeSegments={plan.routeSegments}
             selectedStopId={selectedStop?.id ?? null}
             onHoverStop={setActiveStopId}
             onOpenPlace={openPlace}
             onModify={openModify}
           />
-        </aside>
-        <div className="detail-right">
-          {tab === "timeline" ? (
-            <div className="stop-preview-card">
-              <span>当前地点</span>
-              <h2>{previewStop?.title ?? "选择时间轴节点查看详情"}</h2>
-              <p>{previewStop?.reason ?? "悬停或点击左侧时间轴节点，右侧会同步显示地点摘要。"}</p>
-              <div className="stop-preview-meta">
-                <strong>{previewStop?.time ?? "时间待定"}</strong>
-                <small>{previewStop?.traffic ?? plan.routeSummary.transportModesText}</small>
-              </div>
+        </section>
+
+        <aside className="detail-insight-panel" aria-label="地图与方案分析">
+          <MapView plan={plan} activeStopId={activeStopId} selectedStopId={selectedStop?.id ?? null} onSelectStop={openPlace} />
+
+          <section className="detail-highlight-card">
+            <h2>方案亮点</h2>
+            <div className="detail-highlight-tags">
+              {(plan.highlightTags.length ? plan.highlightTags : plan.pros.slice(0, 4).map(compactHighlight)).map((item) => (
+                <SoftTag key={item} tone="mint" title={item}>
+                  {item}
+                </SoftTag>
+              ))}
             </div>
-          ) : (
-            <MapView plan={plan} activeStopId={activeStopId} selectedStopId={selectedStop?.id ?? null} onSelectStop={openPlace} />
-          )}
-        </div>
+          </section>
+
+          <section className="detail-analysis-card">
+            <h2>优缺点分析</h2>
+            {plan.pros.length ? (
+              <>
+                <strong>优势</strong>
+                <ul>
+                  {plan.pros.slice(0, 3).map((item) => (
+                    <li key={item}>{item}</li>
+                  ))}
+                </ul>
+              </>
+            ) : null}
+            {plan.cons.length ? (
+              <>
+                <strong>注意事项</strong>
+                <ul className="is-warning">
+                  {plan.cons.slice(0, 3).map((item) => (
+                    <li key={item}>{item}</li>
+                  ))}
+                </ul>
+              </>
+            ) : null}
+          </section>
+        </aside>
       </div>
 
       <BottomActionBar plan={plan} onBackHome={onBackHome} onShare={onShare} onModify={() => openModify()} />
@@ -109,7 +151,10 @@ export function PlanDetail({ plan, onBack, onBackHome, onShare }: PlanDetailProp
         targetStop={modifyTarget}
         plan={plan}
         onClose={() => setModifyOpen(false)}
-        onApply={(message) => setModifyMessage(`已记录偏好：${message}。当前版本先在页面内保留，后续可接入局部重规划。`)}
+        onApply={(message) => {
+          setModifyMessage(`已提交调整：${message}`);
+          onPreferenceSubmit(message);
+        }}
       />
     </section>
   );

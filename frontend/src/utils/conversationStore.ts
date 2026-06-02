@@ -6,6 +6,12 @@ export interface StoredChatMessage {
   content: string;
 }
 
+export const PLAN_LINK_MESSAGE = "__PLANGO_PLAN_LINK__";
+
+export function isPlanLinkMessage(message: StoredChatMessage) {
+  return message.role === "assistant" && message.content === PLAN_LINK_MESSAGE;
+}
+
 export interface ConversationRecord {
   id: string;
   title: string;
@@ -22,7 +28,7 @@ export function welcomeMessage(): StoredChatMessage {
   return {
     id: "welcome",
     role: "assistant",
-    content: "你好，我是 PlanGo。告诉我出行人数、时间、预算和偏好，我会帮你生成路线、行程和可执行操作。"
+    content: "**Hi，我是 PlanGo 👋**\n\n今天想和谁一起去出行？有什么想法告诉我吧~"
   };
 }
 
@@ -61,7 +67,8 @@ export function setActiveConversationId(id: string) {
   window.localStorage.setItem(ACTIVE_CONVERSATION_KEY, id);
 }
 
-export function upsertConversation(record: ConversationRecord) {
+export function upsertConversation(record: ConversationRecord, options: { activate?: boolean } = {}) {
+  const activate = options.activate ?? true;
   const records = loadConversations();
   const index = records.findIndex((item) => item.id === record.id);
   const nextRecord = {
@@ -74,8 +81,19 @@ export function upsertConversation(record: ConversationRecord) {
       ? records.map((item) => (item.id === record.id ? nextRecord : item))
       : [nextRecord, ...records];
   saveConversations(nextRecords.slice(0, 20));
-  setActiveConversationId(nextRecord.id);
+  if (activate) {
+    setActiveConversationId(nextRecord.id);
+  }
   return nextRecord;
+}
+
+export function deleteConversation(conversationId: string) {
+  const nextRecords = loadConversations().filter((record) => record.id !== conversationId);
+  saveConversations(nextRecords);
+  if (getActiveConversationId() === conversationId) {
+    setActiveConversationId(nextRecords[0]?.id ?? "");
+  }
+  return nextRecords;
 }
 
 export function loadOrCreateActiveConversation() {

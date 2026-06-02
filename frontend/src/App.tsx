@@ -1,13 +1,18 @@
 import { useEffect, useMemo, useState } from "react";
 import { ChatHome } from "./pages/ChatHome";
+import { ChatSidebar } from "./pages/ChatHome/ChatSidebar";
 import { PlanDetail } from "./pages/PlanDetail";
 import { PlanOverview } from "./pages/PlanOverview";
 import { SharePage } from "./pages/SharePage";
 import type { Plan, PlanAlternative } from "./types/agent";
 import {
   createEmptyConversation,
+  deleteConversation,
+  isPlanLinkMessage,
   loadConversations,
   loadOrCreateActiveConversation,
+  PLAN_LINK_MESSAGE,
+  saveConversations,
   setActiveConversationId,
   upsertConversation,
   type ConversationRecord,
@@ -40,28 +45,43 @@ function alternativeToPlan(plan: Plan, alternative: PlanAlternative): Plan {
       cover_image: alternative.image_url ?? plan.recommendation?.cover_image ?? null
     },
     route: alternative.route ?? plan.route,
-    rationale: [
-      alternative.recommendation_reason || alternative.description || "这是一个地点组合不同的备选方案。",
-      ...(alternative.pros ?? [])
-    ].filter(Boolean),
+    highlight_tags: alternative.highlight_tags?.length ? alternative.highlight_tags : plan.highlight_tags,
+    rationale: [alternative.recommendation_reason || alternative.description || "这是一个地点组合不同的备选方案。", ...(alternative.pros ?? [])].filter(
+      Boolean
+    ),
     risk_flags: alternative.cons ?? plan.risk_flags
   };
 }
 
 function badgeFor(index: number) {
-  if (index === 0) return "主推方案";
-  if (index === 1) return "更省心";
-  return "不同路线";
+  if (index === 0) return "方案一";
+  if (index === 1) return "方案二";
+  return "方案三";
+}
+
+function ensurePlanLinkMessage(messages: StoredChatMessage[], plan: Plan | null) {
+  if (!plan || messages.some(isPlanLinkMessage)) {
+    return messages;
+  }
+  return [
+    ...messages,
+    {
+      id: `plan-link-${plan.id ?? plan.trace_id ?? crypto.randomUUID()}`,
+      role: "assistant" as const,
+      content: PLAN_LINK_MESSAGE
+    }
+  ];
 }
 
 export function App() {
   const [route, setRoute] = useState<AppRoute>(() => normalizePath(window.location.pathname));
   const [activeConversation, setActiveConversation] = useState<ConversationRecord>(() => loadOrCreateActiveConversation());
   const [conversations, setConversations] = useState<ConversationRecord[]>(() => loadConversations());
-  const [messages, setMessages] = useState<StoredChatMessage[]>(() => activeConversation.messages);
+  const [messages, setMessages] = useState<StoredChatMessage[]>(() => ensurePlanLinkMessage(activeConversation.messages, activeConversation.plan));
   const [latestPlan, setLatestPlan] = useState<Plan | null>(() => activeConversation.plan);
   const [selectedPlan, setSelectedPlan] = useState<PlanViewModel | null>(null);
   const [feedbackMessage, setFeedbackMessage] = useState("");
+  const [pendingChatSubmit, setPendingChatSubmit] = useState("");
 
   useEffect(() => {
     const onPopState = () => setRoute(normalizePath(window.location.pathname));
@@ -92,6 +112,30 @@ export function App() {
     persistConversation(nextMessages);
   };
 
+  const handleStreamComplete = (conversationId: string, nextMessages: StoredChatMessage[], nextPlan: Plan | null) => {
+    const records = loadConversations();
+    const target = records.find((item) => item.id === conversationId);
+    if (!target) return;
+
+    const messagesWithPlanLink = nextPlan ? ensurePlanLinkMessage(nextMessages, nextPlan) : nextMessages;
+    const saved = upsertConversation(
+      {
+        ...target,
+        messages: messagesWithPlanLink,
+        plan: nextPlan ?? target.plan
+      },
+      { activate: conversationId === activeConversation.id }
+    );
+
+    setConversations(loadConversations());
+    if (conversationId === activeConversation.id) {
+      setActiveConversation(saved);
+      setMessages(messagesWithPlanLink);
+      setLatestPlan(saved.plan);
+      setSelectedPlan(saved.plan ? planToViewModel(saved.plan, badgeFor(0), 0) : null);
+    }
+  };
+
   const planOptions = useMemo(() => {
     if (!latestPlan) {
       return [];
@@ -116,7 +160,9 @@ export function App() {
     setLatestPlan(plan);
     const first = planToViewModel(plan, badgeFor(0), 0);
     setSelectedPlan(first);
-    persistConversation(messages, plan);
+    const nextMessages = ensurePlanLinkMessage(messages, plan);
+    setMessages(nextMessages);
+    persistConversation(nextMessages, plan);
   };
 
   const handleSelectPlan = (plan: PlanViewModel) => {
@@ -141,61 +187,100 @@ export function App() {
     setActiveConversationId(record.id);
     setActiveConversation(record);
     setConversations(loadConversations());
-    setMessages(record.messages);
+    const nextMessages = ensurePlanLinkMessage(record.messages, record.plan);
+    setMessages(nextMessages);
     setLatestPlan(record.plan);
     setSelectedPlan(record.plan ? planToViewModel(record.plan, badgeFor(0), 0) : null);
     setFeedbackMessage("");
     navigate("/");
   };
 
+  const handleDeleteConversation = (conversationId: string) => {
+    const wasActive = conversationId === activeConversation.id;
+    const remaining = deleteConversation(conversationId);
+
+    if (!wasActive) {
+      setConversations(remaining);
+      return;
+    }
+
+    const nextActive = remaining[0] ?? upsertConversation(createEmptyConversation());
+    if (!remaining.length) {
+      saveConversations([nextActive]);
+    }
+    setActiveConversationId(nextActive.id);
+    setActiveConversation(nextActive);
+    setConversations(loadConversations());
+    setMessages(ensurePlanLinkMessage(nextActive.messages, nextActive.plan));
+    setLatestPlan(nextActive.plan);
+    setSelectedPlan(nextActive.plan ? planToViewModel(nextActive.plan, badgeFor(0), 0) : null);
+    setFeedbackMessage("");
+    navigate("/");
+  };
+
+  const handlePreferenceSubmit = (message: string) => {
+    setPendingChatSubmit(message);
+    navigate("/");
+  };
+
   return (
     <main className="plango-app">
-      {route === "/" && (
-        <ChatHome
-          conversationId={activeConversation.id}
-          messages={messages}
-          conversations={conversations}
-          hasPlan={Boolean(latestPlan)}
-          onMessagesChange={handleMessagesChange}
-          onPlanReady={handlePlanReady}
-          onOpenPlans={() => navigate("/plan")}
-          onOpenDetail={() => navigate("/plan/detail")}
-          onNewConversation={handleNewConversation}
-          onLoadConversation={handleLoadConversation}
-        />
-      )}
+      <ChatSidebar
+        conversationId={activeConversation.id}
+        conversations={conversations}
+        onNewConversation={handleNewConversation}
+        onLoadConversation={handleLoadConversation}
+        onDeleteConversation={handleDeleteConversation}
+      />
+      <div className="app-content-with-sidebar">
+        {route === "/" && (
+          <ChatHome
+            conversationId={activeConversation.id}
+            messages={messages}
+            hasPlan={Boolean(latestPlan)}
+            onMessagesChange={handleMessagesChange}
+            onPlanReady={handlePlanReady}
+            onOpenPlans={() => navigate("/plan")}
+            onOpenDetail={() => navigate("/plan/detail")}
+            onStreamComplete={handleStreamComplete}
+            pendingSubmit={pendingChatSubmit}
+            onPendingSubmitConsumed={() => setPendingChatSubmit("")}
+          />
+        )}
 
-      {route === "/plan" && (
-        <PlanOverview
-          plans={planOptions}
-          onBackHome={() => navigate("/")}
-          onOpenDetail={handleSelectPlan}
-          onShare={(plan) => {
-            setSelectedPlan(plan);
-            navigate("/share");
-          }}
-        />
-      )}
+        {route === "/plan" && (
+          <PlanOverview
+            plans={planOptions}
+            onBackHome={() => navigate("/")}
+            onOpenDetail={handleSelectPlan}
+            onShare={(plan) => {
+              setSelectedPlan(plan);
+              navigate("/share");
+            }}
+          />
+        )}
 
-      {route === "/plan/detail" && (
-        <PlanDetail
-          plan={selectedPlan}
-          onBack={() => navigate("/plan")}
-          onBackHome={() => navigate("/")}
-          onShare={() => navigate("/share")}
-          onPlanUpdate={setSelectedPlan}
-        />
-      )}
+        {route === "/plan/detail" && (
+          <PlanDetail
+            plan={selectedPlan}
+            onBack={() => navigate("/plan")}
+            onBackHome={() => navigate("/")}
+            onShare={() => navigate("/share")}
+            onPlanUpdate={setSelectedPlan}
+            onPreferenceSubmit={handlePreferenceSubmit}
+          />
+        )}
 
-      {route === "/share" && (
-        <SharePage
-          plan={selectedPlan ?? planOptions[0] ?? null}
-          feedbackMessage={feedbackMessage}
-          onFeedback={setFeedbackMessage}
-          onBack={() => navigate(selectedPlan ? "/plan/detail" : "/plan")}
-          onBackHome={() => navigate("/")}
-        />
-      )}
+        {route === "/share" && (
+          <SharePage
+            plan={selectedPlan ?? planOptions[0] ?? null}
+            feedbackMessage={feedbackMessage}
+            onFeedback={setFeedbackMessage}
+            onBack={() => navigate(selectedPlan ? "/plan/detail" : "/plan")}
+            onBackHome={() => navigate("/")}
+          />
+        )}
+      </div>
     </main>
   );
 }

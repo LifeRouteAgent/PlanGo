@@ -31,8 +31,8 @@ export function PlanOverview({ plans, onBackHome, onOpenDetail, onShare }: PlanO
           <ArrowLeft size={18} />
         </AppleButton>
         <div>
-          <span>PlanGo 为你生成了 {plans.length} 个不同地点组合</span>
-          <h1>选择一条最想出发的路线</h1>
+          {/* <span>PlanGo 为你生成了 {plans.length} 个不同地点组合</span> */}
+          <h2>选择一条最想出发的路线</h2>
         </div>
       </header>
 

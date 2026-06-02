@@ -143,6 +143,7 @@ class ResponsePlanEnrichmentOutput(BaseModel):
     id: str
     title: str = ""
     recommendation_reason: str = ""
+    highlight_tags: list[str] = Field(default_factory=list)
     pros: list[str] = Field(default_factory=list)
     cons: list[str] = Field(default_factory=list)
     plan_actions: list[ResponsePlanActionOutput] = Field(default_factory=list)

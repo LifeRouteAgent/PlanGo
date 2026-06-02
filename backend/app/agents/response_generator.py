@@ -219,6 +219,7 @@ def _llm_plan_enrichment(
                             "plans": [{
                                 "id": "必须等于输入 plan id",
                                 "recommendation_reason": "一句话说明这个方案适合谁",
+                                "highlight_tags": ["2-6 个字的短亮点标签，最多4个，不要重复"],
                                 "pros": ["优点1", "优点2"],
                                 "cons": ["缺点1", "缺点2"],
                                 "plan_actions": [{
@@ -288,6 +289,7 @@ def _fallback_enrich_plan(plan: dict[str, Any], index: int) -> dict[str, Any]:
             f"总时长约 {total_duration} 分钟，方便判断是否塞得进时间窗口。",
             f"交通约 {route_minutes} 分钟，动线成本可量化。",
         ],
+        "highlight_tags": ["节奏清晰", "路线可量化", "预算可估"],
         "cons": [
             f"预算估算约 {budget} 元，实际价格仍建议到店前确认。",
             "热门地点可能需要排队或预约。" if issue_codes else "营业和排队信息仍建议出发前复核。",
@@ -339,6 +341,20 @@ def _merge_plan_enrichment(
     pros = extra.get("pros")
     if isinstance(pros, list) and pros:
         merged["pros"] = [str(item).strip() for item in pros[:3] if str(item).strip()]
+
+    highlight_tags = extra.get("highlight_tags")
+    if isinstance(highlight_tags, list) and highlight_tags:
+        seen_tags: set[str] = set()
+        safe_tags: list[str] = []
+        for item in highlight_tags:
+            tag = str(item).strip()[:6]
+            if tag and tag not in seen_tags:
+                seen_tags.add(tag)
+                safe_tags.append(tag)
+            if len(safe_tags) >= 4:
+                break
+        if safe_tags:
+            merged["highlight_tags"] = safe_tags
 
     cons = extra.get("cons")
     if isinstance(cons, list) and cons:

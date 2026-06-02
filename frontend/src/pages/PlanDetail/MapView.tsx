@@ -1,6 +1,6 @@
 import { AmapRouteCard } from "../../components/AmapRouteCard";
-import { RouteBottomSheet } from "../../components/ui";
 import type { PlanStopView, PlanViewModel } from "../../utils/planViewModel";
+import { RouteInlineSummary } from "./RouteInlineSummary";
 
 interface MapViewProps {
   plan: PlanViewModel;
@@ -20,10 +20,10 @@ export function MapView({ plan, activeStopId, selectedStopId, onSelectStop }: Ma
         activeStopId={activeStopId ?? selectedStopId ?? undefined}
         onStopSelect={(stopId) => {
           const stop = plan.stops.find((item) => item.id === stopId);
-          if (stop) onSelectStop(stop);
+            if (stop) onSelectStop(stop);
         }}
+        footer={<RouteInlineSummary plan={plan} activeStop={activeStop} />}
       />
-      <RouteBottomSheet plan={plan} activeStop={activeStop} />
     </section>
   );
 }

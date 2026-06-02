@@ -1,4 +1,5 @@
 import { MapPinned, Maximize2 } from "lucide-react";
+import type { ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { loadAmap } from "../lib/amap";
 import type { Plan, RouteSegment } from "../types/agent";
@@ -9,6 +10,7 @@ interface AmapRouteCardProps {
   activeStopId?: string;
   onStopSelect?: (stopId: string) => void;
   onOpenFullMap?: () => void;
+  footer?: ReactNode;
 }
 
 type AMapAny = any;
@@ -50,7 +52,7 @@ function markerTimeText(start?: string, end?: string) {
   return "时间待定";
 }
 
-export function AmapRouteCard({ plan, large = false, activeStopId, onStopSelect, onOpenFullMap }: AmapRouteCardProps) {
+export function AmapRouteCard({ plan, large = false, activeStopId, onStopSelect, onOpenFullMap, footer }: AmapRouteCardProps) {
   const mapRef = useRef<HTMLDivElement | null>(null);
   const mapInstanceRef = useRef<AMapAny>(null);
   const [status, setStatus] = useState<string | null>(null);
@@ -172,7 +174,7 @@ export function AmapRouteCard({ plan, large = false, activeStopId, onStopSelect,
       <div className="map-card-head">
         <div>
           <span>地图路线</span>
-          <h2>真实地图与节点时间</h2>
+          {/* <h2>真实地图与节点时间</h2> */}
         </div>
         {onOpenFullMap && (
           <button type="button" className="apple-button apple-button-ghost apple-button-sm" onClick={onOpenFullMap}>
@@ -197,6 +199,7 @@ export function AmapRouteCard({ plan, large = false, activeStopId, onStopSelect,
           </div>
         )}
       </div>
+      {footer}
     </article>
   );
 }

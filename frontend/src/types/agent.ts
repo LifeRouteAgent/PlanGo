@@ -32,6 +32,7 @@ export interface UserIntent {
 
 export interface StepDetail {
   image_url: string | null;
+  images?: string[];
   tags: string[];
   description: string;
   traffic: string;
@@ -98,6 +99,7 @@ export interface PlanAlternative {
   recommendation_reason?: string;
   pros?: string[];
   cons?: string[];
+  highlight_tags?: string[];
 }
 
 export interface WeatherHour {
@@ -130,6 +132,7 @@ export interface Plan {
   steps: PlanStep[];
   actions: BookingAction[];
   rationale: string[];
+  highlight_tags?: string[];
   share_message: string;
   risk_flags: string[];
   city?: {

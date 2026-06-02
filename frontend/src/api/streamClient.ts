@@ -83,6 +83,7 @@ function imageFromPoi(poi: Record<string, unknown>) {
 
 function buildStep(item: Record<string, unknown>, index: number): PlanStep {
   const poi = getItemPoi(item);
+  const imageList = asArray<string>(poi.images).filter(Boolean);
   const slotType = asString(item.slot_type ?? item.type ?? poi.category, "activity");
   const category = asString(poi.category ?? item.category, "activity");
   const title = asString(poi.name ?? item.name ?? item.title, `第 ${index + 1} 站`);
@@ -107,6 +108,7 @@ function buildStep(item: Record<string, unknown>, index: number): PlanStep {
     metadata: { slot_type: slotType, category, rating: poi.rating, raw: item },
     detail: {
       image_url: imageFromPoi(poi) || null,
+      images: imageList,
       tags: asArray<string>(poi.tags).slice(0, 5),
       description: reason,
       traffic: asString(item.travel_summary, "交通耗时由高德路线或系统估算。"),
@@ -216,6 +218,7 @@ function buildPlanFromSource(
       failure_reason: null
     })),
     rationale: [fitSummary, ...asArray<string>(source.pros).slice(0, 2), ...steps.map((step) => step.reason).slice(0, 2)].filter(Boolean),
+    highlight_tags: asArray<string>(source.highlight_tags).slice(0, 4),
     share_message: asString(response.response_text, `${title}：${fitSummary}`),
     risk_flags: asArray<Record<string, unknown>>(response.errors).map((item) => asString(item.message ?? item.code, "存在待确认风险")),
     city: { code: "beijing", name: "北京" },
@@ -224,7 +227,7 @@ function buildPlanFromSource(
       rating: asNumber(source.score ?? source.plan_score, 4.7),
       distance_km: asNumber(source.total_distance_km ?? routeSegments[0]?.distance_km, 0),
       tags,
-      cover_image: firstStep?.detail?.image_url ?? null
+      cover_image: firstStep?.detail?.image_url ?? firstStep?.detail?.images?.[0] ?? null
     },
     route: {
       provider: routeSegments.some((segment) => asString(segment.source).startsWith("amap")) ? "高德地图" : "LifeRouteAgent",
@@ -244,12 +247,14 @@ function buildPlanFromSource(
         duration_min: asNumber(item.total_duration_minutes, 0),
         total_cost: asNumber(item.estimated_budget, 0),
         tags: asArray<string>(item.tags).slice(0, 4),
+        image_url: altPlan.steps.find((step) => step.detail?.image_url || step.detail?.images?.[0])?.detail?.image_url ?? altPlan.steps.find((step) => step.detail?.images?.[0])?.detail?.images?.[0] ?? null,
         description: asString(asRecord(item.fit_summary).summary ?? item.recommendation_reason, "可作为当前方案的备选。"),
         steps: altPlan.steps,
         route: altPlan.route,
         recommendation_reason: asString(item.recommendation_reason, ""),
         pros: asArray<string>(item.pros),
-        cons: asArray<string>(item.cons)
+        cons: asArray<string>(item.cons),
+        highlight_tags: asArray<string>(item.highlight_tags).slice(0, 4)
       };
     }) : [],
     weather: buildWeather(source, response),

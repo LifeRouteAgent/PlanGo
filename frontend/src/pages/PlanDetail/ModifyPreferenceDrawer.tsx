@@ -20,6 +20,11 @@ const groups = [
   { title: "环境", options: ["换成室内", "少排队", "适合拍照"] }
 ];
 
+function stopScope(stop: PlanStopView | null) {
+  if (!stop) return "方案";
+  return `第${stop.order}个地点`;
+}
+
 export function ModifyPreferenceDrawer({ open, targetStop, plan, onClose, onApply }: ModifyPreferenceDrawerProps) {
   const [selected, setSelected] = useState<string[]>([]);
   if (!open) return null;
@@ -29,8 +34,9 @@ export function ModifyPreferenceDrawer({ open, targetStop, plan, onClose, onAppl
   };
 
   const apply = () => {
-    const scope = targetStop ? `把「${targetStop.title}」这一站` : `把「${plan?.title ?? "当前方案"}」`;
-    onApply(`${scope}${selected.join("，") || "调整一下"}`);
+    const scope = stopScope(targetStop);
+    const planTitle = plan?.title ? `（${plan.title}）` : "";
+    onApply(`${scope}${planTitle}${selected.join("，") || "调整一下"}`);
     setSelected([]);
     onClose();
   };
@@ -40,7 +46,6 @@ export function ModifyPreferenceDrawer({ open, targetStop, plan, onClose, onAppl
       <div className="drawer-panel preference-drawer">
         <header>
           <div>
-            <span>调整偏好</span>
             <h2>{targetStop ? `调整 ${targetStop.title}` : "调整当前方案"}</h2>
           </div>
           <AppleButton type="button" variant="ghost" size="sm" onClick={onClose} aria-label="关闭调整偏好">
