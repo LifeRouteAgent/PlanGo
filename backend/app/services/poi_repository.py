@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from collections.abc import Iterable
 from typing import Any
 
@@ -27,7 +28,8 @@ CATEGORY_QUERY_MAP: dict[str, str] = {
         SELECT source_id AS id, name, 'poi_restaurant' AS category,
                COALESCE(NULLIF(biz_category, ''), 'restaurant') AS subcategory,
                lat, lng AS lon, address, rating, cost AS price,
-               open_time, cuisine_tag AS tag_text
+               open_time, cuisine_tag AS tag_text,
+               head_image AS image_url, photos AS images
         FROM poi_restaurant
         WHERE name <> '' AND lat IS NOT NULL AND lng IS NOT NULL
         ORDER BY COALESCE(rating, 0) DESC, COALESCE(favorite_num, 0) DESC
@@ -39,7 +41,8 @@ CATEGORY_QUERY_MAP: dict[str, str] = {
         SELECT CAST(activity_id AS CHAR) AS id, title AS name, 'poi_activity' AS category,
                'activity' AS subcategory, location, address_desc AS address,
                NULL AS rating, price, available_date AS open_time,
-               subtitle AS tag_text
+               subtitle AS tag_text,
+               NULL AS image_url, images AS images
         FROM poi_activities
         WHERE title <> '' AND location IS NOT NULL AND location <> ''
         ORDER BY updated_time DESC
@@ -51,7 +54,8 @@ CATEGORY_QUERY_MAP: dict[str, str] = {
         SELECT CAST(id AS CHAR) AS id, name, 'poi_attraction' AS category,
                'attraction' AS subcategory, lat, lng AS lon, address,
                score AS rating, NULL AS price, JSON_EXTRACT(open_time, '$') AS open_time,
-               tags AS tag_text
+               tags AS tag_text,
+               head_image AS image_url, NULL AS images
         FROM poi_attractions
         WHERE name <> '' AND lat IS NOT NULL AND lng IS NOT NULL
         ORDER BY COALESCE(score, 0) DESC, COALESCE(hot_score, 0) DESC
@@ -63,7 +67,8 @@ CATEGORY_QUERY_MAP: dict[str, str] = {
         SELECT source_id AS id, name, 'poi_shopping' AS category,
                COALESCE(NULLIF(categories, ''), 'shopping') AS subcategory,
                lat, lng AS lon, address, comment_score AS rating, NULL AS price,
-               open_time_tips AS open_time, tags AS tag_text
+               open_time_tips AS open_time, tags AS tag_text,
+               head_image AS image_url, images AS images
         FROM poi_shoppings
         WHERE name <> '' AND lat IS NOT NULL AND lng IS NOT NULL
         ORDER BY COALESCE(comment_score, 0) DESC, COALESCE(comment_num, 0) DESC
@@ -75,7 +80,8 @@ CATEGORY_QUERY_MAP: dict[str, str] = {
         SELECT source_id AS id, name, 'poi_fitness' AS category,
                COALESCE(NULLIF(fitness_tag, ''), 'fitness') AS subcategory,
                lat, lng AS lon, address, rating, cost AS price,
-               open_time, fitness_tag AS tag_text
+               open_time, fitness_tag AS tag_text,
+               head_image AS image_url, photos AS images
         FROM poi_fitness
         WHERE name <> '' AND lat IS NOT NULL AND lng IS NOT NULL
         ORDER BY COALESCE(rating, 0) DESC, COALESCE(favorite_num, 0) DESC
@@ -87,7 +93,8 @@ CATEGORY_QUERY_MAP: dict[str, str] = {
         SELECT source_id AS id, name, 'poi_entertainment' AS category,
                COALESCE(NULLIF(entertainment_type, ''), 'entertainment') AS subcategory,
                lat, lng AS lon, address, rating, cost AS price,
-               open_time, entertainment_type AS tag_text
+               open_time, entertainment_type AS tag_text,
+               head_image AS image_url, photos AS images
         FROM poi_entertainment
         WHERE name <> '' AND lat IS NOT NULL AND lng IS NOT NULL
         ORDER BY COALESCE(rating, 0) DESC, COALESCE(groupbuy_num, 0) DESC
@@ -99,7 +106,8 @@ CATEGORY_QUERY_MAP: dict[str, str] = {
         SELECT source_id AS id, name, 'poi_beauty' AS category,
                COALESCE(NULLIF(beauty_type, ''), 'beauty') AS subcategory,
                lat, lng AS lon, address, rating, cost AS price,
-               open_time, COALESCE(service_tag, beauty_type) AS tag_text
+               open_time, COALESCE(service_tag, beauty_type) AS tag_text,
+               head_image AS image_url, photos AS images
         FROM poi_beauty
         WHERE name <> '' AND lat IS NOT NULL AND lng IS NOT NULL
         ORDER BY COALESCE(rating, 0) DESC, COALESCE(favorite_num, 0) DESC
@@ -114,7 +122,8 @@ NAME_QUERY_MAP: dict[str, str] = {
         SELECT source_id AS id, name, 'poi_restaurant' AS category,
                COALESCE(NULLIF(biz_category, ''), 'restaurant') AS subcategory,
                lat, lng AS lon, address, rating, cost AS price,
-               open_time, cuisine_tag AS tag_text
+               open_time, cuisine_tag AS tag_text,
+               head_image AS image_url, photos AS images
         FROM poi_restaurant
         WHERE name <> '' AND lat IS NOT NULL AND lng IS NOT NULL AND name LIKE %(keyword)s
         ORDER BY COALESCE(rating, 0) DESC, COALESCE(favorite_num, 0) DESC
@@ -126,7 +135,8 @@ NAME_QUERY_MAP: dict[str, str] = {
         SELECT CAST(activity_id AS CHAR) AS id, title AS name, 'poi_activity' AS category,
                'activity' AS subcategory, location, address_desc AS address,
                NULL AS rating, price, available_date AS open_time,
-               subtitle AS tag_text
+               subtitle AS tag_text,
+               NULL AS image_url, images AS images
         FROM poi_activities
         WHERE title <> '' AND location IS NOT NULL AND location <> '' AND title LIKE %(keyword)s
         ORDER BY updated_time DESC
@@ -138,7 +148,8 @@ NAME_QUERY_MAP: dict[str, str] = {
         SELECT CAST(id AS CHAR) AS id, name, 'poi_attraction' AS category,
                'attraction' AS subcategory, lat, lng AS lon, address,
                score AS rating, NULL AS price, JSON_EXTRACT(open_time, '$') AS open_time,
-               tags AS tag_text
+               tags AS tag_text,
+               head_image AS image_url, NULL AS images
         FROM poi_attractions
         WHERE name <> '' AND lat IS NOT NULL AND lng IS NOT NULL AND name LIKE %(keyword)s
         ORDER BY
@@ -153,7 +164,8 @@ NAME_QUERY_MAP: dict[str, str] = {
         SELECT source_id AS id, name, 'poi_shopping' AS category,
                COALESCE(NULLIF(categories, ''), 'shopping') AS subcategory,
                lat, lng AS lon, address, comment_score AS rating, NULL AS price,
-               open_time_tips AS open_time, tags AS tag_text
+               open_time_tips AS open_time, tags AS tag_text,
+               head_image AS image_url, images AS images
         FROM poi_shoppings
         WHERE name <> '' AND lat IS NOT NULL AND lng IS NOT NULL AND name LIKE %(keyword)s
         ORDER BY COALESCE(comment_score, 0) DESC, COALESCE(comment_num, 0) DESC
@@ -165,7 +177,8 @@ NAME_QUERY_MAP: dict[str, str] = {
         SELECT source_id AS id, name, 'poi_fitness' AS category,
                COALESCE(NULLIF(fitness_tag, ''), 'fitness') AS subcategory,
                lat, lng AS lon, address, rating, cost AS price,
-               open_time, fitness_tag AS tag_text
+               open_time, fitness_tag AS tag_text,
+               head_image AS image_url, photos AS images
         FROM poi_fitness
         WHERE name <> '' AND lat IS NOT NULL AND lng IS NOT NULL AND name LIKE %(keyword)s
         ORDER BY COALESCE(rating, 0) DESC, COALESCE(favorite_num, 0) DESC
@@ -177,7 +190,8 @@ NAME_QUERY_MAP: dict[str, str] = {
         SELECT source_id AS id, name, 'poi_entertainment' AS category,
                COALESCE(NULLIF(entertainment_type, ''), 'entertainment') AS subcategory,
                lat, lng AS lon, address, rating, cost AS price,
-               open_time, entertainment_type AS tag_text
+               open_time, entertainment_type AS tag_text,
+               head_image AS image_url, photos AS images
         FROM poi_entertainment
         WHERE name <> '' AND lat IS NOT NULL AND lng IS NOT NULL AND name LIKE %(keyword)s
         ORDER BY COALESCE(rating, 0) DESC, COALESCE(groupbuy_num, 0) DESC
@@ -189,7 +203,8 @@ NAME_QUERY_MAP: dict[str, str] = {
         SELECT source_id AS id, name, 'poi_beauty' AS category,
                COALESCE(NULLIF(beauty_type, ''), 'beauty') AS subcategory,
                lat, lng AS lon, address, rating, cost AS price,
-               open_time, COALESCE(service_tag, beauty_type) AS tag_text
+               open_time, COALESCE(service_tag, beauty_type) AS tag_text,
+               head_image AS image_url, photos AS images
         FROM poi_beauty
         WHERE name <> '' AND lat IS NOT NULL AND lng IS NOT NULL AND name LIKE %(keyword)s
         ORDER BY COALESCE(rating, 0) DESC, COALESCE(favorite_num, 0) DESC
@@ -402,6 +417,12 @@ class PoiRepository:
         price = self._safe_float(row.get("price"), default=0)
         if price > 0:
             record["avg_price"] = price
+        images = self._split_images(row.get("images"))
+        image_url = self._first_image(row.get("image_url")) or (images[0] if images else "")
+        if image_url:
+            record["image_url"] = image_url
+        if images:
+            record["images"] = images
         return record
 
     def _parse_coordinates(self, row: dict[str, Any]) -> tuple[float, float]:
@@ -422,6 +443,64 @@ class PoiRepository:
         for separator in ("|", "，", ",", "、", ";"):
             text = text.replace(separator, " ")
         return [item.strip() for item in text.split() if item.strip()]
+
+    def _first_image(self, value: Any) -> str:
+        """从数据库图片字段中取第一张可展示图片。"""
+
+        images = self._split_images(value)
+        return images[0] if images else ""
+
+    def _split_images(self, value: Any) -> list[str]:
+        """兼容 URL、JSON 数组、对象数组和分隔字符串形式的图片字段。
+
+        数据库里不同 POI 表的图片字段来源不同：有的表是 `head_image` 单图，
+        有的表是 `photos/images` 多图。Collector 在这里统一成前端可直接消费的
+        `images: list[str]`，方案卡片再从行程 POI 中顺序选择第一张可用图做头图。
+        """
+
+        collected: list[str] = []
+
+        def add_image(item: Any) -> None:
+            if not item:
+                return
+            if isinstance(item, str):
+                text = item.strip().strip('"').strip("'")
+                if text:
+                    collected.append(text)
+                return
+            if isinstance(item, dict):
+                for key in ("url", "image", "image_url", "photo", "pic", "src", "cover", "head_image"):
+                    add_image(item.get(key))
+                return
+            if isinstance(item, list | tuple):
+                for child in item:
+                    add_image(child)
+
+        if isinstance(value, list | tuple | dict):
+            add_image(value)
+        elif value:
+            text = str(value).strip()
+            parsed = None
+            if text.startswith("[") or text.startswith("{"):
+                try:
+                    parsed = json.loads(text)
+                except (TypeError, ValueError, json.JSONDecodeError):
+                    parsed = None
+            if parsed is not None:
+                add_image(parsed)
+            else:
+                for separator in ("|", "，", ";", "\n", "\r"):
+                    text = text.replace(separator, ",")
+                for part in text.split(","):
+                    add_image(part)
+
+        unique: list[str] = []
+        seen: set[str] = set()
+        for image in collected:
+            if image not in seen:
+                unique.append(image)
+                seen.add(image)
+        return unique
 
     def _price_level(self, value: Any) -> str:
         """把价格映射为前端和 Skill 都能理解的粗粒度价格等级。"""

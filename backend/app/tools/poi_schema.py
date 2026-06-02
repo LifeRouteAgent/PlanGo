@@ -83,7 +83,7 @@ def recommend_poi(
 
     rating = float(poi.get("rating", 0) or 0)
     normalized_scene_fit = max(0.0, min(1.0, scene_fit))
-    return {
+    record: RecommendedPoiRecord = {
         "id": str(poi["id"]),
         "name": str(poi["name"]),
         "category": str(poi["category"]),
@@ -108,6 +108,13 @@ def recommend_poi(
         "must_include": bool(poi.get("must_include")),
         "must_keyword": str(poi.get("must_keyword", "")),
     }
+    image_url = str(poi.get("image_url") or "")
+    images = list(poi.get("images") or [])
+    if image_url:
+        record["image_url"] = image_url
+    if images:
+        record["images"] = images
+    return record
 
 
 def price_level_budget_fit(price_level: str, per_person_budget: float | None) -> str:

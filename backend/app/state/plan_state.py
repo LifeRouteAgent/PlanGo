@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Annotated, Any, TypedDict
+from typing import Annotated, Any, NotRequired, TypedDict
 
 
 def merge_dicts(left: dict[str, Any] | None, right: dict[str, Any] | None) -> dict[str, Any]:
@@ -134,6 +134,9 @@ class PoiRecord(TypedDict):
     price_level: str
     open_status: str
     tags: list[str]
+    avg_price: NotRequired[float]
+    image_url: NotRequired[str]
+    images: NotRequired[list[str]]
 
 
 class RecommendedPoiRecord(PoiRecord):
