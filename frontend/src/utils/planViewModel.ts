@@ -176,6 +176,14 @@ function routeSummary(plan: Plan, stops: PlanStopView[], distance: string): Plan
   };
 }
 
+function fallbackTitleFromStops(stops: PlanStopView[]) {
+  const names = stops.map((stop) => stop.title).filter(Boolean);
+  if (names.length >= 2) {
+    return `${names[0]}与${names[1]}`;
+  }
+  return names[0] || "本地生活方案";
+}
+
 export function planToViewModel(plan: Plan, badge = "推荐", indexHint = 0): PlanViewModel {
   const stops = plan.steps.map(stepToStop);
   const distance = distanceText(plan);
@@ -193,7 +201,7 @@ export function planToViewModel(plan: Plan, badge = "推荐", indexHint = 0): Pl
     id: plan.id || "plan-main",
     badge,
     styleTag: styleTagFromBadge(badge, indexHint),
-    title: titleFromPlan(plan, stops, indexHint),
+    title: plan.recommendation?.title || fallbackTitleFromStops(stops),
     audience: scenarioText(plan),
     durationText: duration,
     budgetText: budget,
@@ -202,9 +210,9 @@ export function planToViewModel(plan: Plan, badge = "推荐", indexHint = 0): Pl
     pros: pros.length ? pros : ["地点组合紧凑", "路线和时间已做可执行性校验"],
     cons: cons.length ? cons : ["部分营业或预约信息建议出发前再次确认"],
     metrics: [
-      { label: "时长", value: duration, hint: "含停留与交通" },
-      { label: "花费", value: budget, hint: "按当前候选估算" },
-      { label: "节点", value: `${stops.length}`, hint: "活动地点数" }
+      { label: "总时长", value: duration, hint: "" },
+      { label: "预算", value: budget, hint: "" },
+      { label: "距离", value: distance, hint: "" }
     ],
     timelinePreview: stops.slice(0, 4).map((stop) => `${stop.time} ${stop.title}`),
     summaryStops: stops.slice(0, 4),

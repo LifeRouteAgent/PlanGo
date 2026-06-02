@@ -469,7 +469,17 @@ class PoiRepository:
                     collected.append(text)
                 return
             if isinstance(item, dict):
-                for key in ("url", "image", "image_url", "photo", "pic", "src", "cover", "head_image"):
+                for key in (
+                    "url",
+                    "image",
+                    "image_url",
+                    "image_url_host",
+                    "photo",
+                    "pic",
+                    "src",
+                    "cover",
+                    "head_image",
+                ):
                     add_image(item.get(key))
                 return
             if isinstance(item, list | tuple):

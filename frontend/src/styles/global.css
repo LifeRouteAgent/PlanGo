@@ -1936,6 +1936,16 @@ img {
     0 26px 74px rgba(47, 86, 123, 0.16);
 }
 
+.route-choice-card-v2 {
+  display: flex;
+  flex-direction: column;
+}
+
+.route-choice-card-v2.is-selected {
+  border-color: rgba(194, 218, 236, 0.78);
+  box-shadow: 0 22px 60px rgba(47, 86, 123, 0.1);
+}
+
 .route-card-topline,
 .route-card-badges {
   display: flex;
@@ -2078,11 +2088,13 @@ img {
 
 .route-card-metrics > div {
   display: grid;
+  place-items: center;
   gap: 4px;
   padding: 11px 10px;
   border: 1px solid rgba(222, 235, 245, 0.9);
   border-radius: 16px;
   background: rgba(255, 255, 255, 0.58);
+  text-align: center;
 }
 
 .route-card-metrics svg {
@@ -2108,17 +2120,34 @@ img {
   font-size: 11px;
 }
 
+.route-choice-card-v2 .route-card-metrics small {
+  display: none;
+}
+
 .route-card-timeline {
   display: grid;
-  gap: 10px;
-  padding: 4px 0;
+  gap: 16px;
+  padding: 10px 0;
 }
 
 .route-card-stop {
+  position: relative;
   display: grid;
   grid-template-columns: 34px minmax(0, 1fr) auto;
   align-items: center;
   gap: 10px;
+  padding-block: 4px;
+}
+
+.route-card-stop:not(:last-child)::after {
+  content: "";
+  position: absolute;
+  left: 15px;
+  top: 37px;
+  bottom: -19px;
+  width: 2px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(47, 127, 246, 0.5), rgba(33, 195, 157, 0.38));
 }
 
 .route-card-stop > span {
@@ -2185,11 +2214,11 @@ img {
 }
 
 .route-card-pros-notes strong svg {
-  color: #16b98f;
+  color: #03956f;
 }
 
 .route-card-pros-notes > div:nth-child(2) strong svg {
-  color: #f0a526;
+  color: #d78305;
 }
 
 .route-card-pros-notes ul {

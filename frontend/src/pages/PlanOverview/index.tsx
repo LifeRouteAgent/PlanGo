@@ -1,7 +1,7 @@
 import { ArrowLeft } from "lucide-react";
 import { AppleButton, EmptyState } from "../../components/ui";
 import type { PlanViewModel } from "../../utils/planViewModel";
-import { PlanRouteCard } from "./PlanRouteCard";
+import { PlanChoiceCard } from "./PlanChoiceCard";
 
 interface PlanOverviewProps {
   plans: PlanViewModel[];
@@ -40,7 +40,7 @@ export function PlanOverview({ plans, onBackHome, onOpenDetail, onShare }: PlanO
         <div className="plan-grid route-choice-grid">
           {plans.map((plan, index) => (
             <div key={plan.id} style={{ animationDelay: `${index * 0.05}s` }}>
-              <PlanRouteCard order={index} selected={index === 0} plan={plan} onOpenDetail={onOpenDetail} />
+              <PlanChoiceCard order={index} plan={plan} onOpenDetail={onOpenDetail} />
             </div>
           ))}
         </div>

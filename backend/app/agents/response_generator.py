@@ -328,6 +328,10 @@ def _merge_plan_enrichment(
     """把 LLM 文案安全合并回原方案。"""
 
     merged = dict(plan)
+    title = extra.get("title")
+    if isinstance(title, str) and title.strip():
+        merged["title"] = title.strip()[:32]
+
     reason = extra.get("recommendation_reason")
     if isinstance(reason, str) and reason.strip():
         merged["recommendation_reason"] = reason.strip()
