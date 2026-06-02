@@ -211,7 +211,7 @@ def _build_slot_combination_sets(
     user_query: str = "",
     constraints: dict[str, Any] | None = None,
 ) -> list[list[dict[str, Any]]]:
-    """把每个规划槽位映射为候选池，并枚举最多 12 个高质量组合。
+    """把每个规划槽位映射为候选池，并枚举高质量组合。
 
     本地生活规划的排序单位是“方案组合”而不是单个 POI。这里先为每个 slot 取 Top N，
     再对组合按总分、移动距离、重复类别排序，确保比如“麻将 -> KTV”不会混进餐厅或健身。
@@ -247,7 +247,9 @@ def _build_slot_combination_sets(
         _dedupe_item_sets(raw_combinations),
         key=lambda items: _combination_rank_key(items, required_slots),
     )
-    return ranked[:12]
+    # 先保留更大的候选池，后面再做跨方案 POI 强去重。
+    # 如果这里过早截断，三个方案很容易只是同一批地点换顺序。
+    return ranked[:80]
 
 
 def _top_candidates_for_slot(
@@ -679,7 +681,8 @@ def _dedupe_item_sets(variants: list[list[dict[str, Any]]]) -> list[list[dict[st
     seen: set[tuple[str, ...]] = set()
     result: list[list[dict[str, Any]]] = []
     for variant in variants:
-        key = tuple(str(item["id"]) for item in variant)
+        # 同一批 POI 只是换顺序，本质仍是同一个方案，应当合并。
+        key = _item_set_key(variant)
         if key and key not in seen:
             seen.add(key)
             result.append(variant)
@@ -699,24 +702,21 @@ def _select_diverse_item_sets(
     """
 
     selected: list[list[dict[str, Any]]] = []
+    used_non_must_ids: set[str] = set()
     for variant in ranked_variants:
         if not variant:
             continue
-        if not selected:
+        non_must_ids = _non_must_item_ids(variant)
+        if non_must_ids and non_must_ids.isdisjoint(used_non_must_ids):
+            selected.append(variant)
+            used_non_must_ids.update(non_must_ids)
+        elif not non_must_ids and not selected:
+            # 全部都是用户明确指定 must POI 的极端情况，保留一个可展示方案即可。
             selected.append(variant)
             continue
-        if all(_non_must_jaccard_distance(variant, existing) >= 0.45 for existing in selected):
-            selected.append(variant)
         if len(selected) >= limit:
             return selected
 
-    # 候选池不足时再放宽阈值，但仍避免完全相同的 POI 组合。
-    for variant in ranked_variants:
-        if len(selected) >= limit:
-            break
-        key = _item_set_key(variant)
-        if key and all(_item_set_key(existing) != key for existing in selected):
-            selected.append(variant)
     return selected[:limit]
 
 
@@ -724,6 +724,20 @@ def _item_set_key(items: list[dict[str, Any]]) -> tuple[str, ...]:
     """用 POI ID 集合判断两个方案是否完全相同，忽略时间顺序差异。"""
 
     return tuple(sorted(str(item.get("id")) for item in items if item.get("id")))
+
+
+def _non_must_item_ids(items: list[dict[str, Any]]) -> set[str]:
+    """返回非 must POI 集合。
+
+    用户明确指定的 must POI 可以跨方案重复；其它 POI 必须互斥，保证三个方案
+    真正是不同地点组合，而不是同一批地点换顺序。
+    """
+
+    return {
+        str(item.get("id"))
+        for item in items
+        if item.get("id") and not item.get("must_include")
+    }
 
 
 def _non_must_jaccard_distance(

@@ -1,29 +1,43 @@
 import { useEffect, useState } from "react";
 import { usePlanStream } from "../../hooks/usePlanStream";
 import type { Plan } from "../../types/agent";
-import { ChatPanel, type ChatMessage } from "./ChatPanel";
+import type { ConversationRecord, StoredChatMessage } from "../../utils/conversationStore";
+import { ChatPanel } from "./ChatPanel";
 import { RequirementCards } from "./RequirementCards";
 import { WelcomeHero } from "./WelcomeHero";
 
 interface ChatHomeProps {
+  conversationId: string;
+  messages: StoredChatMessage[];
+  conversations: ConversationRecord[];
+  hasPlan: boolean;
+  onMessagesChange: (messages: StoredChatMessage[]) => void;
   onPlanReady: (plan: Plan) => void;
+  onOpenPlans: () => void;
+  onOpenDetail: () => void;
+  onNewConversation: () => void;
+  onLoadConversation: (conversationId: string) => void;
 }
 
-export function ChatHome({ onPlanReady }: ChatHomeProps) {
+export function ChatHome({
+  conversationId,
+  messages,
+  conversations,
+  hasPlan,
+  onMessagesChange,
+  onPlanReady,
+  onOpenPlans,
+  onOpenDetail,
+  onNewConversation,
+  onLoadConversation
+}: ChatHomeProps) {
   const { isRunning, events, plan, assistantText, run, cancel } = usePlanStream();
-  const [messages, setMessages] = useState<ChatMessage[]>([
-    {
-      id: "welcome",
-      role: "assistant",
-      content: "你好，我是 PlanGo。告诉我出行人数、时间、预算和偏好，我会帮你生成路线、行程和可执行操作。"
-    }
-  ]);
   const [lastAssistantText, setLastAssistantText] = useState("");
 
   useEffect(() => {
     if (!isRunning && assistantText && assistantText !== lastAssistantText) {
-      setMessages((current) => [
-        ...current,
+      onMessagesChange([
+        ...messages,
         {
           id: crypto.randomUUID(),
           role: "assistant",
@@ -32,7 +46,7 @@ export function ChatHome({ onPlanReady }: ChatHomeProps) {
       ]);
       setLastAssistantText(assistantText);
     }
-  }, [assistantText, isRunning, lastAssistantText]);
+  }, [assistantText, isRunning, lastAssistantText, messages, onMessagesChange]);
 
   useEffect(() => {
     if (!isRunning && plan) {
@@ -42,7 +56,7 @@ export function ChatHome({ onPlanReady }: ChatHomeProps) {
   }, [isRunning, onPlanReady, plan]);
 
   const submit = (goal: string) => {
-    const nextMessages: ChatMessage[] = [
+    const nextMessages: StoredChatMessage[] = [
       ...messages,
       {
         id: crypto.randomUUID(),
@@ -50,13 +64,17 @@ export function ChatHome({ onPlanReady }: ChatHomeProps) {
         content: goal
       }
     ];
-    setMessages(nextMessages);
+    onMessagesChange(nextMessages);
     void run({
       goal,
       city: "beijing",
       execute: false,
       fail_next_restaurant_booking: false,
-      history: messages.map((message) => ({ role: message.role === "assistant" ? "assistant" : "user", content: message.content }))
+      session_id: conversationId,
+      history: nextMessages.map((message) => ({
+        role: message.role === "assistant" ? "assistant" : "user",
+        content: message.content
+      }))
     });
   };
 
@@ -65,12 +83,19 @@ export function ChatHome({ onPlanReady }: ChatHomeProps) {
       <div className="chat-home-inner">
         <WelcomeHero />
         <ChatPanel
+          conversationId={conversationId}
+          conversations={conversations}
           messages={messages}
           assistantDraft={isRunning ? assistantText : ""}
           events={events}
           isRunning={isRunning}
+          hasPlan={hasPlan}
           onSubmit={submit}
           onCancel={cancel}
+          onOpenPlans={onOpenPlans}
+          onOpenDetail={onOpenDetail}
+          onNewConversation={onNewConversation}
+          onLoadConversation={onLoadConversation}
         />
         <RequirementCards onPick={submit} />
       </div>

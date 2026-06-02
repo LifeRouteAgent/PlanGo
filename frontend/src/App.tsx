@@ -4,6 +4,15 @@ import { PlanDetail } from "./pages/PlanDetail";
 import { PlanOverview } from "./pages/PlanOverview";
 import { SharePage } from "./pages/SharePage";
 import type { Plan, PlanAlternative } from "./types/agent";
+import {
+  createEmptyConversation,
+  loadConversations,
+  loadOrCreateActiveConversation,
+  setActiveConversationId,
+  upsertConversation,
+  type ConversationRecord,
+  type StoredChatMessage
+} from "./utils/conversationStore";
 import { planToViewModel, type PlanViewModel } from "./utils/planViewModel";
 
 type AppRoute = "/" | "/plan" | "/plan/detail" | "/share";
@@ -47,7 +56,10 @@ function badgeFor(index: number) {
 
 export function App() {
   const [route, setRoute] = useState<AppRoute>(() => normalizePath(window.location.pathname));
-  const [latestPlan, setLatestPlan] = useState<Plan | null>(null);
+  const [activeConversation, setActiveConversation] = useState<ConversationRecord>(() => loadOrCreateActiveConversation());
+  const [conversations, setConversations] = useState<ConversationRecord[]>(() => loadConversations());
+  const [messages, setMessages] = useState<StoredChatMessage[]>(() => activeConversation.messages);
+  const [latestPlan, setLatestPlan] = useState<Plan | null>(() => activeConversation.plan);
   const [selectedPlan, setSelectedPlan] = useState<PlanViewModel | null>(null);
   const [feedbackMessage, setFeedbackMessage] = useState("");
 
@@ -63,6 +75,21 @@ export function App() {
     }
     setRoute(nextRoute);
     window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  const persistConversation = (nextMessages: StoredChatMessage[], nextPlan: Plan | null = latestPlan) => {
+    const saved = upsertConversation({
+      ...activeConversation,
+      messages: nextMessages,
+      plan: nextPlan
+    });
+    setActiveConversation(saved);
+    setConversations(loadConversations());
+  };
+
+  const handleMessagesChange = (nextMessages: StoredChatMessage[]) => {
+    setMessages(nextMessages);
+    persistConversation(nextMessages);
   };
 
   const planOptions = useMemo(() => {
@@ -89,6 +116,7 @@ export function App() {
     setLatestPlan(plan);
     const first = planToViewModel(plan, badgeFor(0), 0);
     setSelectedPlan(first);
+    persistConversation(messages, plan);
     navigate("/plan");
   };
 
@@ -97,9 +125,46 @@ export function App() {
     navigate("/plan/detail");
   };
 
+  const handleNewConversation = () => {
+    const created = upsertConversation(createEmptyConversation());
+    setActiveConversation(created);
+    setConversations(loadConversations());
+    setMessages(created.messages);
+    setLatestPlan(null);
+    setSelectedPlan(null);
+    setFeedbackMessage("");
+    navigate("/");
+  };
+
+  const handleLoadConversation = (conversationId: string) => {
+    const record = loadConversations().find((item) => item.id === conversationId);
+    if (!record) return;
+    setActiveConversationId(record.id);
+    setActiveConversation(record);
+    setConversations(loadConversations());
+    setMessages(record.messages);
+    setLatestPlan(record.plan);
+    setSelectedPlan(record.plan ? planToViewModel(record.plan, badgeFor(0), 0) : null);
+    setFeedbackMessage("");
+    navigate("/");
+  };
+
   return (
     <main className="plango-app">
-      {route === "/" && <ChatHome onPlanReady={handlePlanReady} />}
+      {route === "/" && (
+        <ChatHome
+          conversationId={activeConversation.id}
+          messages={messages}
+          conversations={conversations}
+          hasPlan={Boolean(latestPlan)}
+          onMessagesChange={handleMessagesChange}
+          onPlanReady={handlePlanReady}
+          onOpenPlans={() => navigate("/plan")}
+          onOpenDetail={() => navigate("/plan/detail")}
+          onNewConversation={handleNewConversation}
+          onLoadConversation={handleLoadConversation}
+        />
+      )}
 
       {route === "/plan" && (
         <PlanOverview

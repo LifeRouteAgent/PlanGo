@@ -46,7 +46,9 @@ def constraint_builder_node(state: PlanState) -> PlanStatePatch:
     max_route_minutes, route_source = _resolve_max_route_minutes(query, llm_understanding)
     constraints.setdefault("max_route_minutes", max_route_minutes)
     constraints.setdefault("max_route_minutes_source", route_source)
-    constraints.setdefault("route_limit_is_hard", route_source in {"llm", "fallback_rule"})
+    # 路线距离默认只作为排序偏好，不作为阻断方案生成的硬约束。
+    # 用户说“别太远/附近”时，系统应优先给近的方案；候选不足时仍应返回可执行方案。
+    constraints["route_limit_is_hard"] = False
 
     if llm_understanding and llm_understanding.get("location_area"):
         constraints.setdefault("location_area", llm_understanding["location_area"])

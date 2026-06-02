@@ -92,6 +92,10 @@ def test_route_planner_uses_slot_combination_search_and_returns_three_plans() ->
         "duration_hours": 4,
         "max_route_minutes": 60,
         "budget": 300,
+        "activity_intents": [
+            {"must_match": True, "semantic_type": "ktv", "keywords": ["KTV", "唱歌"]},
+            {"must_match": True, "semantic_type": "chess_cards", "keywords": ["麻将", "桌游"]},
+        ],
     }
     state["dag_plan"] = {
         "planning_template": "entertainment_gathering",
@@ -106,6 +110,8 @@ def test_route_planner_uses_slot_combination_search_and_returns_three_plans() ->
             _poi("ktv_1", "KTV A", "poi_entertainment", 39.902, 116.402, 4.7, 90),
             _poi("ktv_2", "KTV B", "poi_entertainment", 39.91, 116.41, 4.6, 90),
             _poi("board_1", "桌游店 A", "poi_entertainment", 39.93, 116.43, 4.5, 90),
+            _poi("mahjong_2", "麻将馆 B", "poi_entertainment", 39.94, 116.44, 4.4, 90),
+            _poi("ktv_3", "KTV C", "poi_entertainment", 39.945, 116.445, 4.3, 90),
         ],
     }
 
@@ -113,6 +119,7 @@ def test_route_planner_uses_slot_combination_search_and_returns_three_plans() ->
     plans = patch["candidate_plans"]
 
     assert len(plans) == 3
+    used_ids: set[str] = set()
     for plan in plans:
         assert plan.keys() >= {
             "plan_id",
@@ -126,6 +133,9 @@ def test_route_planner_uses_slot_combination_search_and_returns_three_plans() ->
         }
         assert len(plan["items"]) <= 2
         assert plan["fit_summary"]["slot_count"] == len(plan["items"])
+        item_ids = {item["id"] for item in plan["items"]}
+        assert item_ids.isdisjoint(used_ids)
+        used_ids.update(item_ids)
         if plan["route_segments"]:
             assert plan["route_segments"][0].keys() >= {"from_item_id", "to_item_id", "source"}
 

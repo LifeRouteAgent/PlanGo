@@ -35,7 +35,7 @@ function eventLabel(phase: TimelineEvent["phase"]) {
   const labels: Record<TimelineEvent["phase"], string> = {
     request: "创建请求",
     understanding: "理解需求",
-    searching: "筛选地点",
+    searching: "筛选附近活动",
     routing: "规划路线",
     validating: "校验方案",
     executing: "执行动作",
