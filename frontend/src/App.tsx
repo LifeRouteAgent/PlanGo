@@ -117,7 +117,6 @@ export function App() {
     const first = planToViewModel(plan, badgeFor(0), 0);
     setSelectedPlan(first);
     persistConversation(messages, plan);
-    navigate("/plan");
   };
 
   const handleSelectPlan = (plan: PlanViewModel) => {
