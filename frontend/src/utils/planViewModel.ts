@@ -63,7 +63,7 @@ export interface PlanViewModel {
 }
 
 function scenarioText(plan: Plan) {
-  if (plan.scenario === "family") return "家庭 / 亲子";
+  if (plan.scenario === "family") return "家庭亲子";
   if (plan.scenario === "friends") return "朋友聚会";
   if (plan.scenario === "couple") return "情侣约会";
   return "本地生活";
@@ -138,9 +138,31 @@ function styleTagFromBadge(badge: string, indexHint: number) {
   if (badge.includes("省")) return "预算友好";
   if (badge.includes("近")) return "低移动";
   if (badge.includes("轻")) return "轻松节奏";
-  if (indexHint === 0) return "主推方案";
+  if (indexHint === 0) return "主推路线";
   if (indexHint === 1) return "备选组合";
   return "差异路线";
+}
+
+function titleFromPlan(plan: Plan, stops: PlanStopView[], indexHint: number) {
+  const stopText = stops.map((stop) => `${stop.title} ${stop.tags.join(" ")}`).join(" ");
+  const hasUniversal = /环球|乐园|度假区/.test(stopText);
+  const hasKtv = /KTV|唱歌|欢唱|量贩|温莎/.test(stopText);
+  const hasFood = /餐|菜|火锅|烧烤|咖啡|茶/.test(stopText);
+  const hasBoard = /桌游|棋牌|麻将|打牌/.test(stopText);
+  const scenario = plan.scenario;
+
+  const pools: Record<string, string[]> = {
+    couple: hasUniversal && hasKtv
+      ? ["《乐园与歌声之间》", "《星光散场后的合唱》", "《两个人的蓝色夜场》"]
+      : ["《慢慢靠近的约会》", "《晚风和甜味路线》", "《两个人的轻松半日》"],
+    friends: hasBoard || hasKtv
+      ? ["《饭局与欢唱之间》", "《朋友局快乐拼图》", "《桌边与麦克风》"]
+      : ["《附近的快乐集合》", "《松弛朋友局》", "《城市周末小队》"],
+    family: ["《轻松亲子半日》", "《不赶路的家庭时光》", "《一起慢慢玩》"],
+    unknown: hasFood ? ["《先吃再玩刚刚好》", "《附近生活小路线》", "《轻松城市半日》"] : ["《附近生活小路线》", "《轻松城市半日》", "《今天就这样玩》"]
+  };
+  const key = scenario === "couple" || scenario === "friends" || scenario === "family" ? scenario : "unknown";
+  return pools[key][indexHint % pools[key].length];
 }
 
 function routeSummary(plan: Plan, stops: PlanStopView[], distance: string): PlanRouteSummary {
@@ -171,7 +193,7 @@ export function planToViewModel(plan: Plan, badge = "推荐", indexHint = 0): Pl
     id: plan.id || "plan-main",
     badge,
     styleTag: styleTagFromBadge(badge, indexHint),
-    title: plan.recommendation?.title || "PlanGo 本地生活方案",
+    title: titleFromPlan(plan, stops, indexHint),
     audience: scenarioText(plan),
     durationText: duration,
     budgetText: budget,
@@ -180,9 +202,9 @@ export function planToViewModel(plan: Plan, badge = "推荐", indexHint = 0): Pl
     pros: pros.length ? pros : ["地点组合紧凑", "路线和时间已做可执行性校验"],
     cons: cons.length ? cons : ["部分营业或预约信息建议出发前再次确认"],
     metrics: [
-      { label: "总时间", value: duration, hint: "含停留与交通" },
-      { label: "预算", value: budget, hint: "按当前候选估算" },
-      { label: "总距离", value: distance, hint: "含路线段" }
+      { label: "时长", value: duration, hint: "含停留与交通" },
+      { label: "花费", value: budget, hint: "按当前候选估算" },
+      { label: "节点", value: `${stops.length}`, hint: "活动地点数" }
     ],
     timelinePreview: stops.slice(0, 4).map((stop) => `${stop.time} ${stop.title}`),
     summaryStops: stops.slice(0, 4),

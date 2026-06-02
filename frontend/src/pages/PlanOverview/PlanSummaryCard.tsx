@@ -1,7 +1,6 @@
 import { ArrowRight, CheckCircle2, Sparkles, XCircle } from "lucide-react";
 import { AppleButton, GlassCard, SoftTag } from "../../components/ui";
 import type { PlanViewModel } from "../../utils/planViewModel";
-import { RoutePreview } from "./RoutePreview";
 
 interface PlanSummaryCardProps {
   plan: PlanViewModel;
@@ -11,8 +10,8 @@ interface PlanSummaryCardProps {
 
 export function PlanSummaryCard({ plan, selected = false, onOpenDetail }: PlanSummaryCardProps) {
   return (
-    <GlassCard as="article" className="plan-summary-card" hoverable selected={selected}>
-      <div className="plan-summary-top">
+    <GlassCard as="article" className="plan-summary-card plan-summary-editorial" hoverable selected={selected}>
+      <div className="plan-editorial-hero">
         <div className="plan-card-badges">
           <SoftTag tone="blue" tabIndex={-1}>
             <Sparkles size={14} />
@@ -26,9 +25,7 @@ export function PlanSummaryCard({ plan, selected = false, onOpenDetail }: PlanSu
         <p>{plan.reason}</p>
       </div>
 
-      <RoutePreview plan={plan} />
-
-      <dl className="metric-grid">
+      <dl className="metric-grid editorial-metrics">
         {plan.metrics.map((metric) => (
           <div key={metric.label}>
             <dt>{metric.label}</dt>
@@ -38,12 +35,17 @@ export function PlanSummaryCard({ plan, selected = false, onOpenDetail }: PlanSu
         ))}
       </dl>
 
-      <div className="plan-fit-row">
-        <span>适合人群</span>
-        <strong>{plan.audience}</strong>
+      <div className="plan-stop-list" aria-label="简短时间轴">
+        {plan.summaryStops.map((stop) => (
+          <div className="plan-stop-row" key={stop.id}>
+            <strong>{stop.label}</strong>
+            <span>{stop.time}</span>
+            <p>{stop.title}</p>
+          </div>
+        ))}
       </div>
 
-      <div className="plan-pros-cons">
+      <div className="plan-pros-cons editorial-pros-cons">
         <div>
           <strong>
             <CheckCircle2 size={15} />
@@ -62,12 +64,6 @@ export function PlanSummaryCard({ plan, selected = false, onOpenDetail }: PlanSu
             <span key={item}>{item}</span>
           ))}
         </div>
-      </div>
-
-      <div className="mini-timeline">
-        {plan.timelinePreview.map((item) => (
-          <span key={item}>{item}</span>
-        ))}
       </div>
 
       <AppleButton type="button" full onClick={() => onOpenDetail(plan)}>

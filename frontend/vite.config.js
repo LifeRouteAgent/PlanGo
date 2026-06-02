@@ -13,6 +13,10 @@ export default defineConfig({
             "/trip": {
                 target: backendTarget,
                 changeOrigin: true
+            },
+            "/export": {
+                target: backendTarget,
+                changeOrigin: true
             }
         }
     },

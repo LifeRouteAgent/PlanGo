@@ -17,7 +17,7 @@ interface PlanDetailProps {
 }
 
 export function PlanDetail({ plan, onBack, onBackHome, onShare }: PlanDetailProps) {
-  const [tab, setTab] = useState<"timeline" | "map">("timeline");
+  const [tab, setTab] = useState<"timeline" | "map">("map");
   const [activeStopId, setActiveStopId] = useState<string | null>(null);
   const [selectedStop, setSelectedStop] = useState<PlanStopView | null>(null);
   const [modifyOpen, setModifyOpen] = useState(false);
@@ -53,7 +53,9 @@ export function PlanDetail({ plan, onBack, onBackHome, onShare }: PlanDetailProp
           <ArrowLeft size={18} />
         </AppleButton>
         <div>
-          <span>{plan.audience} · {plan.durationText} · {plan.budgetText}</span>
+          <span>
+            {plan.durationText} · {plan.budgetText} · {plan.distanceText}
+          </span>
           <h1>{plan.title}</h1>
         </div>
         <AppleButton type="button" variant="secondary" onClick={() => openModify()}>

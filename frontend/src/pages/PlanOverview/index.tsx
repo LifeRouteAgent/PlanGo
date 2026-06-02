@@ -1,10 +1,7 @@
 import { ArrowLeft } from "lucide-react";
-import { useMemo, useState } from "react";
 import { AppleButton, EmptyState } from "../../components/ui";
 import type { PlanViewModel } from "../../utils/planViewModel";
-import { ActionBar } from "./ActionBar";
-import { PlanSummaryCard } from "./PlanSummaryCard";
-import { ReasonCard } from "./ReasonCard";
+import { PlanRouteCard } from "./PlanRouteCard";
 
 interface PlanOverviewProps {
   plans: PlanViewModel[];
@@ -14,8 +11,7 @@ interface PlanOverviewProps {
 }
 
 export function PlanOverview({ plans, onBackHome, onOpenDetail, onShare }: PlanOverviewProps) {
-  const [selectedId, setSelectedId] = useState(plans[0]?.id ?? "");
-  const selectedPlan = useMemo(() => plans.find((plan) => plan.id === selectedId) ?? plans[0] ?? null, [plans, selectedId]);
+  void onShare;
 
   if (!plans.length) {
     return (
@@ -35,22 +31,18 @@ export function PlanOverview({ plans, onBackHome, onOpenDetail, onShare }: PlanO
           <ArrowLeft size={18} />
         </AppleButton>
         <div>
-          <span>PlanGo 为你生成了 {plans.length} 个方案</span>
-          <h1>选择一个最合适的周末安排</h1>
+          <span>PlanGo 为你生成了 {plans.length} 个不同地点组合</span>
+          <h1>选择一条最想出发的路线</h1>
         </div>
       </header>
 
-      <div className="overview-layout">
-        <div className="plan-grid">
+      <div className="overview-layout overview-layout-single">
+        <div className="plan-grid route-choice-grid">
           {plans.map((plan, index) => (
-            <div key={plan.id} style={{ animationDelay: `${index * 0.05}s` }} onMouseEnter={() => setSelectedId(plan.id)}>
-              <PlanSummaryCard selected={selectedPlan?.id === plan.id} plan={plan} onOpenDetail={onOpenDetail} />
+            <div key={plan.id} style={{ animationDelay: `${index * 0.05}s` }}>
+              <PlanRouteCard order={index} selected={index === 0} plan={plan} onOpenDetail={onOpenDetail} />
             </div>
           ))}
-        </div>
-        <div className="overview-side">
-          <ReasonCard plan={selectedPlan} />
-          <ActionBar selectedPlan={selectedPlan} onBackHome={onBackHome} onShare={() => selectedPlan && onShare(selectedPlan)} />
         </div>
       </div>
     </section>

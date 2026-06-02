@@ -15,12 +15,12 @@ export function ReasonCard({ plan }: ReasonCardProps) {
     <GlassCard as="aside" className="reason-card">
       <div className="section-title">
         <Sparkles size={18} />
-        <h2>方案取舍</h2>
+        <h2>优缺点</h2>
       </div>
       <p>{plan.reason}</p>
       <div className="reason-columns">
         <div>
-          <strong>为什么适合</strong>
+          <strong>值得选它</strong>
           {plan.pros.map((item) => (
             <span key={item}>
               <CheckCircle2 size={15} />

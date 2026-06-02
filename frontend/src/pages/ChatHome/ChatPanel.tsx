@@ -1,6 +1,6 @@
-import { Clock3, History, MapPinned, Plus, Route, Sparkles } from "lucide-react";
+import { Clock3, History, MapPinned, Plus, Route } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { AppleButton, ChatBubble, ChatInput, GlassCard, LoadingSteps, SoftTag } from "../../components/ui";
+import { AppleButton, ChatBubble, ChatInput, GlassCard, LoadingSteps, MarkdownMessage, SoftTag } from "../../components/ui";
 import type { TimelineEvent } from "../../hooks/usePlanStream";
 import type { ConversationRecord, StoredChatMessage } from "../../utils/conversationStore";
 import { QuickChips } from "./QuickChips";
@@ -64,13 +64,8 @@ export function ChatPanel({
       <div className="chat-card-header">
         <div>
           <strong>PlanGo</strong>
-          <span>本地生活 AI 规划助手</span>
         </div>
         <div className="chat-header-actions">
-          <div className="chat-status-pill">
-            <Sparkles size={15} />
-            {isRunning ? "生成中" : "在线"}
-          </div>
           <AppleButton size="sm" variant="ghost" onClick={onNewConversation}>
             <Plus size={15} />
             新对话
@@ -125,13 +120,13 @@ export function ChatPanel({
       <div className="chat-card-scroll" ref={scrollRef}>
         {messages.map((message) => (
           <ChatBubble role={message.role} key={message.id}>
-            <p>{message.content}</p>
+            <MarkdownMessage content={message.content} />
           </ChatBubble>
         ))}
 
         {assistantDraft && (
           <ChatBubble role="assistant">
-            <p>{assistantDraft}</p>
+            <MarkdownMessage content={assistantDraft} />
           </ChatBubble>
         )}
 

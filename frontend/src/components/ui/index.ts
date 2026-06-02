@@ -6,6 +6,7 @@ export { ErrorState } from "./ErrorState";
 export { GlassCard } from "./GlassCard";
 export { LoadingSteps } from "./LoadingSteps";
 export { MapMarker } from "./MapMarker";
+export { MarkdownMessage } from "./MarkdownMessage";
 export { RouteBottomSheet } from "./RouteBottomSheet";
 export { SegmentedControl } from "./SegmentedControl";
 export { SoftTag } from "./SoftTag";
