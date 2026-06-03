@@ -1,7 +1,7 @@
-import { ArrowLeft, Clock3, MapPin, WalletCards } from "lucide-react";
+﻿import { ArrowLeft, Clock3, MapPin, WalletCards } from "lucide-react";
 import { useState } from "react";
 import { AppleButton, EmptyState, SoftTag } from "../../components/ui";
-import type { PlanStopView, PlanViewModel } from "../../utils/planViewModel";
+import { uniqueHighlightTags, type PlanStopView, type PlanViewModel } from "../../utils/planViewModel";
 import { BottomActionBar } from "./BottomActionBar";
 import { MapView } from "./MapView";
 import { ModifyPreferenceDrawer } from "./ModifyPreferenceDrawer";
@@ -18,7 +18,7 @@ interface PlanDetailProps {
 }
 
 function compactHighlight(text: string): string {
-  if (text.includes("距离") || text.includes("路程") || text.includes("交通")) return "距离合适";
+  if (text.includes("距离") || text.includes("路线") || text.includes("交通")) return "距离合适";
   if (text.includes("预算") || text.includes("价格") || text.includes("花费")) return "预算友好";
   if (text.includes("时间") || text.includes("节奏") || text.includes("不赶")) return "节奏轻松";
   if (text.includes("室内") || text.includes("天气")) return "室内友好";
@@ -55,45 +55,44 @@ export function PlanDetail({ plan, onBack, onBackHome, onShare, onPreferenceSubm
     setActiveStopId(stop.id);
   };
 
+  const highlightTags = uniqueHighlightTags(
+    plan.highlightTags.length ? plan.highlightTags : plan.pros.map(compactHighlight)
+  );
+
   return (
     <section className="detail-page page-enter">
-      <header className="detail-hero-header">
+      <header className="page-header sticky-top detail-page-header">
         <AppleButton type="button" variant="ghost" size="sm" onClick={onBack} aria-label="返回方案总览">
           <ArrowLeft size={18} />
-          返回
         </AppleButton>
         <div className="detail-title-block">
-          <h2>{plan.title}</h2>
-          <div className="detail-metric-pills" aria-label="行程指标">
+          <h2 style={{ fontSize: '23px', fontWeight: 600 }}>{plan.title}</h2>
+        </div>
+      </header>
+        <div className="detail-metric-pills detail-metric-strip" aria-label="行程指标">
             {plan.durationText ? (
               <SoftTag tone="blue">
                 <Clock3 size={15} />
                 {plan.durationText}
               </SoftTag>
             ) : null}
-            {plan.budgetText && !plan.budgetText.includes("待") ? (
+            {plan.budgetText && !plan.budgetText.includes("待估") ? (
               <SoftTag tone="mint">
                 <WalletCards size={15} />
                 {plan.budgetText}
               </SoftTag>
             ) : null}
-            {plan.distanceText && !plan.distanceText.includes("待") ? (
+            {plan.distanceText && !plan.distanceText.includes("待估") ? (
               <SoftTag tone="blue">
                 <MapPin size={15} />
                 {plan.distanceText}
               </SoftTag>
             ) : null}
           </div>
-        </div>
-      </header>
-
       {modifyMessage && <div className="soft-notice">{modifyMessage}</div>}
 
       <div className="detail-layout-v2">
         <section className="detail-timeline-panel" aria-label="行程时间轴">
-          <div className="detail-panel-title">
-            <span>时间轴</span>
-          </div>
           <TimelineView
             stops={plan.stops}
             routeSegments={plan.routeSegments}
@@ -110,7 +109,7 @@ export function PlanDetail({ plan, onBack, onBackHome, onShare, onPreferenceSubm
           <section className="detail-highlight-card">
             <h2>方案亮点</h2>
             <div className="detail-highlight-tags">
-              {(plan.highlightTags.length ? plan.highlightTags : plan.pros.slice(0, 4).map(compactHighlight)).map((item) => (
+              {highlightTags.map((item) => (
                 <SoftTag key={item} tone="mint" title={item}>
                   {item}
                 </SoftTag>
@@ -159,3 +158,5 @@ export function PlanDetail({ plan, onBack, onBackHome, onShare, onPreferenceSubm
     </section>
   );
 }
+
+

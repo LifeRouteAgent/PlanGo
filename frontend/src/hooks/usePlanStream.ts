@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { streamPlan } from "../api/streamClient";
 import type { Plan, StreamEvent, StreamRequest, UserIntent } from "../types/agent";
 
@@ -21,13 +21,14 @@ function getOrCreateSessionId() {
 }
 
 function eventPhase(message: string): TimelineEvent["phase"] {
-  if (message.includes("理解") || message.includes("意图") || message.includes("约束")) return "understanding";
-  if (message.includes("活动") || message.includes("餐厅") || message.includes("候选") || message.includes("召回") || message.includes("筛选")) {
+  const text = message.toLowerCase();
+  if (text.includes("intent") || text.includes("理解") || text.includes("意图") || text.includes("约束")) return "understanding";
+  if (text.includes("collector") || text.includes("skill") || text.includes("poi") || text.includes("活动") || text.includes("餐厅") || text.includes("召回") || text.includes("筛选")) {
     return "searching";
   }
-  if (message.includes("路线") || message.includes("地图") || message.includes("时间线")) return "routing";
-  if (message.includes("校验") || message.includes("验证") || message.includes("检查")) return "validating";
-  if (message.includes("执行") || message.includes("预约") || message.includes("购票") || message.includes("日历")) return "executing";
+  if (text.includes("route") || text.includes("map") || text.includes("路线") || text.includes("地图") || text.includes("时间线")) return "routing";
+  if (text.includes("verify") || text.includes("critic") || text.includes("校验") || text.includes("验证") || text.includes("检查")) return "validating";
+  if (text.includes("execute") || text.includes("预约") || text.includes("购票") || text.includes("打车") || text.includes("日历")) return "executing";
   return "searching";
 }
 
@@ -35,7 +36,7 @@ function eventLabel(phase: TimelineEvent["phase"]) {
   const labels: Record<TimelineEvent["phase"], string> = {
     request: "创建请求",
     understanding: "理解需求",
-    searching: "筛选附近活动",
+    searching: "筛选活动",
     routing: "规划路线",
     validating: "校验方案",
     executing: "执行动作",
@@ -54,12 +55,12 @@ export function usePlanStream() {
   const [assistantText, setAssistantText] = useState("");
   const abortRef = useRef<AbortController | null>(null);
 
-  function append(
+  const append = useCallback((
     label: string,
     detail: string,
     level: TimelineEvent["level"] = "info",
     phase: TimelineEvent["phase"] = "request"
-  ) {
+  ) => {
     setEvents((current) => {
       const last = current.at(-1);
       if (last?.label === label && last.detail === detail && last.phase === phase) {
@@ -76,9 +77,9 @@ export function usePlanStream() {
         }
       ];
     });
-  }
+  }, []);
 
-  function handleStreamEvent(message: StreamEvent) {
+  const handleStreamEvent = useCallback((message: StreamEvent) => {
     if (message.event === "progress" || message.event === "status") {
       const phase = eventPhase(message.data.message);
       append(eventLabel(phase), message.data.message, "info", phase);
@@ -154,9 +155,9 @@ export function usePlanStream() {
       append("处理失败", message.data.message, "error", "error");
       setIsRunning(false);
     }
-  }
+  }, [append]);
 
-  async function run(request: StreamRequest) {
+  const run = useCallback(async (request: StreamRequest) => {
     abortRef.current?.abort();
     abortRef.current = new AbortController();
     setIsRunning(true);
@@ -166,6 +167,7 @@ export function usePlanStream() {
     setTrace([]);
     setAssistantText("");
     append("创建请求", "PlanGo 已收到需求，正在启动规划流程。", "info", "request");
+    append("理解需求", "正在理解你的调整意图和当前方案上下文。", "info", "understanding");
 
     try {
       await streamPlan(
@@ -179,13 +181,13 @@ export function usePlanStream() {
       }
       setIsRunning(false);
     }
-  }
+  }, [append, handleStreamEvent]);
 
-  function cancel() {
+  const cancel = useCallback(() => {
     abortRef.current?.abort();
     setIsRunning(false);
     append("已停止", "当前流式请求已取消。", "warning", "error");
-  }
+  }, [append]);
 
   return {
     isRunning,

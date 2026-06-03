@@ -1,7 +1,8 @@
-import { Building2, Flame, MapPin, RefreshCw, Sparkles } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+﻿import { Building2, Flame, MapPin, RefreshCw, Sparkles } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { usePlanStream } from "../../hooks/usePlanStream";
 import type { Plan } from "../../types/agent";
+import { AUTO_SUBMIT_EVENT, type AutoSubmitPayload } from "../../utils/autoSubmitEvent";
 import type { StoredChatMessage } from "../../utils/conversationStore";
 import { ChatPanelV2 } from "./ChatPanelV2";
 import { WelcomeHero } from "./WelcomeHero";
@@ -15,6 +16,8 @@ interface HomeInspirationPoi {
   duration_text: string;
 }
 
+type PendingSubmit = AutoSubmitPayload;
+
 interface ChatHomeProps {
   conversationId: string;
   messages: StoredChatMessage[];
@@ -24,7 +27,7 @@ interface ChatHomeProps {
   onOpenPlans: () => void;
   onOpenDetail: () => void;
   onStreamComplete: (conversationId: string, messages: StoredChatMessage[], plan: Plan | null) => void;
-  pendingSubmit?: string;
+  pendingSubmit?: PendingSubmit | null;
   onPendingSubmitConsumed?: () => void;
 }
 
@@ -51,6 +54,7 @@ export function ChatHome({
   const streamBaseMessagesRef = useRef<StoredChatMessage[]>(messages);
   const streamRunIdRef = useRef("");
   const processedRunIdRef = useRef("");
+  const processedPendingIdsRef = useRef<Set<string>>(new Set());
   const [inspirationPois, setInspirationPois] = useState<HomeInspirationPoi[]>([]);
   const [inspirationOffset, setInspirationOffset] = useState(0);
   const isCurrentConversationRunning = isRunning && streamConversationId === conversationId;
@@ -96,40 +100,63 @@ export function ChatHome({
     }, 240);
   }, [assistantText, isRunning, onStreamComplete, plan, streamConversationId]);
 
-  const submit = (goal: string) => {
-    const nextMessages: StoredChatMessage[] = [
-      ...messages,
-      {
-        id: crypto.randomUUID(),
-        role: "user",
-        content: goal
-      }
-    ];
+  const submit = useCallback(
+    (goal: string) => {
+      const trimmedGoal = goal.trim();
+      if (!trimmedGoal || isRunning) return;
 
-    onMessagesChange(nextMessages);
-    streamBaseMessagesRef.current = nextMessages;
-    streamRunIdRef.current = crypto.randomUUID();
-    processedRunIdRef.current = "";
-    setStreamConversationId(conversationId);
+      const nextMessages: StoredChatMessage[] = [
+        ...messages,
+        {
+          id: crypto.randomUUID(),
+          role: "user",
+          content: trimmedGoal
+        }
+      ];
 
-    void run({
-      goal,
-      city: "beijing",
-      execute: false,
-      fail_next_restaurant_booking: false,
-      session_id: conversationId,
-      history: nextMessages.map((message) => ({
-        role: message.role === "assistant" ? "assistant" : "user",
-        content: message.content
-      }))
-    });
-  };
+      onMessagesChange(nextMessages);
+      streamBaseMessagesRef.current = nextMessages;
+      streamRunIdRef.current = crypto.randomUUID();
+      processedRunIdRef.current = "";
+      setStreamConversationId(conversationId);
+
+      void run({
+        goal: trimmedGoal,
+        city: "beijing",
+        execute: false,
+        fail_next_restaurant_booking: false,
+        session_id: conversationId,
+        history: nextMessages.map((message) => ({
+          role: message.role === "assistant" ? "assistant" : "user",
+          content: message.content
+        }))
+      });
+    },
+    [conversationId, isRunning, messages, onMessagesChange, run]
+  );
+
+  const submitPending = useCallback(
+    (pending: PendingSubmit | null | undefined) => {
+      if (!pending || processedPendingIdsRef.current.has(pending.id)) return;
+      processedPendingIdsRef.current.add(pending.id);
+      onPendingSubmitConsumed?.();
+      submit(pending.text);
+    },
+    [onPendingSubmitConsumed, submit]
+  );
 
   useEffect(() => {
-    if (!pendingSubmit || isRunning) return;
-    onPendingSubmitConsumed?.();
-    submit(pendingSubmit);
-  }, [pendingSubmit, isRunning, onPendingSubmitConsumed]);
+    if (!isRunning) submitPending(pendingSubmit);
+  }, [pendingSubmit?.id, isRunning, submitPending]);
+
+  useEffect(() => {
+    const listener = (event: Event) => {
+      const detail = (event as CustomEvent<PendingSubmit>).detail;
+      if (!isRunning) submitPending(detail);
+    };
+    window.addEventListener(AUTO_SUBMIT_EVENT, listener);
+    return () => window.removeEventListener(AUTO_SUBMIT_EVENT, listener);
+  }, [isRunning, submitPending]);
 
   const visibleInspirations = inspirationPois.length
     ? Array.from(
@@ -169,7 +196,7 @@ export function ChatHome({
                         <span className="inspiration-action-icon">
                           <Icon size={22} />
                         </span>
-                        <span>{item.label}</span>
+                        <span style={{ fontSize: "14px" }}>{item.label}</span>
                       </button>
                     );
                   })}

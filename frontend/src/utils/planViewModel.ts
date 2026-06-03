@@ -91,6 +91,27 @@ function distanceText(plan: Plan) {
   return routeDistance ? `${routeDistance.toFixed(1)} 公里` : "距离待估";
 }
 
+function normalizeHighlightKey(value: string) {
+  return value
+    .trim()
+    .replace(/[《》「」『』【】（）()\[\]\s,，.。:：;；、/\\|-]/g, "")
+    .toLowerCase();
+}
+
+export function uniqueHighlightTags(values: string[], limit = 4) {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const value of values) {
+    const tag = value.trim();
+    const key = normalizeHighlightKey(tag);
+    if (!tag || !key || seen.has(key)) continue;
+    seen.add(key);
+    result.push(tag);
+    if (result.length >= limit) break;
+  }
+  return result;
+}
+
 function timeRange(step: PlanStep) {
   if (step.start_time && step.end_time && step.start_time !== "--:--" && step.end_time !== "--:--") {
     return `${step.start_time} - ${step.end_time}`;
@@ -102,9 +123,7 @@ function timeRange(step: PlanStep) {
 }
 
 function stepTraffic(step: PlanStep) {
-  const route = step.metadata?.route as
-    | { distance_km?: number; duration_min?: number; mode?: string }
-    | undefined;
+  const route = step.metadata?.route as { distance_km?: number; duration_min?: number; mode?: string } | undefined;
   if (route?.duration_min || route?.distance_km) {
     const mode = route.mode || "交通";
     const distance = route.distance_km ? `${route.distance_km.toFixed(1)} 公里` : "距离待估";
@@ -137,36 +156,34 @@ function stepToStop(step: PlanStep, index: number): PlanStopView {
 }
 
 function styleTagFromBadge(badge: string, indexHint: number) {
-  if (badge.includes("省")) return "预算友好";
-  if (badge.includes("近")) return "低移动";
-  if (badge.includes("轻")) return "轻松节奏";
-  if (indexHint === 0) return "主推路线";
-  if (indexHint === 1) return "备选组合";
-  return "差异路线";
+  if (badge.includes("省") || badge.includes("预算")) return "预算友好";
+  if (badge.includes("近") || badge.includes("路线")) return "低移动";
+  if (badge.includes("轻松")) return "轻松节奏";
+  if (indexHint === 0) return "路线一";
+  if (indexHint === 1) return "路线二";
+  return "路线三";
 }
 
-function titleFromPlan(plan: Plan, stops: PlanStopView[], indexHint: number) {
-  const stopNames = stops.map((stop) => stop.title.replace(/[（(].*?[）)]/g, "").trim()).filter(Boolean);
-  const tagText = stops.flatMap((stop) => stop.tags).join(" ");
-  const primary = stopNames[0] || "城市";
-  const secondary = stopNames[1] || "好去处";
-  const noun = /KTV|唱歌|欢唱|量贩|温莎/.test(`${stopNames.join(" ")} ${tagText}`)
-    ? "歌声"
-    : /桌游|棋牌|麻将|打牌/.test(`${stopNames.join(" ")} ${tagText}`)
-      ? "牌局"
-      : /咖啡|茶|餐|菜|火锅|烧烤/.test(`${stopNames.join(" ")} ${tagText}`)
-        ? "烟火"
-        : /乐园|环球|展|馆|影城/.test(`${stopNames.join(" ")} ${tagText}`)
-          ? "星光"
-          : "微风";
-  const fragments = [
-    `${primary}与${noun}`,
-    `${secondary}边的${noun}`,
-    `${noun}落在${primary}`,
-    `${primary}之后去${secondary}`,
-    `${noun}和一段小路`
+function fallbackTitleFromStops(stops: PlanStopView[], indexHint: number) {
+  const names = stops.map((stop) => stop.title.replace(/[（(].*?[）)]/g, "").trim()).filter(Boolean);
+  const first = names[0] || "城市";
+  const second = names[1] || "好去处";
+  const variants = [
+    `${first}与${second}之间`,
+    `${second}边的小路线`,
+    `${first}之后的微光`,
+    `${first}和一段小路`,
+    `${second}里的片刻`
   ];
-  return `《${fragments[indexHint % fragments.length]}》`;
+  return `《${variants[indexHint % variants.length]}》`;
+}
+
+function planTitle(plan: Plan, stops: PlanStopView[], indexHint: number) {
+  const title = plan.recommendation?.title?.trim();
+  if (title && !/^备选方案\s*\d+$/.test(title)) {
+    return title;
+  }
+  return fallbackTitleFromStops(stops, indexHint);
 }
 
 function routeSummary(plan: Plan, stops: PlanStopView[], distance: string): PlanRouteSummary {
@@ -178,14 +195,6 @@ function routeSummary(plan: Plan, stops: PlanStopView[], distance: string): Plan
     transportModesText: modes.length ? modes.join(" / ") : "步行 / 打车",
     stopSequenceText: stops.map((stop) => stop.label).join(" → ")
   };
-}
-
-function fallbackTitleFromStops(stops: PlanStopView[]) {
-  const names = stops.map((stop) => stop.title).filter(Boolean);
-  if (names.length >= 2) {
-    return `${names[0]}与${names[1]}`;
-  }
-  return names[0] || "本地生活方案";
 }
 
 export function planToViewModel(plan: Plan, badge = "推荐", indexHint = 0): PlanViewModel {
@@ -205,13 +214,13 @@ export function planToViewModel(plan: Plan, badge = "推荐", indexHint = 0): Pl
     id: plan.id || "plan-main",
     badge,
     styleTag: styleTagFromBadge(badge, indexHint),
-    title: titleFromPlan(plan, stops, indexHint) || plan.recommendation?.title || fallbackTitleFromStops(stops),
+    title: planTitle(plan, stops, indexHint),
     audience: scenarioText(plan),
     durationText: duration,
     budgetText: budget,
     distanceText: distance,
     reason,
-    highlightTags: Array.from(new Set(plan.highlight_tags?.map((tag) => tag.trim()).filter(Boolean) ?? [])).slice(0, 4),
+    highlightTags: uniqueHighlightTags(plan.highlight_tags ?? []),
     pros: pros.length ? pros : ["地点组合紧凑", "路线和时间已做可执行性校验"],
     cons: cons.length ? cons : ["部分营业或预约信息建议出发前再次确认"],
     metrics: [

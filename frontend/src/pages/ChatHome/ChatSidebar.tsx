@@ -60,7 +60,8 @@ export function ChatSidebar({
         <strong>PlanGo</strong>
       </div>
 
-      <button type="button" className="sidebar-primary-action" onClick={onNewConversation} aria-label="新建聊天">
+      <button type="button" className="sidebar-primary-action" onClick={onNewConversation} aria-label="新建聊天" 
+      style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-start', paddingLeft: '16px', gap: '8px' }}>
         <MessageCirclePlus size={20} />
         <span>新聊天</span>
       </button>
@@ -141,7 +142,7 @@ export function ChatSidebar({
                 <div className="confirm-dialog-icon">
                   <Trash2 size={20} />
                 </div>
-                <h3 id="delete-conversation-title">确定删除对话？</h3>
+                <h3 id="delete-conversation-title" style={{ textAlign: 'center', width: '100%' }}>确定删除对话？</h3>
                 <p>删除后，这条历史对话和对应的本地方案入口会从当前浏览器中移除。</p>
                 <div className="confirm-dialog-actions">
                   <button type="button" className="confirm-dialog-secondary" onClick={() => setDeleteTarget(null)}>

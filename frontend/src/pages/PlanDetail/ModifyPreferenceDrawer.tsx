@@ -22,7 +22,8 @@ const groups = [
 
 function stopScope(stop: PlanStopView | null) {
   if (!stop) return "方案";
-  return `第${stop.order}个地点`;
+  const numerals = ["一", "二", "三", "四", "五", "六", "七", "八", "九"];
+  return `第${numerals[stop.order - 1] ?? stop.order}个地点`;
 }
 
 export function ModifyPreferenceDrawer({ open, targetStop, plan, onClose, onApply }: ModifyPreferenceDrawerProps) {
@@ -35,8 +36,7 @@ export function ModifyPreferenceDrawer({ open, targetStop, plan, onClose, onAppl
 
   const apply = () => {
     const scope = stopScope(targetStop);
-    const planTitle = plan?.title ? `（${plan.title}）` : "";
-    onApply(`${scope}${planTitle}${selected.join("，") || "调整一下"}`);
+    onApply(`${scope}${selected.join("，") || "调整一下"}`);
     setSelected([]);
     onClose();
   };

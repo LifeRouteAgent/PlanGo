@@ -4162,3 +4162,272 @@ img {
     text-align: left;
   }
 }
+
+/* Plan detail header now reuses the overview page header language. */
+.detail-page-header {
+  align-items: flex-start;
+  padding: 18px 22px;
+}
+
+.detail-page-header .apple-button {
+  flex: 0 0 auto;
+}
+
+.detail-page-header .detail-title-block {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.detail-page-header .detail-title-block h2 {
+  margin: 0;
+  font-size: clamp(24px, 3vw, 34px);
+  line-height: 1.18;
+  letter-spacing: 0;
+}
+
+.detail-page-header .detail-metric-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.markdown-table-wrap {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  border: 1px solid rgba(111, 153, 199, 0.2);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.72);
+  box-shadow: 0 12px 28px rgba(55, 98, 148, 0.08);
+}
+
+.markdown-message table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 260px;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.markdown-message th,
+.markdown-message td {
+  padding: 10px 12px;
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid rgba(111, 153, 199, 0.14);
+}
+
+.markdown-message th {
+  color: var(--pg-ink);
+  font-weight: 900;
+  background: rgba(232, 245, 255, 0.78);
+}
+
+.markdown-message tr:last-child td {
+  border-bottom: 0;
+}
+
+/* Compact plan detail header and global theme toggle. */
+.detail-page-header {
+  min-height: 74px;
+  align-items: center;
+  margin-bottom: 12px;
+  padding: 12px 18px;
+}
+
+.detail-page-header .detail-title-block {
+  display: flex;
+  align-items: center;
+  min-height: 46px;
+}
+
+.detail-page-header .detail-title-block h2 {
+  margin: 0;
+  color: var(--pg-ink);
+  font-size: clamp(22px, 2.45vw, 32px);
+  font-weight: 900;
+  line-height: 1.16;
+  letter-spacing: 0;
+}
+
+.detail-metric-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 16px;
+  padding-left: 68px;
+}
+
+.theme-toggle {
+  position: fixed;
+  top: 24px;
+  right: 28px;
+  z-index: 80;
+  width: 44px;
+  height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--pg-ink);
+  background: rgba(255, 255, 255, 0.74);
+  border: 1px solid rgba(188, 215, 235, 0.7);
+  border-radius: 999px;
+  box-shadow: var(--pg-shadow-soft);
+  backdrop-filter: blur(18px);
+  transition:
+    transform 0.22s var(--pg-ease),
+    box-shadow 0.22s var(--pg-ease),
+    border-color 0.22s var(--pg-ease),
+    background 0.22s var(--pg-ease);
+}
+
+.theme-toggle:hover {
+  transform: translateY(-2px);
+  border-color: rgba(91, 168, 255, 0.72);
+  box-shadow: var(--pg-shadow-hover);
+}
+
+.theme-toggle:active {
+  transform: scale(0.96);
+}
+
+.theme-toggle:focus-visible {
+  outline: 3px solid rgba(91, 168, 255, 0.24);
+  outline-offset: 3px;
+}
+
+html[data-theme="dark"] {
+  color: #e6f2ff;
+  background: #071422;
+  color-scheme: dark;
+
+  --pg-blue: #70b5ff;
+  --pg-blue-strong: #52a2ff;
+  --pg-blue-soft: rgba(112, 181, 255, 0.2);
+  --pg-mint: #77e6c4;
+  --pg-mint-strong: #40d2a8;
+  --pg-ink: #e9f5ff;
+  --pg-text: #c9d9e8;
+  --pg-muted: #93a9bb;
+  --pg-faint: #71889b;
+  --pg-surface: rgba(16, 31, 48, 0.72);
+  --pg-surface-strong: rgba(20, 38, 58, 0.92);
+  --pg-line: rgba(124, 169, 213, 0.22);
+  --pg-line-strong: rgba(112, 181, 255, 0.5);
+  --pg-shadow: 0 24px 72px rgba(0, 0, 0, 0.36);
+  --pg-shadow-hover: 0 30px 90px rgba(0, 0, 0, 0.48);
+  --pg-shadow-soft: 0 12px 34px rgba(0, 0, 0, 0.32);
+}
+
+html[data-theme="dark"] body {
+  background: #071422;
+}
+
+.plango-app[data-theme="dark"] {
+  background:
+    radial-gradient(circle at 12% 8%, rgba(64, 210, 168, 0.16), transparent 32%),
+    radial-gradient(circle at 86% 12%, rgba(82, 162, 255, 0.18), transparent 34%),
+    radial-gradient(circle at 50% 100%, rgba(36, 85, 130, 0.2), transparent 42%),
+    linear-gradient(180deg, #071422 0%, #0b1828 54%, #071d1b 100%);
+}
+
+.plango-app[data-theme="dark"] .theme-toggle,
+.plango-app[data-theme="dark"] .apple-button-ghost,
+.plango-app[data-theme="dark"] .apple-button-secondary,
+.plango-app[data-theme="dark"] .soft-tag,
+.plango-app[data-theme="dark"] .chat-sidebar,
+.plango-app[data-theme="dark"] .chat-card,
+.plango-app[data-theme="dark"] .plan-summary-card,
+.plango-app[data-theme="dark"] .plan-card-v2,
+.plango-app[data-theme="dark"] .page-header,
+.plango-app[data-theme="dark"] .detail-timeline-panel,
+.plango-app[data-theme="dark"] .detail-insight-panel,
+.plango-app[data-theme="dark"] .detail-highlight-card,
+.plango-app[data-theme="dark"] .detail-analysis-card,
+.plango-app[data-theme="dark"] .timeline-stop-card,
+.plango-app[data-theme="dark"] .traffic-card,
+.plango-app[data-theme="dark"] .map-shell,
+.plango-app[data-theme="dark"] .route-bottom-sheet,
+.plango-app[data-theme="dark"] .drawer-panel,
+.plango-app[data-theme="dark"] .home-inspiration-panel,
+.plango-app[data-theme="dark"] .inspiration-poi-card,
+.plango-app[data-theme="dark"] .inspiration-actions button,
+.plango-app[data-theme="dark"] .chat-input-shell,
+.plango-app[data-theme="dark"] .markdown-table-wrap {
+  color: var(--pg-text);
+  background: var(--pg-surface);
+  border-color: var(--pg-line);
+  box-shadow: var(--pg-shadow-soft);
+}
+
+.plango-app[data-theme="dark"] h1,
+.plango-app[data-theme="dark"] h2,
+.plango-app[data-theme="dark"] h3,
+.plango-app[data-theme="dark"] strong,
+.plango-app[data-theme="dark"] .detail-title-block h2,
+.plango-app[data-theme="dark"] .page-header h1,
+.plango-app[data-theme="dark"] .markdown-message strong {
+  color: var(--pg-ink);
+}
+
+.plango-app[data-theme="dark"] p,
+.plango-app[data-theme="dark"] small,
+.plango-app[data-theme="dark"] .markdown-message,
+.plango-app[data-theme="dark"] .timeline-stop-card,
+.plango-app[data-theme="dark"] .traffic-card {
+  color: var(--pg-text);
+}
+
+.plango-app[data-theme="dark"] .chat-bubble.is-assistant {
+  background: rgba(18, 35, 54, 0.9);
+  color: var(--pg-text);
+}
+
+.plango-app[data-theme="dark"] .chat-input-shell textarea,
+.plango-app[data-theme="dark"] input,
+.plango-app[data-theme="dark"] textarea {
+  color: var(--pg-ink);
+  background: rgba(8, 19, 32, 0.68);
+}
+
+.plango-app[data-theme="dark"] .markdown-message th {
+  background: rgba(54, 106, 154, 0.24);
+}
+
+@media (max-width: 760px) {
+  .theme-toggle {
+    top: 14px;
+    right: 16px;
+    width: 40px;
+    height: 40px;
+  }
+
+  .detail-metric-strip {
+    padding-left: 0;
+  }
+}
+
+/* Restore centered chat workspace and remove the dark-mode entry point. */
+.theme-toggle {
+  display: none !important;
+}
+
+.app-content-with-sidebar .chat-home-inner,
+.chat-home-inner {
+  width: min(1180px, 100%);
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.app-content-with-sidebar .chat-workbench,
+.chat-workbench {
+  grid-template-columns: minmax(620px, 1fr) minmax(300px, 340px);
+}
+
+@media (max-width: 1100px) {
+  .app-content-with-sidebar .chat-workbench,
+  .chat-workbench {
+    grid-template-columns: 1fr;
+  }
+}

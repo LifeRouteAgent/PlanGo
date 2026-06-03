@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+﻿import { useEffect, useMemo, useState } from "react";
 import { ChatHome } from "./pages/ChatHome";
 import { ChatSidebar } from "./pages/ChatHome/ChatSidebar";
 import { PlanDetail } from "./pages/PlanDetail";
@@ -18,10 +18,13 @@ import {
   type ConversationRecord,
   type StoredChatMessage
 } from "./utils/conversationStore";
+import { AUTO_SUBMIT_EVENT, type AutoSubmitPayload } from "./utils/autoSubmitEvent";
 import { planToViewModel, type PlanViewModel } from "./utils/planViewModel";
 
 type AppRoute = "/" | "/plan" | "/plan/detail" | "/share";
 export type AppView = "planner" | "plans" | "favorites" | "history" | "calendar" | "profile" | "observability";
+
+type PendingChatSubmit = AutoSubmitPayload;
 
 function normalizePath(pathname: string): AppRoute {
   if (pathname === "/plan" || pathname === "/plan/detail" || pathname === "/share") {
@@ -81,7 +84,8 @@ export function App() {
   const [latestPlan, setLatestPlan] = useState<Plan | null>(() => activeConversation.plan);
   const [selectedPlan, setSelectedPlan] = useState<PlanViewModel | null>(null);
   const [feedbackMessage, setFeedbackMessage] = useState("");
-  const [pendingChatSubmit, setPendingChatSubmit] = useState("");
+  const [pendingChatSubmit, setPendingChatSubmit] = useState<PendingChatSubmit | null>(null);
+
 
   useEffect(() => {
     const onPopState = () => setRoute(normalizePath(window.location.pathname));
@@ -219,8 +223,12 @@ export function App() {
   };
 
   const handlePreferenceSubmit = (message: string) => {
-    setPendingChatSubmit(message);
+    const pending = { id: crypto.randomUUID(), text: message };
+    setPendingChatSubmit(pending);
     navigate("/");
+    window.setTimeout(() => {
+      window.dispatchEvent(new CustomEvent<PendingChatSubmit>(AUTO_SUBMIT_EVENT, { detail: pending }));
+    }, 120);
   };
 
   return (
@@ -233,7 +241,7 @@ export function App() {
         onDeleteConversation={handleDeleteConversation}
       />
       <div className="app-content-with-sidebar">
-        {route === "/" && (
+        <div hidden={route !== "/"}>
           <ChatHome
             conversationId={activeConversation.id}
             messages={messages}
@@ -244,9 +252,9 @@ export function App() {
             onOpenDetail={() => navigate("/plan/detail")}
             onStreamComplete={handleStreamComplete}
             pendingSubmit={pendingChatSubmit}
-            onPendingSubmitConsumed={() => setPendingChatSubmit("")}
+            onPendingSubmitConsumed={() => setPendingChatSubmit(null)}
           />
-        )}
+        </div>
 
         {route === "/plan" && (
           <PlanOverview
@@ -284,3 +292,6 @@ export function App() {
     </main>
   );
 }
+
+
+

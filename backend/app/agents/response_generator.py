@@ -1,6 +1,7 @@
 ﻿from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 from app.agents.issue_utils import normalize_issues
@@ -348,8 +349,9 @@ def _merge_plan_enrichment(
         safe_tags: list[str] = []
         for item in highlight_tags:
             tag = str(item).strip()[:6]
-            if tag and tag not in seen_tags:
-                seen_tags.add(tag)
+            key = _highlight_tag_key(tag)
+            if tag and key and key not in seen_tags:
+                seen_tags.add(key)
                 safe_tags.append(tag)
             if len(safe_tags) >= 4:
                 break
@@ -379,6 +381,12 @@ def _merge_plan_enrichment(
     merged.setdefault("pros", ["偏好匹配度较高。"])
     merged.setdefault("cons", ["仍需出发前确认营业和排队情况。"])
     return merged
+
+
+def _highlight_tag_key(value: str) -> str:
+    """归一化短标签，避免“距离合理 / 距离合理。”一类重复进入方案亮点。"""
+
+    return re.sub(r"[《》「」『』【】（）()\[\]\s,，.。:：;；、/\\|-]+", "", value).lower()
 
 
 def _default_plan_actions(plan: dict[str, Any]) -> list[dict[str, str]]:

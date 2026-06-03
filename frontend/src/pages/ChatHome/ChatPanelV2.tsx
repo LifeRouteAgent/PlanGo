@@ -49,7 +49,9 @@ export function ChatPanelV2({
   };
 
   const submit = (value: string) => {
-    const merged = selectedPreferences.length ? `${value}，偏好：${selectedPreferences.join("，")}` : value;
+    const trimmed = value.trim();
+    if (!trimmed || isRunning) return;
+    const merged = selectedPreferences.length ? `${trimmed}，偏好：${selectedPreferences.join("，")}` : trimmed;
     setSelectedPreferences([]);
     onSubmit(merged);
   };

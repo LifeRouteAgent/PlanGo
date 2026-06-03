@@ -11,8 +11,8 @@ export function PlaceDetailDrawer({ stop, onClose }: PlaceDetailDrawerProps) {
   if (!stop) return null;
 
   return (
-    <aside className="drawer" aria-label="地点详情">
-      <div className="drawer-panel place-drawer">
+    <aside className="drawer" aria-label="地点详情" onMouseDown={onClose}>
+      <div className="drawer-panel place-drawer" onMouseDown={(event) => event.stopPropagation()}>
         <header>
           <div>
             <span>地点详情</span>
