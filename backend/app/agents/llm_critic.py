@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
 from typing import Any
@@ -21,7 +21,82 @@ ALLOWED_CODES = {
 }
 
 ALLOWED_SEVERITIES = {"info", "warning", "error"}
+def should_run_llm_critic(state: PlanState) -> bool:
+    """判断本轮是否值得阻塞调用 LLM Critic。"""
 
+    verified_plans = [plan for plan in state.get("verified_plans", []) if isinstance(plan, dict)]
+    if not verified_plans:
+        return _record_critic_route(False, "no_verified_plans")
+    constraints = state.get("constraints", {}) if isinstance(state.get("constraints"), dict) else {}
+    understanding = constraints.get("llm_understanding") if isinstance(constraints.get("llm_understanding"), dict) else {}
+    if constraints.get("must_pois") or understanding.get("must_pois"):
+        return _record_critic_route(True, "must_pois")
+    issues = normalize_issues(state.get("errors", []))
+    warning_count = sum(1 for issue in issues if issue.get("severity") == "warning")
+    if warning_count >= 2:
+        return _record_critic_route(True, "many_verifier_warnings")
+    if _top_scores_are_close(verified_plans):
+        return _record_critic_route(True, "close_top_scores")
+    if _looks_complex(state, verified_plans):
+        return _record_critic_route(True, "complex_request")
+    if _has_negative_feedback(state):
+        return _record_critic_route(True, "negative_feedback")
+    if _has_unknown_price_or_open_time(verified_plans):
+        return _record_critic_route(True, "unknown_price_or_open_time")
+    return _record_critic_route(False, "low_risk")
+
+
+def _record_critic_route(run: bool, reason: str) -> bool:
+    record_trace_event("llm_critic_route", {"run": run, "reason": reason})
+    return run
+
+
+def _top_scores_are_close(plans: list[dict[str, Any]]) -> bool:
+    scores: list[float] = []
+    for plan in plans[:2]:
+        try:
+            scores.append(float(plan.get("plan_score", 0) or 0))
+        except (TypeError, ValueError):
+            scores.append(0.0)
+    return len(scores) >= 2 and abs(scores[0] - scores[1]) <= 0.04
+
+
+def _looks_complex(state: PlanState, plans: list[dict[str, Any]]) -> bool:
+    constraints = state.get("constraints", {}) if isinstance(state.get("constraints"), dict) else {}
+    activity_intents = constraints.get("activity_intents") or []
+    target_categories = state.get("target_categories") or []
+    max_items = max((len(plan.get("items", []) or []) for plan in plans), default=0)
+    return bool(
+        max_items >= 3
+        or len(target_categories) >= 3
+        or (isinstance(activity_intents, list) and len(activity_intents) >= 2)
+        or constraints.get("budget_is_hard")
+        or constraints.get("duration_is_hard")
+    )
+
+
+def _has_negative_feedback(state: PlanState) -> bool:
+    query = str(state.get("user_query") or "")
+    if state.get("is_revision"):
+        return True
+    return any(word in query for word in ("不要", "不满意", "换掉", "太远", "太贵", "不喜欢"))
+
+
+def _has_unknown_price_or_open_time(plans: list[dict[str, Any]]) -> bool:
+    for plan in plans[:3]:
+        for item in plan.get("items", []) if isinstance(plan.get("items"), list) else []:
+            if not isinstance(item, dict):
+                continue
+            open_status = str(item.get("open_status") or "").lower()
+            price_level = str(item.get("price_level") or "").lower()
+            avg_price = item.get("avg_price")
+            if open_status in {"", "unknown", "未知", "none"}:
+                return True
+            if price_level in {"", "unknown", "未知", "none"} and not avg_price:
+                return True
+            if item.get("unknown_price") or item.get("unknown_open_time"):
+                return True
+    return False
 
 def llm_critic_node(state: PlanState) -> PlanStatePatch:
     """LLM Critic / QA 节点。
@@ -215,3 +290,5 @@ def _attach_plan_issues(
             "issues": dedupe_issues([*plan.get("issues", []), *issues_by_plan.get(plan_id, [])]),
         })
     return updated
+
+

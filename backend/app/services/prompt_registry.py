@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
@@ -22,11 +22,11 @@ PROMPT_SPECS: dict[str, PromptSpec] = {
     "intent_understanding": PromptSpec("intent_understanding", "2026-05-31.1", "IntentUnderstandingOutput", "1"),
     "revision_parser": PromptSpec("revision_parser", "2026-05-31.1", "RevisionConstraintOutput", "1"),
     "memory_extractor": PromptSpec("memory_extractor", "2026-05-31.1", "MemoryExtractionOutput", "1"),
-    "followup_context": PromptSpec("followup_context", "2026-05-31.1", "FollowupContextOutput", "1"),
     "planner_dag": PromptSpec("planner_dag", "2026-05-31.1", "DagPlanOutput", "1"),
     "llm_critic": PromptSpec("llm_critic", "2026-05-31.1", "CriticOutput", "1"),
     "response_plan_enrichment": PromptSpec("response_plan_enrichment", "2026-05-31.1", "ResponsePlansEnrichmentOutput", "1"),
     "response_generator": PromptSpec("response_generator", "2026-05-31.1", "ResponseEnrichmentOutput", "1"),
+    "response_generation_package": PromptSpec("response_generation_package", "2026-06-03.1", "ResponseGenerationOutput", "1"),
 }
 
 
@@ -52,3 +52,6 @@ def load_prompt_template(prompt_name: str, fallback: str = "") -> str:
         record_trace_event("prompt_template_missing", {"prompt_name": prompt_name, "path": str(path)})
         return fallback
     return path.read_text(encoding="utf-8").strip()
+
+
+

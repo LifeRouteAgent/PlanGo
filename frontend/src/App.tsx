@@ -33,6 +33,18 @@ function normalizePath(pathname: string): AppRoute {
   return "/";
 }
 
+function detailUrl(plan: PlanViewModel | null | undefined) {
+  return plan?.id ? `/plan/detail?plan=${encodeURIComponent(plan.id)}` : "/plan/detail";
+}
+
+function planIdFromLocation() {
+  return new URLSearchParams(window.location.search).get("plan") || "";
+}
+
+function samePlan(left: PlanViewModel | null, right: PlanViewModel) {
+  return Boolean(left && (left.id === right.id || left.raw.id === right.raw.id));
+}
+
 function alternativeToPlan(plan: Plan, alternative: PlanAlternative): Plan {
   return {
     ...plan,
@@ -86,16 +98,16 @@ export function App() {
   const [feedbackMessage, setFeedbackMessage] = useState("");
   const [pendingChatSubmit, setPendingChatSubmit] = useState<PendingChatSubmit | null>(null);
 
-
   useEffect(() => {
     const onPopState = () => setRoute(normalizePath(window.location.pathname));
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
   }, []);
 
-  const navigate = (nextRoute: AppRoute) => {
-    if (window.location.pathname !== nextRoute) {
-      window.history.pushState({}, "", nextRoute);
+  const navigate = (nextRoute: AppRoute, targetUrl: string = nextRoute) => {
+    const currentUrl = `${window.location.pathname}${window.location.search}`;
+    if (currentUrl !== targetUrl) {
+      window.history.pushState({}, "", targetUrl);
     }
     setRoute(nextRoute);
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -155,10 +167,29 @@ export function App() {
   }, [latestPlan]);
 
   useEffect(() => {
-    if (!selectedPlan && planOptions.length) {
+    if (!planOptions.length) {
+      if (selectedPlan) setSelectedPlan(null);
+      return;
+    }
+
+    if (route === "/plan/detail") {
+      const urlPlanId = planIdFromLocation();
+      const matchedPlan = urlPlanId
+        ? planOptions.find((item) => item.id === urlPlanId || item.raw.id === urlPlanId)
+        : null;
+      if (matchedPlan) {
+        if (!samePlan(selectedPlan, matchedPlan)) {
+          setSelectedPlan(matchedPlan);
+        }
+        return;
+      }
+    }
+
+    const stillExists = selectedPlan ? planOptions.some((item) => samePlan(selectedPlan, item)) : false;
+    if (!stillExists) {
       setSelectedPlan(planOptions[0]);
     }
-  }, [planOptions, selectedPlan]);
+  }, [planOptions, route, selectedPlan]);
 
   const handlePlanReady = (plan: Plan) => {
     setLatestPlan(plan);
@@ -171,7 +202,13 @@ export function App() {
 
   const handleSelectPlan = (plan: PlanViewModel) => {
     setSelectedPlan(plan);
-    navigate("/plan/detail");
+    navigate("/plan/detail", detailUrl(plan));
+  };
+
+  const openCurrentDetail = () => {
+    const plan = selectedPlan ?? planOptions[0] ?? null;
+    if (plan) setSelectedPlan(plan);
+    navigate("/plan/detail", detailUrl(plan));
   };
 
   const handleNewConversation = () => {
@@ -249,7 +286,7 @@ export function App() {
             onMessagesChange={handleMessagesChange}
             onPlanReady={handlePlanReady}
             onOpenPlans={() => navigate("/plan")}
-            onOpenDetail={() => navigate("/plan/detail")}
+            onOpenDetail={openCurrentDetail}
             onStreamComplete={handleStreamComplete}
             pendingSubmit={pendingChatSubmit}
             onPendingSubmitConsumed={() => setPendingChatSubmit(null)}
@@ -284,7 +321,13 @@ export function App() {
             plan={selectedPlan ?? planOptions[0] ?? null}
             feedbackMessage={feedbackMessage}
             onFeedback={setFeedbackMessage}
-            onBack={() => navigate(selectedPlan ? "/plan/detail" : "/plan")}
+            onBack={() => {
+              if (selectedPlan) {
+                navigate("/plan/detail", detailUrl(selectedPlan));
+              } else {
+                navigate("/plan");
+              }
+            }}
             onBackHome={() => navigate("/")}
           />
         )}
@@ -292,6 +335,4 @@ export function App() {
     </main>
   );
 }
-
-
 

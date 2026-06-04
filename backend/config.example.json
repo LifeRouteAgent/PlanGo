@@ -22,7 +22,10 @@
     "EMBEDDING_PROVIDER":  "local_bge",
     "EMBEDDING_MODEL_PATH":  "BAAI/bge-small-zh-v1.5",
     "EMBEDDING_DIMENSION":  512,
-    "RUNTIME_STORE": "mysql",
-    "RUNTIME_MYSQL_ENABLED": true,
-    "PROMPT_VERSION_ENFORCED": true
+    "RUNTIME_STORE":  "mysql",
+    "RUNTIME_MYSQL_ENABLED":  true,
+    "PROMPT_VERSION_ENFORCED":  true,
+    "KAFKA_ENABLED":  false,
+    "KAFKA_BOOTSTRAP_SERVERS":  "127.0.0.1:9092",
+    "KAFKA_MEMORY_TOPIC":  "liferoute.memory.events"
 }

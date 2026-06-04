@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
 import queue
@@ -14,14 +14,15 @@ from app.agents.ranker import ranker_node
 from app.agents.response_generator import response_generator_node
 from app.agents.route_planner import route_time_planner_node
 from app.agents.verifier import verifier_node, verifier_route
-from app.agents.llm_critic import llm_critic_node
+from app.agents.llm_critic import llm_critic_node, should_run_llm_critic
 from app.dag.langgraph_dag_config import life_route_graph
 from app.models.schemas import TripPlanRequest, TripPlanResponse
 from app.models.schemas import RevisePlanRequest
 from app.services.amap_weather_service import AmapWeatherService
 from app.services.checkpoint_store import CheckpointStore, TaskStatus
-from app.services.llm_semantic_extractor import classify_followup_context, extract_revision_constraints
+from app.services.llm_semantic_extractor import extract_revision_constraints
 from app.services.memory_service import MemoryService
+from app.services.memory_event_queue import MemoryEventQueue
 from app.services.policy_config import policy_config
 from app.services.runtime_store import get_runtime_store
 from app.services.session_store import SessionStore
@@ -49,6 +50,7 @@ class TripPlanningService:
     ) -> None:
         self.session_store = session_store or SessionStore()
         self.memory = memory or MemoryService()
+        self.memory_events = MemoryEventQueue(self.memory)
         self.checkpoint = checkpoint or CheckpointStore()
 
     def plan(self, request: TripPlanRequest) -> TripPlanResponse:
@@ -63,17 +65,24 @@ class TripPlanningService:
         )
         task_id = str(task["task_id"])
         saved_session = self.session_store.load(session_id)
-        effective_query = effective_query_for_request(saved_session, request.user_query)
-        self.memory.observe_user_query(request.user_query, user_id=session_id)
+        conversation_context = conversation_context_for_request(saved_session, request.user_query)
+        self.memory_events.publish_user_query(
+            request.user_query,
+            user_id=session_id,
+            trace_id=trace_id,
+            run_id=run_id,
+            session_id=session_id,
+        )
         user_profile = self.memory.enrich_user_profile({
             **request.user_profile,
-            "last_query": effective_query,
+            "last_query": request.user_query,
             "session_id": session_id,
             "user_id": session_id,
         })
         initial_state = create_initial_state(
-            effective_query,
+            request.user_query,
             user_profile=user_profile,
+            conversation_context=conversation_context,
             max_replanning_count=request.max_replanning_count,
             session_id=session_id,
             trace_id=trace_id,
@@ -85,13 +94,10 @@ class TripPlanningService:
             status=TaskStatus.CREATED,
             task_id=task_id,
         )
-        if effective_query != request.user_query:
+        if _has_planning_context(conversation_context):
             initial_state["logs"] = [
                 *initial_state.get("logs", []),
-                (
-                    "Context Follow-up: merged user reply into previous planning request:"
-                    f" {request.user_query}"
-                ),
+                "Conversation Context: attached latest planning context for Intent LLM.",
             ]
         recorder = TraceRecorder(trace_id=trace_id, run_id=run_id, session_id=session_id)
         result = recorder.time_node(
@@ -132,6 +138,7 @@ class TripStreamingService:
     ) -> None:
         self.session_store = session_store or SessionStore()
         self.memory = memory or MemoryService()
+        self.memory_events = MemoryEventQueue(self.memory)
         self.checkpoint = checkpoint or CheckpointStore()
 
     def stream(self, request: TripPlanRequest) -> Iterator[str]:
@@ -143,19 +150,26 @@ class TripStreamingService:
         task = self.checkpoint.create(session_id=session_id, user_id=session_id, trace_id=trace_id)
         task_id = str(task["task_id"])
         saved_session = self.session_store.load(session_id)
-        effective_query = effective_query_for_request(saved_session, request.user_query)
-        is_context_followup = effective_query != request.user_query
-        self.memory.observe_user_query(request.user_query, user_id=session_id)
+        conversation_context = conversation_context_for_request(saved_session, request.user_query)
+        is_context_followup = _has_planning_context(conversation_context)
+        self.memory_events.publish_user_query(
+            request.user_query,
+            user_id=session_id,
+            trace_id=trace_id,
+            run_id=run_id,
+            session_id=session_id,
+        )
         user_profile = self.memory.enrich_user_profile({
             **request.user_profile,
-            "last_query": effective_query,
+            "last_query": request.user_query,
             "session_id": session_id,
             "user_id": session_id,
         })
         recorder = TraceRecorder(trace_id=trace_id, run_id=run_id, session_id=session_id)
         current_state = create_initial_state(
-            effective_query,
+            request.user_query,
             user_profile=user_profile,
+            conversation_context=conversation_context,
             max_replanning_count=request.max_replanning_count,
             session_id=session_id,
             trace_id=trace_id,
@@ -167,8 +181,7 @@ class TripStreamingService:
             current_state["logs"] = [
                 *current_state.get("logs", []),
                 (
-                    "Context Follow-up: merged user reply into previous planning request:"
-                    f" {request.user_query}"
+                    "Conversation Context: attached latest planning context for Intent LLM."
                 ),
             ]
 
@@ -238,7 +251,7 @@ class TripStreamingService:
             {
                 "stage": "context_followup" if is_context_followup else "start",
                 "message": (
-                    "已接上上一轮规划，把你的补充/更正合并进原始需求。"
+                    "已带上最近对话上下文，正在由意图识别判断是否续跑。"
                     if is_context_followup
                     else "已收到需求，开始理解意图并构建本地生活规划 DAG。"
                 ),
@@ -311,6 +324,7 @@ class TripRevisionService:
     ) -> None:
         self.session_store = session_store or SessionStore()
         self.memory = memory or MemoryService()
+        self.memory_events = MemoryEventQueue(self.memory)
         self.checkpoint = checkpoint or CheckpointStore()
 
     def stream(self, request: RevisePlanRequest) -> Iterator[str]:
@@ -329,7 +343,13 @@ class TripRevisionService:
             trace_id=trace_id,
         )
         task_id = str(task["task_id"])
-        self.memory.observe_user_query(request.user_query, user_id=request.session_id)
+        self.memory_events.publish_user_query(
+            request.user_query,
+            user_id=request.session_id,
+            trace_id=trace_id,
+            run_id=run_id,
+            session_id=request.session_id,
+        )
         recorder = TraceRecorder(trace_id=trace_id, run_id=run_id, session_id=request.session_id)
         current_state = build_revision_state(
             saved_session["latest_state"],
@@ -480,33 +500,127 @@ class TaskRecoveryService:
         return get_runtime_store().health()
 
 
+def conversation_context_for_request(
+    saved_session: dict[str, Any] | None,
+    current_query: str,
+) -> dict[str, Any]:
+    """构建给 Intent LLM 的多轮上下文，不再单独调用 followup LLM。
+
+    `current_query` 始终保留为本轮用户输入；上一轮规划、待澄清问题和最近对话
+    只作为结构化上下文传给 Intent Router。这样模型可以一次性判断“这是新请求、
+    简单问答，还是上一轮规划的补充/更正”。
+    """
+
+    pending_state = latest_pending_clarification_state(saved_session)
+    planning_state = latest_planning_state(saved_session)
+    latest_query = _query_from_state(planning_state) or latest_planning_query_from_turns(saved_session)
+    return {
+        "current_query": current_query,
+        "pending_clarification_query": _query_from_state(pending_state),
+        "pending_clarification_question": str(
+            (pending_state or {}).get("clarify_question") or ""
+        ),
+        "latest_planning_query": latest_query,
+        "latest_planning_constraints": _safe_constraints_for_context(planning_state),
+        "latest_plan_summary": _plan_summary_for_context(planning_state),
+        "latest_turns": _latest_turn_summaries(saved_session),
+        "user_profile": _user_profile_from_session(saved_session),
+        "merge_policy": (
+            "当前用户输入优先；如果本轮是补充/更正且存在 latest_planning_query，"
+            "请在 Intent 理解阶段输出合并后的完整约束。直接问答必须忽略规划上下文。"
+        ),
+    }
+
+
+def _has_planning_context(conversation_context: dict[str, Any] | None) -> bool:
+    """判断本轮是否附带了上一轮规划上下文。"""
+
+    if not isinstance(conversation_context, dict):
+        return False
+    return bool(
+        conversation_context.get("pending_clarification_query")
+        or conversation_context.get("latest_planning_query")
+    )
+
+
 def effective_query_for_request(
     saved_session: dict[str, Any] | None,
     current_query: str,
 ) -> str:
-    """把澄清回复或需求更正合并回上一轮规划需求。
+    """兼容旧调用：不再调用 LLM，也不把历史拼进 user_query。"""
 
-    关键场景：
-    - 上一轮 Agent 追问“还缺人数/预算”，用户回“两个人，预算1000”；
-    - 上一轮已经生成失败/风险回复，用户回“预算是1000元，其他需求不变”；
-    - 用户中间问过“你是什么模型”，再继续更正预算时，仍然应该修正最近一次规划上下文。
-    """
+    return current_query
 
-    llm_decision = classify_followup_context(
-        current_query,
-        pending_clarification_query=_query_from_state(
-            latest_pending_clarification_state(saved_session)
-        ),
-        latest_planning_query=_query_from_state(latest_planning_state(saved_session))
-        or latest_planning_query_from_turns(saved_session),
-        latest_turns=_latest_turn_summaries(saved_session),
-        user_profile=_user_profile_from_session(saved_session),
-    )
-    if llm_decision:
-        return _effective_query_from_llm_decision(saved_session, current_query, llm_decision)
+def _safe_constraints_for_context(state: dict[str, Any] | None) -> dict[str, Any]:
+    """裁剪上一轮约束，只保留 Intent 续跑需要的字段。"""
 
-    return _fallback_effective_query_for_request(saved_session, current_query)
+    constraints = (state or {}).get("constraints") if isinstance(state, dict) else {}
+    if not isinstance(constraints, dict):
+        return {}
+    allowed = {
+        "scenario",
+        "people_count",
+        "preferences",
+        "location_area",
+        "start_time",
+        "duration_hours",
+        "budget",
+        "must_pois",
+        "must_keywords",
+        "preference_keywords",
+        "activity_intents",
+        "target_categories",
+        "indoor_preferred",
+        "avoid_tags",
+        "excluded_keywords",
+        "planning_template",
+        "required_slots",
+    }
+    result: dict[str, Any] = {}
+    for key in allowed:
+        if key in constraints:
+            result[key] = constraints[key]
+    understanding = constraints.get("llm_understanding")
+    if isinstance(understanding, dict):
+        for key in allowed:
+            if key in understanding and key not in result:
+                result[key] = understanding[key]
+    return result
 
+
+def _plan_summary_for_context(state: dict[str, Any] | None) -> dict[str, Any]:
+    """把上一轮方案压缩成摘要，供“和上次差不多”一类请求使用。"""
+
+    if not isinstance(state, dict):
+        return {}
+    plans = state.get("ranked_plans") or state.get("candidate_plans") or []
+    selected = state.get("selected_plan") if isinstance(state.get("selected_plan"), dict) else {}
+    plan = selected or (plans[0] if isinstance(plans, list) and plans else {})
+    if not isinstance(plan, dict):
+        return {}
+    items = []
+    for item in plan.get("items", [])[:5] if isinstance(plan.get("items"), list) else []:
+        if not isinstance(item, dict):
+            continue
+        items.append({
+            "id": item.get("id"),
+            "name": item.get("name"),
+            "category": item.get("category"),
+            "subcategory": item.get("subcategory"),
+        })
+    return {
+        "plan_id": plan.get("id"),
+        "title": plan.get("title"),
+        "estimated_budget": plan.get("estimated_budget"),
+        "total_duration_minutes": plan.get("total_duration_minutes"),
+        "route_minutes": plan.get("route_minutes"),
+        "items": items,
+        "error_codes": [
+            str(issue.get("code"))
+            for issue in state.get("errors", [])
+            if isinstance(issue, dict) and issue.get("code")
+        ][:8],
+    }
 
 def _effective_query_from_llm_decision(
     saved_session: dict[str, Any] | None,
@@ -1054,8 +1168,13 @@ def run_revision_pipeline(state: dict[str, Any], recorder: TraceRecorder) -> dic
         run_node("route_time_planner", route_time_planner_node)
         run_node("availability_checker", availability_checker_node)
         run_node("verifier", verifier_node)
-    if verifier_route(state) == "rank":
+    if verifier_route(state) == "rank" and should_run_llm_critic(state):
         run_node("llm_critic", llm_critic_node)
     run_node("ranker", ranker_node)
     run_node("response_generator", response_generator_node)
     return state
+
+
+
+
+

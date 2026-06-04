@@ -56,7 +56,7 @@ from app.tools.poi_activity_recommend import poi_activity_recommend_node
 from app.tools.poi_restaurant_recommend import poi_restaurant_recommend_node
 from app.tools.poi_lifestyle_recommend import poi_lifestyle_recommend_node
 from app.agents.route_planner import route_time_planner_node
-from app.agents.llm_critic import llm_critic_node
+from app.agents.llm_critic import llm_critic_node, should_run_llm_critic
 from app.agents.verifier import verifier_node, verifier_route
 from app.agents.ranker import ranker_node
 from app.agents.response_generator import response_generator_node
@@ -1657,4 +1657,5 @@ def data_source_status() -> DataSourceStatusResponse:
             database_name=settings.database_name,
             error=str(exc),
         )
+
 

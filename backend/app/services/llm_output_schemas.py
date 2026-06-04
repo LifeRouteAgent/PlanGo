@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from typing import Any, Literal
 
@@ -154,6 +154,13 @@ class ResponsePlansEnrichmentOutput(BaseModel):
     plans: list[ResponsePlanEnrichmentOutput] = Field(default_factory=list)
 
 
+class ResponseGenerationOutput(BaseModel):
+    """响应生成统一输出：一次 LLM 同时产出最终回复和方案展示增强。"""
+
+    response_text: str = ""
+    plans: list[ResponsePlanEnrichmentOutput] = Field(default_factory=list)
+
+
 def validate_llm_output(
     schema: type[BaseModel],
     payload: Any,
@@ -186,3 +193,4 @@ def validate_llm_output(
             error=str(exc),
             schema_name=schema.__name__,
         )
+

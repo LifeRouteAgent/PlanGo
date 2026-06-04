@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from app.agents.llm_understanding import build_llm_understanding
 from app.state.plan_state import PlanState, PlanStatePatch
@@ -102,7 +102,11 @@ def intent_router_node(state: PlanState) -> PlanStatePatch:
         constraints = state.get("constraints", {})
         logs = [f"Intent Router: direct rule intent_type={intent_type}"]
     else:
-        llm_understanding = build_llm_understanding(query, state.get("user_profile", {}))
+        llm_understanding = build_llm_understanding(
+            query,
+            state.get("user_profile", {}),
+            conversation_context=state.get("conversation_context", {}),
+        )
         if llm_understanding:
             llm_intent_type = llm_understanding["intent_type"]
             intent_type = _guard_llm_intent(llm_intent_type, rule_intent_type)
@@ -250,3 +254,4 @@ def _guard_llm_intent(llm_intent_type: str, rule_intent_type: str) -> str:
     }:
         return "full_trip_plan"
     return llm_intent_type
+

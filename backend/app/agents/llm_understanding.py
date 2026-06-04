@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
 from typing import Any
@@ -84,7 +84,10 @@ def get_llm_understanding(state: dict[str, Any]) -> dict[str, Any] | None:
 
 
 def build_llm_understanding(
-    query: str, user_profile: dict[str, Any] | None = None
+    query: str,
+    user_profile: dict[str, Any] | None = None,
+    *,
+    conversation_context: dict[str, Any] | None = None,
 ) -> dict[str, Any] | None:
     """调用大模型做意图识别、约束抽取、追问判断和规划模板选择。
 
@@ -103,7 +106,7 @@ def build_llm_understanding(
                 "必须只输出一个 JSON 对象，不要输出 Markdown。"
             ),
         },
-        {"role": "user", "content": _build_prompt(query, profile)},
+        {"role": "user", "content": _build_prompt(query, profile, conversation_context or {})},
     ]
     raw = call_chat_completion(
         messages,
@@ -132,7 +135,11 @@ def build_llm_understanding(
     return normalized
 
 
-def _build_prompt(query: str, user_profile: dict[str, Any]) -> str:
+def _build_prompt(
+    query: str,
+    user_profile: dict[str, Any],
+    conversation_context: dict[str, Any] | None = None,
+) -> str:
     """构造稳定的结构化抽取 prompt。
 
     用户画像和 Memory 只能作为软偏好，不能被模型复制成“本轮用户明确说过的约束”。
@@ -145,6 +152,7 @@ def _build_prompt(query: str, user_profile: dict[str, Any]) -> str:
         {
             "user_query": query,
             "user_profile": user_profile,
+            "conversation_context": conversation_context or {},
             "constraints": {},
             "dag_plan": {},
             "candidate_pois": {},
@@ -157,8 +165,11 @@ def _build_prompt(query: str, user_profile: dict[str, Any]) -> str:
     return f"""
 请理解用户的本地生活需求，并且只输出一个 JSON 对象。
 
-用户本轮输入：
+用户本轮输入（当前任务描述，不等同于完整聊天历史）：
 {query}
+
+最近对话/上一轮规划上下文（用于判断是否续跑；直接问答时必须忽略规划上下文）：
+{json.dumps(conversation_context or {}, ensure_ascii=False, default=str)}
 
 历史画像和记忆（只能作为软偏好，不得覆盖本轮输入）：
 {profile_context}
@@ -174,12 +185,13 @@ def _build_prompt(query: str, user_profile: dict[str, Any]) -> str:
    - poi_search：查找某类地点或附近地点，但不要求排时间线。
    - full_trip_plan：需要把多个活动或一个时间窗口组织成可执行安排。
 2. 如果本轮输入是“你是什么模型/你支持什么功能/怎么使用”，必须输出 simple_qa 或 capability，不要沿用历史规划。
-3. 如果用户说“环球影城然后唱歌”“吃饭再看电影”这类多个活动组合，通常是 full_trip_plan。
-4. 如果用户已经说明同行对象或人数、日期/时间线索、活动偏好，就不要追问。
-5. 预算和出发区域可以缺省，不要只因为缺预算或缺位置追问。
-6. start_time 和 duration_hours 只有用户明确说了钟点、上午/下午/晚上、几小时、半天、一天或起止时间时才填写；不要自行补 14:00 或 6 小时。
-7. 历史画像里的室内、低预算、常去区域只能影响后续排序，不得写入 preferences，除非本轮用户明确提到。
-8. budget 必须做语义归一化：预算1k/1K/一千=1000，0.8万=8000；如果多轮输入里出现预算更正，以最后一次为准。
+3. 如果本轮输入是“预算改成1000”“两个人，预算1000”“其他不变”“继续刚才方案”这类补充/更正，并且 conversation_context 里存在 pending_clarification_query 或 latest_planning_query，必须基于上下文合并成完整规划理解，通常输出 full_trip_plan，不要当成 simple_qa。
+4. 如果用户说“环球影城然后唱歌”“吃饭再看电影”这类多个活动组合，通常是 full_trip_plan。
+5. 如果用户已经说明同行对象或人数、日期/时间线索、活动偏好，就不要追问。
+6. 预算和出发区域可以缺省，不要只因为缺预算或缺位置追问。
+7. start_time 和 duration_hours 只有用户明确说了钟点、上午/下午/晚上、几小时、半天、一天或起止时间时才填写；不要自行补 14:00 或 6 小时。
+8. 历史画像里的室内、低预算、常去区域只能影响后续排序，不得写入 preferences，除非本轮用户明确提到。
+9. budget 必须做语义归一化：预算1k/1K/一千=1000，0.8万=8000；如果上下文和本轮输入里出现预算更正，以本轮输入为准。
 
 target_categories 可选：
 - poi_restaurant
@@ -421,3 +433,9 @@ def _clean_number(value: Any) -> float | None:
         return float(value)
     except (TypeError, ValueError):
         return None
+
+
+
+
+
+

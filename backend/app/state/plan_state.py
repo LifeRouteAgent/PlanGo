@@ -1,14 +1,10 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from typing import Annotated, Any, NotRequired, TypedDict
 
 
 def merge_dicts(left: dict[str, Any] | None, right: dict[str, Any] | None) -> dict[str, Any]:
-    """LangGraph 并行分支合并字典状态时使用的 reducer。
-
-    多个 Skill 会并行写入 `recommended_pois` 的不同 key，不能用默认覆盖行为。
-    这里采用浅合并：右侧分支覆盖同名 key，不同 key 保留。
-    """
+    """LangGraph 并行分支合并字典状态时使用的 reducer。"""
 
     merged: dict[str, Any] = {}
     if left:
@@ -19,7 +15,7 @@ def merge_dicts(left: dict[str, Any] | None, right: dict[str, Any] | None) -> di
 
 
 def append_lists(left: list[Any] | None, right: list[Any] | None) -> list[Any]:
-    """LangGraph 合并日志、错误和候选方案列表时使用的 reducer。"""
+    """LangGraph 合并日志、工具证据和动作列表时使用的 reducer。"""
 
     return [*(left or []), *(right or [])]
 
@@ -34,11 +30,11 @@ class PlanState(TypedDict):
     """贯穿 LangGraph DAG 的全局状态对象。
 
     约定：每个节点只返回自己负责更新的字段，不直接修改入参对象。
-    这样后续可以安全接入 checkpoint、trace 和人工 review。
     """
 
     user_query: str
     user_profile: dict[str, Any]
+    conversation_context: dict[str, Any]
     constraints: dict[str, Any]
     candidate_pois: Annotated[dict[str, list[dict[str, Any]]], merge_dicts]
     recommended_pois: Annotated[dict[str, list[dict[str, Any]]], merge_dicts]
@@ -75,13 +71,11 @@ class PlanState(TypedDict):
 
 
 class PlanStatePatch(TypedDict, total=False):
-    """节点返回的局部状态补丁。
-
-    LangGraph 会把补丁合并回 PlanState；列表和字典字段通过上面的 reducer 合并。
-    """
+    """节点返回的局部状态补丁。"""
 
     user_query: str
     user_profile: dict[str, Any]
+    conversation_context: dict[str, Any]
     constraints: dict[str, Any]
     candidate_pois: dict[str, list[dict[str, Any]]]
     recommended_pois: dict[str, list[dict[str, Any]]]
@@ -118,10 +112,7 @@ class PlanStatePatch(TypedDict, total=False):
 
 
 class PoiRecord(TypedDict):
-    """Collector 层对外输出的统一 POI 字段。
-
-    后续无论来自高德 CSV/JSONL、实时地图 API，还是人工精选库，都需要先映射为该结构。
-    """
+    """Collector 层对外输出的统一 POI 字段。"""
 
     id: str
     name: str
@@ -137,14 +128,11 @@ class PoiRecord(TypedDict):
     avg_price: NotRequired[float]
     image_url: NotRequired[str]
     images: NotRequired[list[str]]
+    distance_km: NotRequired[float]
 
 
 class RecommendedPoiRecord(PoiRecord):
-    """Skill 层对候选 POI 打分后的输出结构。
-
-    这里不只保存推荐分数，还保存本地生活规划需要的可执行性字段。
-    后续 Route Planner、Verifier 和 Ranker 都基于这些字段判断方案是否能落地。
-    """
+    """Skill 层对候选 POI 打分后的输出结构。"""
 
     score: float
     reason: str
@@ -161,6 +149,7 @@ def create_initial_state(
     user_query: str,
     *,
     user_profile: dict[str, Any] | None = None,
+    conversation_context: dict[str, Any] | None = None,
     max_replanning_count: int = 2,
     session_id: str = "",
     trace_id: str = "",
@@ -174,6 +163,7 @@ def create_initial_state(
     return {
         "user_query": user_query,
         "user_profile": user_profile or {},
+        "conversation_context": conversation_context or {},
         "constraints": {},
         "candidate_pois": {},
         "recommended_pois": {},
@@ -195,7 +185,6 @@ def create_initial_state(
         "clarify_question": "",
         "replanning_count": 0,
         "max_replanning_count": max_replanning_count,
-        # 以下 force_* 字段只用于测试和演示异常分支，不代表真实业务输入。
         "force_empty_candidates": (
             bool(user_profile.get("force_empty_candidates")) if user_profile else False
         ),
@@ -217,3 +206,6 @@ def create_initial_state(
         "tool_evidence": [],
         "booking_actions": [],
     }
+
+
+

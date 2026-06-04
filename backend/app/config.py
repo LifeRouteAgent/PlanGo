@@ -127,6 +127,10 @@ class Settings:
     runtime_store: str = _get(_CONFIG, "RUNTIME_STORE", "mysql")
     runtime_mysql_enabled: bool = _get_bool(_CONFIG, "RUNTIME_MYSQL_ENABLED", True)
     prompt_version_enforced: bool = _get_bool(_CONFIG, "PROMPT_VERSION_ENFORCED", True)
+    kafka_enabled: bool = _get_bool(_CONFIG, "KAFKA_ENABLED", False)
+    kafka_bootstrap_servers: str = _get(_CONFIG, "KAFKA_BOOTSTRAP_SERVERS", "127.0.0.1:9092")
+    kafka_memory_topic: str = _get(_CONFIG, "KAFKA_MEMORY_TOPIC", "liferoute.memory.events")
 
 
 settings = Settings()
+

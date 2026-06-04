@@ -4431,3 +4431,43 @@ html[data-theme="dark"] body {
     grid-template-columns: 1fr;
   }
 }
+
+/* Global visual scale: makes 100% browser zoom feel close to the previous 75%-80% view. */
+:root {
+  --pg-app-scale: 0.8;
+}
+
+@media (min-width: 1024px) {
+  #root {
+    width: calc(100% / var(--pg-app-scale));
+    min-height: calc(100dvh / var(--pg-app-scale));
+    zoom: var(--pg-app-scale);
+  }
+}
+
+@supports not (zoom: 1) {
+  @media (min-width: 1024px) {
+    #root {
+      transform: scale(var(--pg-app-scale));
+      transform-origin: top left;
+    }
+  }
+}
+
+/* Prevent global visual scaling from creating a wide horizontal canvas. */
+html,
+body {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+.plango-app {
+  overflow-x: clip;
+}
+
+@media (min-width: 1024px) {
+  #root {
+    width: calc(100vw / var(--pg-app-scale));
+    max-width: calc(100vw / var(--pg-app-scale));
+  }
+}

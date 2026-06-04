@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from langgraph.graph import END, START, StateGraph
 
@@ -11,7 +11,7 @@ from app.agents.constraint_clarifier import (
 from app.agents.execution_agent import execution_agent_node, user_confirm_node
 from app.agents.intent_parser import intent_parser_node
 from app.agents.intent_router import intent_router_node, intent_router_route
-from app.agents.llm_critic import llm_critic_node
+from app.agents.llm_critic import llm_critic_node, should_run_llm_critic
 from app.agents.planner_agent import planner_agent_node
 from app.agents.poi_collector import poi_collector_node
 from app.agents.ranker import ranker_node
@@ -105,9 +105,10 @@ def build_life_route_graph():
     graph.add_edge("availability_checker", "verifier")
     graph.add_conditional_edges(
         "verifier",
-        verifier_route,
+        _verifier_next,
         {
-            "rank": "llm_critic",
+            "critic": "llm_critic",
+            "rank": "ranker",
             "replan": "planner_agent",
             "respond": "response_generator",
         },
@@ -128,4 +129,15 @@ def build_life_route_graph():
     return graph.compile()
 
 
+def _verifier_next(state: PlanState) -> str:
+    """Verifier 后的条件边：低风险方案跳过 LLM Critic。"""
+
+    route = verifier_route(state)
+    if route == "rank":
+        return "critic" if should_run_llm_critic(state) else "rank"
+    return route
+
+
 life_route_graph = build_life_route_graph()
+
+

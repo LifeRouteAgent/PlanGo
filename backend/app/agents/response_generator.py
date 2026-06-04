@@ -8,7 +8,7 @@ from app.agents.issue_utils import normalize_issues
 from app.services.context_builder import ContextBuilder
 from app.services.llm_service import call_chat_completion, extract_json_object
 from app.services.llm_output_schemas import (
-    ResponsePlansEnrichmentOutput,
+    ResponseGenerationOutput,
     validate_llm_output,
 )
 from app.services.prompt_registry import load_prompt_template
@@ -66,19 +66,22 @@ def response_generator_node(state: PlanState) -> PlanStatePatch:
     if state.get("answer_mode") in {"category_recommend", "poi_search"}:
         return _category_recommendation_response(state)
 
-    ranked_plans = _enrich_ranked_plans_for_presentation(state)
-    selected = ranked_plans[0] if ranked_plans else state.get("selected_plan") or {}
-    fallback_text = _full_plan_text(selected, ranked_plans)
-    llm_text = _llm_response_text(
-        state, fallback_text, ranked_plans=ranked_plans, selected_plan=selected
+    fallback_plans = _fallback_ranked_plans_for_presentation(state)
+    fallback_selected = fallback_plans[0] if fallback_plans else state.get("selected_plan") or {}
+    fallback_text = _full_plan_text(fallback_selected, fallback_plans)
+    ranked_plans, response_text, used_llm = _generate_response_package(
+        state,
+        fallback_text,
+        fallback_plans,
     )
+    selected = ranked_plans[0] if ranked_plans else fallback_selected
     return {
-        "response_text": llm_text or fallback_text,
+        "response_text": response_text,
         "ranked_plans": ranked_plans or state.get("ranked_plans", []),
         "selected_plan": selected,
         "logs": [
-            "Response Generator: generated response text"
-            + (" with LLM" if llm_text else " with template fallback")
+            "Response Generator: generated response package"
+            + (" with LLM" if used_llm else " with template fallback")
         ],
     }
 
@@ -95,18 +98,14 @@ def response_route(state: PlanState) -> str:
 
 
 def _category_recommendation_response(state: PlanState) -> PlanStatePatch:
-    """生成单类推荐响应。
+    """生成单类推荐响应。"""
 
-    单类推荐没有完整路线时间线，但仍然会给 POI 补一句推荐理由和可选调整项，
-    方便前端使用统一的卡片结构展示。
-    """
-
-    ranked_plans = _enrich_ranked_plans_for_presentation(state)
-    selected = ranked_plans[0] if ranked_plans else state.get("selected_plan") or {}
-    items = selected.get("items", [])
+    fallback_plans = _fallback_ranked_plans_for_presentation(state)
+    fallback_selected = fallback_plans[0] if fallback_plans else state.get("selected_plan") or {}
+    items = fallback_selected.get("items", [])
 
     if not items:
-        text = "暂时没有找到匹配的本地生活候选，请换一个类别或放宽条件。"
+        fallback_text = "暂时没有找到匹配的本地生活候选，请换一个类别或放宽条件。"
     else:
         lines = ["为你推荐这些本地生活地点："]
         for index, item in enumerate(items[:8], start=1):
@@ -114,58 +113,75 @@ def _category_recommendation_response(state: PlanState) -> PlanStatePatch:
             score = item.get("score", item.get("rating", 0))
             reason = item.get("recommendation_reason") or item.get("reason", "匹配当前偏好")
             lines.append(f"{index}. {item['name']}｜评分 {score}｜{tags}｜{reason}")
-        text = "\n".join(lines)
+        fallback_text = "\n".join(lines)
 
-    llm_text = _llm_response_text(state, text, ranked_plans=ranked_plans, selected_plan=selected)
+    ranked_plans, response_text, used_llm = _generate_response_package(
+        state,
+        fallback_text,
+        fallback_plans,
+    )
+    selected = ranked_plans[0] if ranked_plans else fallback_selected
     return {
-        "response_text": llm_text or text,
+        "response_text": response_text,
         "ranked_plans": ranked_plans or state.get("ranked_plans", []),
         "selected_plan": selected,
         "logs": [
-            "Response Generator: generated category recommendation text"
-            + (" with LLM" if llm_text else " with template fallback")
+            "Response Generator: generated category recommendation package"
+            + (" with LLM" if used_llm else " with template fallback")
         ],
     }
 
-
-def _enrich_ranked_plans_for_presentation(state: PlanState) -> list[dict[str, Any]]:
-    """为前端展示补充结构化解释字段。
-
-    返回最多 3 个方案。若 LLM 不可用，使用 deterministic fallback，保证前端字段稳定。
-    """
+def _fallback_ranked_plans_for_presentation(state: PlanState) -> list[dict[str, Any]]:
+    """生成不依赖 LLM 的方案展示字段。"""
 
     ranked_plans = [dict(plan) for plan in state.get("ranked_plans", [])[:3]]
     if not ranked_plans:
         return []
-
-    fallback = [
-        _fallback_enrich_plan(plan, index) for index, plan in enumerate(ranked_plans, start=1)
+    return [
+        _fallback_enrich_plan(plan, index)
+        for index, plan in enumerate(ranked_plans, start=1)
     ]
-    llm_plans = _llm_plan_enrichment(state, fallback)
-    if not llm_plans:
-        return fallback
 
+
+def _generate_response_package(
+    state: PlanState,
+    fallback_text: str,
+    fallback_plans: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], str, bool]:
+    """一次 LLM 调用同时生成回复文案和方案展示字段。"""
+
+    if not fallback_plans:
+        llm_text = _llm_response_text(state, fallback_text)
+        return [], llm_text or fallback_text, bool(llm_text)
+
+    llm_package = _llm_response_package(state, fallback_text, fallback_plans)
+    if not llm_package:
+        return fallback_plans, fallback_text, False
+
+    llm_plans = llm_package.get("plans")
     llm_by_id = {
         str(plan.get("id", index)): plan
-        for index, plan in enumerate(llm_plans, start=1)
+        for index, plan in enumerate(llm_plans or [], start=1)
         if isinstance(plan, dict)
     }
-    merged: list[dict[str, Any]] = []
-    for index, plan in enumerate(fallback, start=1):
-        merged.append(
-            _merge_plan_enrichment(plan, llm_by_id.get(str(plan.get("id", index)), {}), index)
+    merged = [
+        _merge_plan_enrichment(
+            plan,
+            llm_by_id.get(str(plan.get("id", index)), {}),
+            index,
         )
-    return merged
+        for index, plan in enumerate(fallback_plans, start=1)
+    ]
+    response_text = str(llm_package.get("response_text") or "").strip() or fallback_text
+    return merged, response_text, True
 
 
-def _llm_plan_enrichment(
-    state: PlanState, fallback_plans: list[dict[str, Any]]
-) -> list[dict[str, Any]] | None:
-    """用 LLM 生成方案优缺点和 POI 可选调整项。
-
-    输入只包含已有方案和已有 POI，输出必须引用相同 id。后续合并时也只按 id 合并文案字段，
-    不接受 LLM 新增的地点、路线或预算。
-    """
+def _llm_response_package(
+    state: PlanState,
+    fallback_text: str,
+    fallback_plans: list[dict[str, Any]],
+) -> dict[str, Any] | None:
+    """统一响应 LLM：禁止新增地点，只能解释已有方案。"""
 
     compact_plans = []
     for plan in fallback_plans:
@@ -176,6 +192,7 @@ def _llm_plan_enrichment(
             "total_duration_minutes": plan.get("total_duration_minutes"),
             "route_minutes": plan.get("route_minutes"),
             "estimated_budget": plan.get("estimated_budget"),
+            "total_distance_km": plan.get("total_distance_km"),
             "items": [
                 {
                     "id": item.get("id"),
@@ -196,10 +213,9 @@ def _llm_plan_enrichment(
             {
                 "role": "system",
                 "content": load_prompt_template(
-                    "response_plan_enrichment",
-                    "你是本地生活规划方案展示文案生成器。"
-                    "只能基于输入 JSON 解释已有方案，禁止新增地点、禁止修改路线、禁止修改预算。"
-                    "必须只输出 JSON 对象，不要 Markdown。"
+                    "response_generation_package",
+                    "你是本地生活规划系统的响应生成器。只能基于输入 JSON 解释已有方案；"
+                    "禁止新增地点、路线、价格、营业状态或预约结果。必须只输出 JSON 对象。",
                 ),
             },
             {
@@ -213,28 +229,26 @@ def _llm_plan_enrichment(
                             if key != "llm_understanding"
                         },
                         "context_snapshot": ContextBuilder().build_for(
-                            "response_plan_enrichment", state
+                            "response_generator", state
                         ),
                         "plans": compact_plans,
+                        "fallback_text": fallback_text,
                         "required_schema": {
+                            "response_text": "面向用户的 Markdown 回复，必须引用已有方案，不新增方案",
                             "plans": [{
                                 "id": "必须等于输入 plan id",
+                                "title": "更自然、有区分度的方案名",
                                 "recommendation_reason": "一句话说明这个方案适合谁",
-                                "highlight_tags": ["2-6 个字的短亮点标签，最多4个，不要重复"],
+                                "highlight_tags": ["2-6 个字短标签，最多4个，不重复"],
                                 "pros": ["优点1", "优点2"],
-                                "cons": ["缺点1", "缺点2"],
-                                "plan_actions": [{
-                                    "id": "必须是 execute_plan、share_pdf 或自定义英文 id",
-                                    "label": "按钮文案",
-                                    "type": "execute | export | refine",
-                                    "prompt": "点击后代表的调整意图",
-                                }],
+                                "cons": ["注意1", "注意2"],
+                                "plan_actions": [],
                                 "items": [{
                                     "id": "必须等于输入 poi id",
                                     "recommendation_reason": "每个地点一行简短推荐理由",
-                                    "option_prompts": ["再近一点", "换成室内", "不要火锅"],
+                                    "option_prompts": ["再近一点", "换成室内"],
                                 }],
-                            }]
+                            }],
                         },
                     },
                     ensure_ascii=False,
@@ -242,33 +256,33 @@ def _llm_plan_enrichment(
                 ),
             },
         ],
-        temperature=0.35,
-        max_completion_tokens=1800,
-        prompt_name="response_plan_enrichment",
-        schema_name="ResponsePlansEnrichmentOutput",
+        temperature=0.25,
+        max_completion_tokens=2200,
+        prompt_name="response_generation_package",
+        schema_name="ResponseGenerationOutput",
     )
     parsed = extract_json_object(raw)
     validation = (
-        validate_llm_output(
-            ResponsePlansEnrichmentOutput,
-            parsed,
-            source="response_plan_enrichment",
-        )
+        validate_llm_output(ResponseGenerationOutput, parsed, source="response_generator")
         if isinstance(parsed, dict)
         else None
     )
-    plans = validation.data.get("plans") if validation and validation.ok else None
+    package = validation.data if validation and validation.ok else None
     record_trace_event(
-        "response_plan_enrichment",
+        "response_generation_package",
         {
-            "success": isinstance(plans, list),
+            "success": bool(package),
             "schema_valid": bool(validation and validation.ok),
             "raw_preview": raw[:600] if raw else "",
-            "plan_count": len(plans) if isinstance(plans, list) else 0,
+            "plan_count": len(package.get("plans", [])) if package else 0,
         },
     )
-    return plans if isinstance(plans, list) else None
+    return package if isinstance(package, dict) else None
 
+def _enrich_ranked_plans_for_presentation(state: PlanState) -> list[dict[str, Any]]:
+    """兼容旧调用：只返回 fallback 展示字段，不再单独调用 LLM。"""
+
+    return _fallback_ranked_plans_for_presentation(state)
 
 def _fallback_enrich_plan(plan: dict[str, Any], index: int) -> dict[str, Any]:
     """LLM 不可用时的方案展示字段兜底。"""
@@ -638,3 +652,9 @@ def _simple_answer_text(query: str) -> str:
         f"你的问题是：{query}\n"
         "你可以继续问我支持什么功能，或者直接说想推荐哪一类本地生活地点。"
     )
+
+
+
+
+
+
