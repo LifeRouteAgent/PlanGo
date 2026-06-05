@@ -1,6 +1,7 @@
 ﻿import { ArrowLeft, Clock3, MapPin, WalletCards } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { AppleButton, EmptyState, SoftTag } from "../../components/ui";
+import { preparePlanPdf } from "../../api/streamClient";
 import { uniqueHighlightTags, type PlanStopView, type PlanViewModel } from "../../utils/planViewModel";
 import { BottomActionBar } from "./BottomActionBar";
 import { MapView } from "./MapView";
@@ -33,6 +34,30 @@ export function PlanDetail({ plan, onBack, onBackHome, onShare, onPreferenceSubm
   const [modifyOpen, setModifyOpen] = useState(false);
   const [modifyTarget, setModifyTarget] = useState<PlanStopView | null>(null);
   const [modifyMessage, setModifyMessage] = useState("");
+  const [pdfToken, setPdfToken] = useState("");
+  const [pdfPreparing, setPdfPreparing] = useState(false);
+  const [pdfPrepareError, setPdfPrepareError] = useState("");
+
+  useEffect(() => {
+    if (!plan?.raw) return;
+    let cancelled = false;
+    setPdfToken("");
+    setPdfPrepareError("");
+    setPdfPreparing(true);
+    void preparePlanPdf(plan.raw)
+      .then((result) => {
+        if (!cancelled) setPdfToken(result.token);
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) setPdfPrepareError(error instanceof Error ? error.message : "PDF 预渲染失败");
+      })
+      .finally(() => {
+        if (!cancelled) setPdfPreparing(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [plan?.id]);
 
   if (!plan) {
     return (
@@ -143,7 +168,15 @@ export function PlanDetail({ plan, onBack, onBackHome, onShare, onPreferenceSubm
         </aside>
       </div>
 
-      <BottomActionBar plan={plan} onBackHome={onBackHome} onShare={onShare} onModify={() => openModify()} />
+      <BottomActionBar
+        plan={plan}
+        pdfToken={pdfToken}
+        pdfPreparing={pdfPreparing}
+        pdfPrepareError={pdfPrepareError}
+        onBackHome={onBackHome}
+        onShare={onShare}
+        onModify={() => openModify()}
+      />
       <PlaceDetailDrawer stop={selectedStop} onClose={() => setSelectedStop(null)} />
       <ModifyPreferenceDrawer
         open={modifyOpen}
@@ -158,5 +191,3 @@ export function PlanDetail({ plan, onBack, onBackHome, onShare, onPreferenceSubm
     </section>
   );
 }
-
-

@@ -1,17 +1,22 @@
 import { CheckCircle2, Download, Home, Loader2, PlayCircle, SlidersHorizontal, X } from "lucide-react";
 import { useMemo, useState } from "react";
-import { bookPlan, exportPlanPdf } from "../../api/streamClient";
+import { bookPlan, downloadPreparedPlanPdf, exportPlanPdf } from "../../api/streamClient";
 import type { PlanViewModel } from "../../utils/planViewModel";
 
 interface BottomActionBarProps {
   plan: PlanViewModel;
+  pdfToken?: string;
+  pdfPreparing?: boolean;
+  pdfPrepareError?: string;
   onBackHome: () => void;
   onShare: () => void;
   onModify: () => void;
 }
 
-export function BottomActionBar({ plan, onBackHome, onModify }: BottomActionBarProps) {
+export function BottomActionBar({ plan, pdfToken = "", pdfPreparing = false, pdfPrepareError = "", onBackHome, onModify }: BottomActionBarProps) {
   const [executeOpen, setExecuteOpen] = useState(false);
+  const [downloadOpen, setDownloadOpen] = useState(false);
+  const [downloadFallbackRunning, setDownloadFallbackRunning] = useState(false);
   const [running, setRunning] = useState(false);
   const [done, setDone] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
@@ -49,6 +54,22 @@ export function BottomActionBar({ plan, onBackHome, onModify }: BottomActionBarP
     setActiveIndex(-1);
   };
 
+  const confirmDownload = async () => {
+    if (pdfToken) {
+      downloadPreparedPlanPdf(pdfToken);
+      setDownloadOpen(false);
+      return;
+    }
+    if (pdfPreparing) return;
+    setDownloadFallbackRunning(true);
+    try {
+      await exportPlanPdf(plan.raw);
+      setDownloadOpen(false);
+    } finally {
+      setDownloadFallbackRunning(false);
+    }
+  };
+
   return (
     <>
       <div className="bottom-action-bar">
@@ -60,7 +81,7 @@ export function BottomActionBar({ plan, onBackHome, onModify }: BottomActionBarP
           <SlidersHorizontal size={17} />
           调整偏好
         </button>
-        <button type="button" onClick={() => void exportPlanPdf(plan.raw)}>
+        <button type="button" onClick={() => setDownloadOpen(true)}>
           <Download size={17} />
           导出 PDF
         </button>
@@ -116,6 +137,40 @@ export function BottomActionBar({ plan, onBackHome, onModify }: BottomActionBarP
                   确定
                 </button>
               )}
+            </div>
+          </section>
+        </div>
+      ) : null}
+
+      {downloadOpen ? (
+        <div className="execute-modal-backdrop" role="presentation" onMouseDown={() => !downloadFallbackRunning && setDownloadOpen(false)}>
+          <section
+            className="execute-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="download-plan-title"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <button type="button" className="execute-modal-close" onClick={() => setDownloadOpen(false)} disabled={downloadFallbackRunning} aria-label="关闭下载弹窗">
+              <X size={16} />
+            </button>
+            <h3 id="download-plan-title">下载 PDF 文件</h3>
+            <p>
+              {pdfToken
+                ? "方案文档已准备好。点击确定后，浏览器会直接下载 PDF 文件。"
+                : pdfPreparing
+                  ? "方案文档正在后台生成，请稍等片刻。准备完成后点击确定即可下载。"
+                  : pdfPrepareError
+                    ? "预渲染未完成，将为你现场生成并下载，可能需要稍等。"
+                    : "点击确定后将下载 PDF 文件。"}
+            </p>
+            <div className="execute-modal-actions">
+              <button type="button" className="confirm-dialog-secondary" onClick={() => setDownloadOpen(false)} disabled={downloadFallbackRunning}>
+                取消
+              </button>
+              <button type="button" className="confirm-dialog-danger execute-confirm" onClick={() => void confirmDownload()} disabled={pdfPreparing || downloadFallbackRunning}>
+                {downloadFallbackRunning ? "生成中" : pdfPreparing ? "准备中" : "确定下载"}
+              </button>
             </div>
           </section>
         </div>
