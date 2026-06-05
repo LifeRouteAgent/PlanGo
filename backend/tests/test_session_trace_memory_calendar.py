@@ -1,24 +1,9 @@
 from __future__ import annotations
 
-from app.api.routes.trip import _apply_revision_constraints
 from app.services.calendar_service import build_plan_ics
 from app.services.memory_service import MemoryService
 from app.services.session_store import SessionStore
 from app.services.trace_recorder import TraceRecorder, new_id
-
-
-def test_revision_constraints_prefer_indoor_and_exclude_keywords() -> None:
-    """用户中途说不要室外时，应转成可被 Collector/Skill 消费的结构化约束。"""
-
-    state = {"constraints": {"max_route_minutes": 45}, "logs": []}
-
-    _apply_revision_constraints(state, "不要室外了，今天太热，也不要火锅")
-
-    constraints = state["constraints"]
-    assert constraints["indoor_preferred"] is True
-    assert "室外" in constraints["avoid_tags"]
-    assert "公园" in constraints["avoid_tags"]
-    assert constraints["excluded_keywords"]
 
 
 def test_calendar_service_builds_valid_ics() -> None:

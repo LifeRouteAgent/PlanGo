@@ -17,6 +17,7 @@ class ContextSnapshot(TypedDict):
     planning_state: dict[str, Any]
     tool_evidence: list[dict[str, Any]]
     conversation_summary: dict[str, Any]
+    poi_knowledge: dict[str, Any]
     prompt_meta: dict[str, Any]
 
 
@@ -132,6 +133,7 @@ class ContextBuilder:
             },
             "tool_evidence": tool_evidence,
             "conversation_summary": _conversation_summary(state),
+            "poi_knowledge": state.get("poi_knowledge", {}) if isinstance(state.get("poi_knowledge"), dict) else {},
             "prompt_meta": {
                 "agent_name": agent_name,
                 "token_budget": token_budget,

@@ -181,6 +181,86 @@ class MemoryService:
             )
         )
 
+    def observe_plan_feedback(
+        self,
+        plan: dict[str, Any],
+        *,
+        user_id: str = "default",
+        stage: str = "plan_selected",
+        feedback: dict[str, Any] | None = None,
+    ) -> None:
+        """Update long-term profile from post-planning behavior with staged weights."""
+
+        feedback = feedback or {}
+        if stage in {"plan_rejected", "negative_feedback"}:
+            self.observe_rejected_plan(
+                str(plan.get("id") or plan.get("plan_id") or ""),
+                reason=str(feedback.get("reason") or feedback.get("message") or ""),
+                user_id=user_id,
+            )
+            return
+
+        weight = _memory_stage_weight(stage)
+        profile = self.read_profile(user_id=user_id)
+        categories = profile.get("favorite_categories", {})
+        if not isinstance(categories, dict):
+            categories = {}
+        confidence = profile.get("category_confidence", {})
+        if not isinstance(confidence, dict):
+            confidence = {}
+        selected_tags: list[str] = []
+        for item in plan.get("items", []) if isinstance(plan.get("items"), list) else []:
+            category = str(item.get("category") or "")
+            if category:
+                categories[category] = round(float(categories.get(category, 0) or 0) + weight, 3)
+                confidence[category] = round(
+                    min(1.0, float(confidence.get(category, 0) or 0) + 0.08 * weight),
+                    3,
+                )
+            selected_tags.extend(str(tag) for tag in item.get("tags", [])[:3])
+        profile["favorite_categories"] = categories
+        profile["category_confidence"] = confidence
+        profile["last_selected_plan_summary"] = {
+            "id": plan.get("id") or plan.get("plan_id"),
+            "title": plan.get("title"),
+            "estimated_budget": plan.get("estimated_budget"),
+            "total_duration_minutes": plan.get("total_duration_minutes"),
+            "memory_stage": stage,
+            "memory_weight": weight,
+        }
+        self._write_profile(profile, user_id=user_id)
+        self._append_memory(
+            f"plan feedback({stage}, weight={weight}): {plan.get('title') or plan.get('id') or plan.get('plan_id')}",
+            user_id=user_id,
+        )
+        self._append_history(
+            {"type": stage, "plan": profile["last_selected_plan_summary"], "feedback": feedback},
+            user_id=user_id,
+        )
+        self.store.append_session_event(
+            user_id,
+            {
+                "type": stage,
+                "plan_id": plan.get("id") or plan.get("plan_id"),
+                "plan_summary": profile["last_selected_plan_summary"],
+                "feedback": feedback,
+                "memory_weight": weight,
+            },
+        )
+        self._upsert_profile_vector(user_id, profile)
+        self.vector_store.upsert_memory(
+            VectorMemoryRecord(
+                user_id=user_id,
+                memory_type=stage,
+                text=_plan_memory_text(plan),
+                tags=_dedupe(selected_tags),
+                category="plan",
+                source_event=stage,
+                weight=weight,
+                metadata={"plan": profile["last_selected_plan_summary"], "feedback": feedback},
+            )
+        )
+
     def observe_rejected_plan(
         self,
         plan_id: str,
@@ -278,6 +358,8 @@ class MemoryService:
                 "summary": hit.get("text"),
                 "metadata": hit.get("metadata", {}),
                 "score": hit.get("score"),
+                "cluster": _profile_cluster(hit.get("metadata", {}) or {}),
+                "core_tags": (hit.get("metadata", {}) or {}).get("memory_fit_tags", []),
             }
             for hit in hits
         ]
@@ -356,7 +438,8 @@ class MemoryService:
             profile_text=_profile_text(profile),
             metadata={
                 **_safe_profile_metadata(profile),
-                "memory_fit_tags": _memory_fit_tags(profile, []),
+                "memory_fit_tags": _similar_profile_tags(profile),
+                "profile_cluster": _profile_cluster(profile),
             },
         )
 
@@ -523,12 +606,21 @@ def _safe_user_id(user_id: str | None) -> str:
 
 
 def _safe_profile_metadata(profile: dict[str, Any]) -> dict[str, Any]:
+    favorite_categories = profile.get("favorite_categories", {})
+    top_categories: list[str] = []
+    if isinstance(favorite_categories, dict):
+        top_categories = [
+            str(category)
+            for category in sorted(favorite_categories, key=favorite_categories.get, reverse=True)[:8]
+        ]
     return {
         "preferred_city": profile.get("preferred_city"),
         "preferred_areas": profile.get("preferred_areas", []),
         "budget_level": profile.get("budget_level"),
         "indoor_preference": profile.get("indoor_preference", False),
-        "favorite_categories": profile.get("favorite_categories", {}),
+        "favorite_categories": favorite_categories if isinstance(favorite_categories, dict) else {},
+        "top_categories": top_categories,
+        "category_confidence": profile.get("category_confidence", {}),
         "disliked_keywords": profile.get("disliked_keywords", []),
     }
 
@@ -580,6 +672,31 @@ def _memory_fit_tags(profile: dict[str, Any], snippets: list[str]) -> list[str]:
     for snippet in snippets:
         tags.extend(_extract_tags(snippet))
     return _dedupe(tags)[:12]
+
+
+def _similar_profile_tags(profile: dict[str, Any]) -> list[str]:
+    tags = _memory_fit_tags(profile, [])
+    favorite_categories = profile.get("favorite_categories", {})
+    if isinstance(favorite_categories, dict):
+        tags.extend(
+            str(category)
+            for category in sorted(favorite_categories, key=favorite_categories.get, reverse=True)[:8]
+        )
+    tags.extend(str(item) for item in profile.get("preferred_areas", [])[:5])
+    tags.extend(str(item) for item in profile.get("disliked_keywords", [])[:5])
+    return _dedupe(tags)[:16]
+
+
+def _memory_stage_weight(stage: str) -> float:
+    return {
+        "user_query": 0.4,
+        "plan_saved": 0.8,
+        "plan_favorited": 1.0,
+        "plan_exported_pdf": 1.1,
+        "plan_exported_calendar": 1.1,
+        "plan_selected": 1.6,
+        "plan_executed": 2.2,
+    }.get(stage, 1.2)
 
 
 def _extract_tags(text: str) -> list[str]:

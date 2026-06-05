@@ -8,6 +8,7 @@ from fastapi.responses import StreamingResponse
 from app.api.routes.trip import stream_plan_trip
 from app.models.schemas import TripPlanRequest
 from app.services.amap_weather_service import AmapWeatherService
+from app.services.memory_event_queue import MemoryEventQueue
 from app.services.memory_service import MemoryService
 from app.services.poi_repository import PoiRepository
 from app.services.trace_recorder import record_trace_event
@@ -205,6 +206,20 @@ def compat_plan_action(plan_id: str, action: str) -> dict[str, Any]:
             "source": "api_compat",
         },
     )
+    stage = {
+        "save": "plan_saved",
+        "favorite": "plan_favorited",
+        "book": "plan_selected",
+        "calendar": "plan_exported_calendar",
+    }.get(action)
+    if stage:
+        MemoryEventQueue().publish_plan_feedback(
+            {"id": plan_id, "plan_id": plan_id, "title": f"Plan {plan_id}", "items": []},
+            user_id="default",
+            stage=stage,
+            feedback={"source": "api_compat", "action": action},
+            session_id="default",
+        )
     base_plan = {
         "id": plan_id,
         "saved": action == "save",

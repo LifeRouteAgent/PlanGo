@@ -3,7 +3,7 @@ from __future__ import annotations
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import compat, export, trip
+from app.api.routes import compat, export, plans, trip
 
 app = FastAPI(title="LifeRouteAgent API", version="0.1.0")
 app.add_middleware(
@@ -17,6 +17,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.include_router(trip.router)
+app.include_router(plans.router)
 app.include_router(export.router)
 app.include_router(compat.router)
 
@@ -27,10 +28,10 @@ def health() -> dict[str, str]:
 
 
 def run_once(user_query: str) -> dict:
-    from app.dag.langgraph_dag_config import life_route_graph
-    from app.state.plan_state import create_initial_state
+    from app.graph.graph_builder import run_planning_request
+    from app.graph.state import planning_state_to_legacy
 
-    return life_route_graph.invoke(create_initial_state(user_query))
+    return planning_state_to_legacy(run_planning_request(user_query))
 
 
 if __name__ == "__main__":

@@ -89,6 +89,8 @@ class CategorySqlSpec:
     images_expr: str
     base_where: str
     order_expr: str
+    filter_fields: tuple[str, ...] = ()
+    tag_fields: tuple[str, ...] = ()
 
 
 CATEGORY_SQL_SPECS: dict[str, CategorySqlSpec] = {
@@ -104,11 +106,17 @@ CATEGORY_SQL_SPECS: dict[str, CategorySqlSpec] = {
         rating_expr="rating",
         price_expr="cost",
         open_expr="open_time",
-        tag_expr="cuisine_tag",
+        tag_expr="CONCAT_WS(' ', cuisine_tag, keytag, type, query_label)",
         image_expr="head_image",
         images_expr="photos",
         base_where="name <> '' AND lat IS NOT NULL AND lng IS NOT NULL",
         order_expr="COALESCE(favorite_num, 0) DESC",
+        filter_fields=(
+            "name", "biz_category", "cuisine_tag", "keytag", "type", "query_label",
+            "city", "district", "business_area", "lat", "lng", "rating", "cost",
+            "open_time", "favorite_num",
+        ),
+        tag_fields=("cuisine_tag", "keytag", "type", "query_label"),
     ),
     POI_ACTIVITY: CategorySqlSpec(
         table="poi_activities",
@@ -122,11 +130,17 @@ CATEGORY_SQL_SPECS: dict[str, CategorySqlSpec] = {
         rating_expr=None,
         price_expr="price",
         open_expr="available_date",
-        tag_expr="subtitle",
+        tag_expr="CONCAT_WS(' ', subtitle, CAST(category_info AS CHAR))",
         image_expr="NULL",
         images_expr="images",
         base_where="title <> '' AND location IS NOT NULL AND location <> '' AND INSTR(location, ',') > 0",
         order_expr="updated_time DESC",
+        filter_fields=(
+            "title", "subtitle", "category_info", "city_id", "category_id",
+            "sub_category_id", "leaf_category_id", "location", "price",
+            "available_date", "updated_time",
+        ),
+        tag_fields=("subtitle",),
     ),
     POI_ATTRACTION: CategorySqlSpec(
         table="poi_attractions",
@@ -145,6 +159,11 @@ CATEGORY_SQL_SPECS: dict[str, CategorySqlSpec] = {
         images_expr="NULL",
         base_where="name <> '' AND lat IS NOT NULL AND lng IS NOT NULL",
         order_expr="COALESCE(hot_score, 0) DESC",
+        filter_fields=(
+            "name", "name_en", "alias", "tags", "dest_id", "lat", "lng",
+            "score", "comment_score", "open_time", "suggested_duration", "hot_score",
+        ),
+        tag_fields=("tags",),
     ),
     POI_SHOPPING: CategorySqlSpec(
         table="poi_shoppings",
@@ -158,11 +177,16 @@ CATEGORY_SQL_SPECS: dict[str, CategorySqlSpec] = {
         rating_expr="comment_score",
         price_expr=None,
         open_expr="open_time_tips",
-        tag_expr="tags",
+        tag_expr="CONCAT_WS(' ', tags, categories)",
         image_expr="head_image",
         images_expr="images",
         base_where="name <> '' AND lat IS NOT NULL AND lng IS NOT NULL",
         order_expr="COALESCE(comment_num, 0) DESC",
+        filter_fields=(
+            "name", "name_local", "name_en", "brand_name_cn", "tags", "categories",
+            "lat", "lng", "comment_score", "open_time_tips", "comment_num",
+        ),
+        tag_fields=("tags", "categories"),
     ),
     POI_FITNESS: CategorySqlSpec(
         table="poi_fitness",
@@ -176,11 +200,17 @@ CATEGORY_SQL_SPECS: dict[str, CategorySqlSpec] = {
         rating_expr="rating",
         price_expr="cost",
         open_expr="open_time",
-        tag_expr="fitness_tag",
+        tag_expr="CONCAT_WS(' ', fitness_tag, keytag, type, query_label)",
         image_expr="head_image",
         images_expr="photos",
         base_where="name <> '' AND lat IS NOT NULL AND lng IS NOT NULL",
         order_expr="COALESCE(favorite_num, 0) DESC",
+        filter_fields=(
+            "name", "biz_category", "fitness_tag", "keytag", "type", "query_label",
+            "city", "district", "business_area", "lat", "lng", "rating", "cost",
+            "open_time", "favorite_num",
+        ),
+        tag_fields=("fitness_tag", "keytag", "type", "query_label"),
     ),
     POI_ENTERTAINMENT: CategorySqlSpec(
         table="poi_entertainment",
@@ -194,11 +224,17 @@ CATEGORY_SQL_SPECS: dict[str, CategorySqlSpec] = {
         rating_expr="rating",
         price_expr="cost",
         open_expr="open_time",
-        tag_expr="entertainment_type",
+        tag_expr="CONCAT_WS(' ', entertainment_type, keytag, type, query_label)",
         image_expr="head_image",
         images_expr="photos",
         base_where="name <> '' AND lat IS NOT NULL AND lng IS NOT NULL",
         order_expr="COALESCE(groupbuy_num, 0) DESC",
+        filter_fields=(
+            "name", "biz_category", "entertainment_type", "keytag", "type", "query_label",
+            "city", "district", "business_area", "lat", "lng", "rating", "cost",
+            "open_time", "groupbuy_num",
+        ),
+        tag_fields=("entertainment_type", "keytag", "type", "query_label"),
     ),
     POI_BEAUTY: CategorySqlSpec(
         table="poi_beauty",
@@ -212,11 +248,17 @@ CATEGORY_SQL_SPECS: dict[str, CategorySqlSpec] = {
         rating_expr="rating",
         price_expr="cost",
         open_expr="open_time",
-        tag_expr="COALESCE(service_tag, beauty_type)",
+        tag_expr="CONCAT_WS(' ', service_tag, beauty_type, query_keywords, keytag, type, query_label)",
         image_expr="head_image",
         images_expr="photos",
         base_where="name <> '' AND lat IS NOT NULL AND lng IS NOT NULL",
         order_expr="COALESCE(favorite_num, 0) DESC",
+        filter_fields=(
+            "name", "biz_category", "service_tag", "beauty_type", "query_keywords",
+            "keytag", "type", "query_label", "city", "district", "business_area",
+            "lat", "lng", "rating", "cost", "open_time", "favorite_num",
+        ),
+        tag_fields=("service_tag", "beauty_type", "query_keywords", "keytag", "type", "query_label"),
     ),
 }
 
@@ -342,7 +384,7 @@ class PoiRepository:
         放宽顺序只影响评分/预算/半径，不会移除排除词过滤；这样保证“不要火锅/不要室外”等负约束仍然生效。
         """
 
-        target_count = max(6, min(self._limit_per_category, 12))
+        target_count = max(6, self._limit_per_category)
         seen: set[str] = set()
         collected: list[PoiRecord] = []
 

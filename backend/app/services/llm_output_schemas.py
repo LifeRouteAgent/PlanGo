@@ -42,6 +42,13 @@ class ActivityIntentOutput(BaseModel):
     keywords: list[str] = Field(default_factory=list)
 
 
+class CategoryTagRequirementOutput(BaseModel):
+    logical_category: str
+    target_slot: str = ""
+    positive_logic_tags: list[str] = Field(default_factory=list)
+    negative_logic_tags: list[str] = Field(default_factory=list)
+
+
 class RevisionConstraintOutput(BaseModel):
     revision_type: str = "global_constraint"
     indoor_preferred: bool | None = None
@@ -100,6 +107,7 @@ class IntentUnderstandingOutput(BaseModel):
     must_pois: list[MustPoiOutput] = Field(default_factory=list)
     preference_keywords: list[str] = Field(default_factory=list)
     activity_intents: list[ActivityIntentOutput] = Field(default_factory=list)
+    category_tag_requirements: list[CategoryTagRequirementOutput] = Field(default_factory=list)
     dag_plan: DagPlanOutput | None = None
     need_clarification: bool = False
     missing_constraints: list[str] = Field(default_factory=list)

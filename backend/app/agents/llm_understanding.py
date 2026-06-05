@@ -88,6 +88,7 @@ def build_llm_understanding(
     user_profile: dict[str, Any] | None = None,
     *,
     conversation_context: dict[str, Any] | None = None,
+    poi_knowledge: dict[str, Any] | None = None,
 ) -> dict[str, Any] | None:
     """调用大模型做意图识别、约束抽取、追问判断和规划模板选择。
 
@@ -106,7 +107,15 @@ def build_llm_understanding(
                 "必须只输出一个 JSON 对象，不要输出 Markdown。"
             ),
         },
-        {"role": "user", "content": _build_prompt(query, profile, conversation_context or {})},
+        {
+            "role": "user",
+            "content": _build_prompt(
+                query,
+                profile,
+                conversation_context or {},
+                poi_knowledge=poi_knowledge or {},
+            ),
+        },
     ]
     raw = call_chat_completion(
         messages,
@@ -139,6 +148,8 @@ def _build_prompt(
     query: str,
     user_profile: dict[str, Any],
     conversation_context: dict[str, Any] | None = None,
+    *,
+    poi_knowledge: dict[str, Any] | None = None,
 ) -> str:
     """构造稳定的结构化抽取 prompt。
 
@@ -160,6 +171,7 @@ def _build_prompt(
             "ranked_plans": [],
             "errors": [],
             "logs": [],
+            "poi_knowledge": poi_knowledge or {},
         },
     )
     return f"""
@@ -192,6 +204,8 @@ def _build_prompt(
 7. start_time 和 duration_hours 只有用户明确说了钟点、上午/下午/晚上、几小时、半天、一天或起止时间时才填写；不要自行补 14:00 或 6 小时。
 8. 历史画像里的室内、低预算、常去区域只能影响后续排序，不得写入 preferences，除非本轮用户明确提到。
 9. budget 必须做语义归一化：预算1k/1K/一千=1000，0.8万=8000；如果上下文和本轮输入里出现预算更正，以本轮输入为准。
+10. category_tag_requirements 中的标签只能从 POI 标签背景知识对应类别的 available_tags 中选择，必须使用完全一致的标签名称，不得编造。
+11. 用户明确偏好的标签写入 positive_logic_tags；明确排除的标签写入 negative_logic_tags。target_slot 填该标签作用的规划槽位。
 
 target_categories 可选：
 - poi_restaurant
@@ -232,6 +246,9 @@ planning_template 可选：
   "preference_keywords": ["KTV"],
   "activity_intents": [
     {{"slot": "entertainment", "semantic_type": "ktv", "must_match": true, "keywords": ["KTV", "唱歌"]}}
+  ],
+  "category_tag_requirements": [
+    {{"logical_category": "entertainment", "target_slot": "entertainment", "positive_logic_tags": ["KTV"], "negative_logic_tags": []}}
   ],
   "need_clarification": false,
   "missing_constraints": [],
@@ -277,6 +294,7 @@ def _normalize_understanding(data: dict[str, Any]) -> dict[str, Any] | None:
         "must_pois": _clean_must_pois(data.get("must_pois")),
         "preference_keywords": _clean_string_list(data.get("preference_keywords")),
         "activity_intents": _clean_activity_intents(data.get("activity_intents")),
+        "category_tag_requirements": _clean_category_tag_requirements(data.get("category_tag_requirements")),
         "dag_plan": _clean_dag_plan(data.get("dag_plan"), template, required_slots, categories),
         "need_clarification": bool(data.get("need_clarification")),
         "missing_constraints": missing,
@@ -324,6 +342,27 @@ def _clean_activity_intents(value: Any) -> list[dict[str, Any]]:
             "keywords": _clean_string_list(item.get("keywords"))[:8],
         })
     return result[:8]
+
+
+def _clean_category_tag_requirements(value: Any) -> list[dict[str, Any]]:
+    """Clean category-specific tag mappings; catalog validation happens in V2 intent resolver."""
+
+    if not isinstance(value, list):
+        return []
+    result: list[dict[str, Any]] = []
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        category = _clean_optional_string(item.get("logical_category"))
+        if not category:
+            continue
+        result.append({
+            "logical_category": category,
+            "target_slot": _clean_optional_string(item.get("target_slot")) or category,
+            "positive_logic_tags": _clean_string_list(item.get("positive_logic_tags"))[:12],
+            "negative_logic_tags": _clean_string_list(item.get("negative_logic_tags"))[:12],
+        })
+    return result[:12]
 
 
 def _clean_dag_plan(

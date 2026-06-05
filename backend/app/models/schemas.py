@@ -12,6 +12,13 @@ class TripPlanRequest(BaseModel):
     session_id: str | None = None
     trace_id: str | None = None
     run_id: str | None = None
+    user_id: str | None = None
+    message_id: str | None = None
+    timezone: str = "Asia/Shanghai"
+    source: str = "api"
+    geo_location: dict[str, Any] | None = None
+    manual_origin: dict[str, Any] | None = None
+    debug: bool = False
 
 
 class TripPlanResponse(BaseModel):
@@ -32,6 +39,14 @@ class TripPlanResponse(BaseModel):
     revision_id: str = ""
     is_revision: bool = False
     task_id: str = ""
+    final_text: str = ""
+    response_payload: dict[str, Any] = Field(default_factory=dict)
+    plan_state_id: str = ""
+    constraints: dict[str, Any] = Field(default_factory=dict)
+    target_categories: list[str] = Field(default_factory=list)
+    weather: dict[str, Any] = Field(default_factory=dict)
+    routes: list[dict[str, Any]] = Field(default_factory=list)
+    debug: dict[str, Any] = Field(default_factory=dict)
 
 
 class ExecutePlanRequest(BaseModel):

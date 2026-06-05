@@ -117,6 +117,28 @@ def test_memory_service_writes_file_and_vector_memory(monkeypatch) -> None:
     assert fake_store.profiles
 
 
+def test_plan_feedback_uses_stage_weights_for_profile_confidence() -> None:
+    fake_store = FakeVectorStore()
+    memory = MemoryService(vector_store=fake_store)  # type: ignore[arg-type]
+    memory.clear(user_id="u_weighted")
+    plan = {
+        "id": "p_weighted",
+        "title": "KTV dinner plan",
+        "items": [{"category": "poi_entertainment", "tags": ["KTV"]}],
+    }
+
+    memory.observe_plan_feedback(plan, user_id="u_weighted", stage="plan_exported_pdf")
+    after_export = memory.read_profile(user_id="u_weighted")
+    memory.observe_plan_feedback(plan, user_id="u_weighted", stage="plan_executed")
+    after_execute = memory.read_profile(user_id="u_weighted")
+
+    assert after_export["favorite_categories"]["poi_entertainment"] == 1.1
+    assert after_execute["favorite_categories"]["poi_entertainment"] == 3.3
+    assert after_execute["category_confidence"]["poi_entertainment"] > after_export["category_confidence"]["poi_entertainment"]
+    assert fake_store.memories[-1].memory_type == "plan_executed"
+    assert fake_store.memories[-1].weight == 2.2
+
+
 def test_memory_service_writes_long_term_profile_with_llm(monkeypatch) -> None:
     """LLM 判断为长期偏好时，Memory 才写入用户画像。"""
 

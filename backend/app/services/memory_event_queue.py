@@ -61,6 +61,48 @@ class MemoryEventQueue:
         )
         worker.start()
 
+    def publish_plan_feedback(
+        self,
+        plan: dict[str, Any],
+        *,
+        user_id: str,
+        stage: str,
+        feedback: dict[str, Any] | None = None,
+        trace_id: str = "",
+        run_id: str = "",
+        session_id: str = "",
+    ) -> None:
+        """投递规划后反馈事件，并立即返回。"""
+
+        event = {
+            "event_type": "plan_feedback_observed",
+            "plan": plan,
+            "user_id": user_id,
+            "stage": stage,
+            "feedback": feedback or {},
+            "trace_id": trace_id,
+            "run_id": run_id,
+            "session_id": session_id or user_id,
+            "created_at": time.time(),
+        }
+        record_trace_event(
+            "memory_plan_feedback_enqueued",
+            {
+                "user_id": user_id,
+                "stage": stage,
+                "plan_id": plan.get("id") or plan.get("plan_id"),
+                "topic": settings.kafka_memory_topic,
+            },
+        )
+        self._publish_to_kafka(event)
+        worker = threading.Thread(
+            target=self._process_locally,
+            args=(event,),
+            daemon=True,
+            name="liferoute-memory-worker",
+        )
+        worker.start()
+
     def _publish_to_kafka(self, event: dict[str, Any]) -> None:
         """尝试发送 Kafka；失败只记录，不阻塞规划。"""
 
@@ -107,10 +149,20 @@ class MemoryEventQueue:
         )
         started = time.time()
         try:
-            self.memory.observe_user_query(
-                str(event.get("query") or ""),
-                user_id=str(event.get("user_id") or "default"),
-            )
+            event_type = str(event.get("event_type") or "")
+            user_id = str(event.get("user_id") or "default")
+            if event_type == "plan_feedback_observed":
+                self.memory.observe_plan_feedback(
+                    event.get("plan") if isinstance(event.get("plan"), dict) else {},
+                    user_id=user_id,
+                    stage=str(event.get("stage") or "plan_selected"),
+                    feedback=event.get("feedback") if isinstance(event.get("feedback"), dict) else {},
+                )
+            else:
+                self.memory.observe_user_query(
+                    str(event.get("query") or ""),
+                    user_id=user_id,
+                )
             record_trace_event(
                 "memory_event_processed",
                 {
