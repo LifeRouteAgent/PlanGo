@@ -1,12 +1,15 @@
 import { useCallback, useRef, useState } from "react";
 import { streamPlan } from "../api/streamClient";
-import type { Plan, StreamEvent, StreamRequest, UserIntent } from "../types/agent";
+import type { FrontendProgressEvent, Plan, ProgressStatus, StreamEvent, StreamRequest, UserIntent } from "../types/agent";
 
 export interface TimelineEvent {
   id: string;
   label: string;
   detail: string;
   level: "info" | "success" | "warning" | "error";
+  status: ProgressStatus;
+  step?: string | null;
+  timestamp?: string;
   phase: "request" | "understanding" | "searching" | "routing" | "validating" | "executing" | "done" | "error";
 }
 
@@ -20,30 +23,17 @@ function getOrCreateSessionId() {
   return sessionId;
 }
 
-function eventPhase(message: string): TimelineEvent["phase"] {
-  const text = message.toLowerCase();
-  if (text.includes("intent") || text.includes("理解") || text.includes("意图") || text.includes("约束")) return "understanding";
-  if (text.includes("collector") || text.includes("skill") || text.includes("poi") || text.includes("活动") || text.includes("餐厅") || text.includes("召回") || text.includes("筛选")) {
-    return "searching";
-  }
-  if (text.includes("route") || text.includes("map") || text.includes("路线") || text.includes("地图") || text.includes("时间线")) return "routing";
-  if (text.includes("verify") || text.includes("critic") || text.includes("校验") || text.includes("验证") || text.includes("检查")) return "validating";
-  if (text.includes("execute") || text.includes("预约") || text.includes("购票") || text.includes("打车") || text.includes("日历")) return "executing";
-  return "searching";
+function levelFromStatus(status: ProgressStatus): TimelineEvent["level"] {
+  if (status === "success") return "success";
+  if (status === "warning") return "warning";
+  if (status === "failed") return "error";
+  return "info";
 }
 
-function eventLabel(phase: TimelineEvent["phase"]) {
-  const labels: Record<TimelineEvent["phase"], string> = {
-    request: "创建请求",
-    understanding: "理解需求",
-    searching: "筛选活动",
-    routing: "规划路线",
-    validating: "校验方案",
-    executing: "执行动作",
-    done: "生成完成",
-    error: "处理失败"
-  };
-  return labels[phase];
+function phaseFromProgress(progress: FrontendProgressEvent): TimelineEvent["phase"] {
+  if (progress.status === "failed") return "error";
+  if (progress.type === "final" || progress.status === "success") return "done";
+  return "request";
 }
 
 export function usePlanStream() {
@@ -59,11 +49,13 @@ export function usePlanStream() {
     label: string,
     detail: string,
     level: TimelineEvent["level"] = "info",
-    phase: TimelineEvent["phase"] = "request"
+    phase: TimelineEvent["phase"] = "request",
+    status: ProgressStatus = level === "success" ? "success" : level === "warning" ? "warning" : level === "error" ? "failed" : "running",
+    meta: Pick<TimelineEvent, "step" | "timestamp"> = {}
   ) => {
     setEvents((current) => {
       const last = current.at(-1);
-      if (last?.label === label && last.detail === detail && last.phase === phase) {
+      if (last?.label === label && last.detail === detail && last.status === status && last.step === meta.step) {
         return current;
       }
       return [
@@ -73,45 +65,65 @@ export function usePlanStream() {
           label,
           detail,
           level,
+          status,
+          step: meta.step,
+          timestamp: meta.timestamp,
           phase
         }
       ];
     });
   }, []);
 
+  const appendProgress = useCallback((progress: FrontendProgressEvent) => {
+    const status = progress.status ?? "running";
+    append(
+      progress.title || "规划进度",
+      progress.message || "系统正在处理你的规划请求。",
+      levelFromStatus(status),
+      phaseFromProgress(progress),
+      status,
+      { step: progress.step ?? null, timestamp: progress.timestamp }
+    );
+  }, [append]);
+
   const handleStreamEvent = useCallback((message: StreamEvent) => {
-    if (message.event === "progress" || message.event === "status") {
-      const phase = eventPhase(message.data.message);
-      append(eventLabel(phase), message.data.message, "info", phase);
+    if (message.event === "progress") {
+      appendProgress(message.data);
+      return;
+    }
+
+    if (message.event === "status") {
+      append("规划进度", message.data.message, "info", "request", "running");
       return;
     }
 
     if (message.event === "intent") {
       setIntent(message.data.intent);
       setTrace((current) => [...current, ...message.data.trace]);
-      append("理解需求", "已识别场景、人群、时间、预算和偏好约束。", "success", "understanding");
+      append("需求理解完成", "已识别场景、人群、时间、预算和偏好约束。", "success", "understanding", "success");
       return;
     }
 
     if (message.event === "capability") {
-      append("能力说明", message.data.message, message.data.llm === "rule" ? "warning" : "success", "understanding");
+      append("能力说明", message.data.message, message.data.llm === "rule" ? "warning" : "success", "understanding", message.data.llm === "rule" ? "warning" : "success");
       return;
     }
 
     if (message.event === "plan") {
       setPlan(message.data.plan);
       setTrace(message.data.trace);
-      append("生成方案", "已生成活动、餐饮、路线和时间线，正在做最终校验。", "success", "routing");
+      append("方案已生成", "已生成活动、餐饮、路线和时间线，正在做最终校验。", "success", "routing", "success");
       return;
     }
 
     if (message.event === "validation") {
       setTrace((current) => [...current, ...message.data.trace]);
       append(
-        "校验方案",
+        "方案校验",
         message.data.ok ? "时间、预算、路线和可执行性校验通过。" : `发现 ${message.data.errors.length} 个待确认问题。`,
         message.data.ok ? "success" : "warning",
-        "validating"
+        "validating",
+        message.data.ok ? "success" : "warning"
       );
       return;
     }
@@ -126,7 +138,7 @@ export function usePlanStream() {
             }
           : current
       );
-      append("执行动作", "预约、购票、打车或日历动作已返回模拟结果。", "success", "executing");
+      append("执行动作完成", "预约、购票、打车或日历动作已返回模拟结果。", "success", "executing", "success");
       return;
     }
 
@@ -138,6 +150,9 @@ export function usePlanStream() {
     if (message.event === "done") {
       setPlan(message.data.plan);
       setTrace(message.data.trace);
+      if (message.data.response_text) {
+        setAssistantText((current) => current || message.data.response_text || "");
+      }
       if (message.data.plan?.share_message) {
         setAssistantText((current) => current || message.data.plan?.share_message || "");
       }
@@ -145,17 +160,18 @@ export function usePlanStream() {
         "生成完成",
         message.data.plan ? "方案已经生成，可以查看总览、地图、详情或导出分享。" : "已生成文字回复，本轮不需要展示行程方案。",
         "success",
-        "done"
+        "done",
+        "success"
       );
       setIsRunning(false);
       return;
     }
 
     if (message.event === "error") {
-      append("处理失败", message.data.message, "error", "error");
+      append("处理失败", message.data.message, "error", "error", "failed");
       setIsRunning(false);
     }
-  }, [append]);
+  }, [append, appendProgress]);
 
   const run = useCallback(async (request: StreamRequest) => {
     abortRef.current?.abort();
@@ -166,8 +182,6 @@ export function usePlanStream() {
     setPlan(null);
     setTrace([]);
     setAssistantText("");
-    append("创建请求", "PlanGo 已收到需求，正在启动规划流程。", "info", "request");
-    append("理解需求", "正在理解你的调整意图和当前方案上下文。", "info", "understanding");
 
     try {
       await streamPlan(
@@ -175,9 +189,10 @@ export function usePlanStream() {
         handleStreamEvent,
         abortRef.current.signal
       );
+      setIsRunning(false);
     } catch (error) {
       if ((error as Error).name !== "AbortError") {
-        append("网络错误", (error as Error).message, "error", "error");
+        append("网络错误", (error as Error).message, "error", "error", "failed");
       }
       setIsRunning(false);
     }
@@ -186,7 +201,7 @@ export function usePlanStream() {
   const cancel = useCallback(() => {
     abortRef.current?.abort();
     setIsRunning(false);
-    append("已停止", "当前流式请求已取消。", "warning", "error");
+    append("已停止", "当前流式请求已取消。", "warning", "error", "warning");
   }, [append]);
 
   return {

@@ -74,14 +74,24 @@ function badgeFor(index: number) {
   return "方案三";
 }
 
-function ensurePlanLinkMessage(messages: StoredChatMessage[], plan: Plan | null) {
-  if (!plan || messages.some(isPlanLinkMessage)) {
+function planLinkMessageId(plan: Plan) {
+  return `plan-link-${plan.id ?? plan.trace_id ?? crypto.randomUUID()}`;
+}
+
+function appendPlanLinkMessage(messages: StoredChatMessage[], plan: Plan | null) {
+  if (!plan) {
     return messages;
   }
+
+  const lastMessage = messages[messages.length - 1];
+  if (lastMessage && isPlanLinkMessage(lastMessage)) {
+    return messages;
+  }
+
   return [
     ...messages,
     {
-      id: `plan-link-${plan.id ?? plan.trace_id ?? crypto.randomUUID()}`,
+      id: planLinkMessageId(plan),
       role: "assistant" as const,
       content: PLAN_LINK_MESSAGE
     }
@@ -92,7 +102,7 @@ export function App() {
   const [route, setRoute] = useState<AppRoute>(() => normalizePath(window.location.pathname));
   const [activeConversation, setActiveConversation] = useState<ConversationRecord>(() => loadOrCreateActiveConversation());
   const [conversations, setConversations] = useState<ConversationRecord[]>(() => loadConversations());
-  const [messages, setMessages] = useState<StoredChatMessage[]>(() => ensurePlanLinkMessage(activeConversation.messages, activeConversation.plan));
+  const [messages, setMessages] = useState<StoredChatMessage[]>(() => appendPlanLinkMessage(activeConversation.messages, activeConversation.plan));
   const [latestPlan, setLatestPlan] = useState<Plan | null>(() => activeConversation.plan);
   const [selectedPlan, setSelectedPlan] = useState<PlanViewModel | null>(null);
   const [feedbackMessage, setFeedbackMessage] = useState("");
@@ -133,7 +143,7 @@ export function App() {
     const target = records.find((item) => item.id === conversationId);
     if (!target) return;
 
-    const messagesWithPlanLink = nextPlan ? ensurePlanLinkMessage(nextMessages, nextPlan) : nextMessages;
+    const messagesWithPlanLink = nextPlan ? appendPlanLinkMessage(nextMessages, nextPlan) : nextMessages;
     const saved = upsertConversation(
       {
         ...target,
@@ -195,7 +205,7 @@ export function App() {
     setLatestPlan(plan);
     const first = planToViewModel(plan, badgeFor(0), 0);
     setSelectedPlan(first);
-    const nextMessages = ensurePlanLinkMessage(messages, plan);
+    const nextMessages = appendPlanLinkMessage(messages, plan);
     setMessages(nextMessages);
     persistConversation(nextMessages, plan);
   };
@@ -228,7 +238,7 @@ export function App() {
     setActiveConversationId(record.id);
     setActiveConversation(record);
     setConversations(loadConversations());
-    const nextMessages = ensurePlanLinkMessage(record.messages, record.plan);
+    const nextMessages = appendPlanLinkMessage(record.messages, record.plan);
     setMessages(nextMessages);
     setLatestPlan(record.plan);
     setSelectedPlan(record.plan ? planToViewModel(record.plan, badgeFor(0), 0) : null);
@@ -252,7 +262,7 @@ export function App() {
     setActiveConversationId(nextActive.id);
     setActiveConversation(nextActive);
     setConversations(loadConversations());
-    setMessages(ensurePlanLinkMessage(nextActive.messages, nextActive.plan));
+    setMessages(appendPlanLinkMessage(nextActive.messages, nextActive.plan));
     setLatestPlan(nextActive.plan);
     setSelectedPlan(nextActive.plan ? planToViewModel(nextActive.plan, badgeFor(0), 0) : null);
     setFeedbackMessage("");

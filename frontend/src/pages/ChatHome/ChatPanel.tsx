@@ -130,7 +130,7 @@ export function ChatPanel({
           </ChatBubble>
         )}
 
-        {isRunning && <LoadingSteps events={events} />}
+        {isRunning && <LoadingSteps events={events} isRunning={isRunning} />}
       </div>
 
       {draftPreference && (

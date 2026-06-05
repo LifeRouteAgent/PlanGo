@@ -82,6 +82,8 @@ export interface RouteSegment {
   distance_km?: number;
   duration_min?: number;
   transport_mode?: string;
+  from_type?: "origin" | "poi" | string;
+  to_type?: "poi" | string;
 }
 
 export interface PlanAlternative {
@@ -169,9 +171,31 @@ export interface ChatHistoryItem {
   content: string;
 }
 
+export interface ClientGeoLocation {
+  lat: number;
+  lng: number;
+  accuracy_meters?: number | null;
+  source: "browser" | "client";
+  updated_at: string;
+}
+
+export type ProgressStatus = "pending" | "running" | "success" | "warning" | "failed";
+
+export interface FrontendProgressEvent {
+  type?: string;
+  title: string;
+  message: string;
+  status: ProgressStatus;
+  step?: string | null;
+  request_id?: string;
+  run_id?: string | null;
+  timestamp?: string;
+  data?: Record<string, unknown>;
+}
+
 export type StreamEvent =
   | { event: "status"; data: { message: string } }
-  | { event: "progress"; data: { message: string } }
+  | { event: "progress"; data: FrontendProgressEvent }
   | {
       event: "capability";
       data: {
@@ -189,7 +213,7 @@ export type StreamEvent =
     }
   | { event: "execution"; data: { actions: BookingAction[]; risk_flags: string[] } }
   | { event: "response_chunk"; data: { delta: string } }
-  | { event: "done"; data: { plan: Plan | null; trace: string[] } }
+  | { event: "done"; data: { plan: Plan | null; trace: string[]; response_text?: string } }
   | { event: "error"; data: { message: string; errors?: string[] } };
 
 export interface StreamRequest {
@@ -198,5 +222,6 @@ export interface StreamRequest {
   execute: boolean;
   fail_next_restaurant_booking: boolean;
   history?: ChatHistoryItem[];
+  geo_location?: ClientGeoLocation | null;
   session_id?: string;
 }

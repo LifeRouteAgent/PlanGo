@@ -77,7 +77,7 @@ export function ChatPanelV2({
           </ChatBubble>
         ) : null}
 
-        {isRunning ? <LoadingSteps events={events} /> : null}
+        {events.length ? <LoadingSteps events={events} isRunning={isRunning} /> : null}
       </div>
 
       {showDefaultPrompts ? (

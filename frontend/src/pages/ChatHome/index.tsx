@@ -1,7 +1,9 @@
 ﻿import { Building2, Flame, MapPin, RefreshCw, Sparkles } from "lucide-react";
+import { Clock, Tags, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { AppleButton, SoftTag } from "../../components/ui";
 import { usePlanStream } from "../../hooks/usePlanStream";
-import type { Plan } from "../../types/agent";
+import type { ClientGeoLocation, Plan } from "../../types/agent";
 import { AUTO_SUBMIT_EVENT, type AutoSubmitPayload } from "../../utils/autoSubmitEvent";
 import type { StoredChatMessage } from "../../utils/conversationStore";
 import { ChatPanelV2 } from "./ChatPanelV2";
@@ -10,6 +12,7 @@ import { WelcomeHero } from "./WelcomeHero";
 interface HomeInspirationPoi {
   id: string;
   name: string;
+  category?: string;
   tag: string;
   tags: string[];
   image_url: string;
@@ -38,6 +41,10 @@ const quickStartItems = [
   { label: "室内活动", prompt: "今天想安排室内活动，别太晒，路线轻松一点。", icon: Building2 }
 ];
 
+function isInBeijing(lat: number, lng: number) {
+  return lng >= 115.4 && lng <= 117.6 && lat >= 39.4 && lat <= 41.1;
+}
+
 export function ChatHome({
   conversationId,
   messages,
@@ -57,7 +64,31 @@ export function ChatHome({
   const processedPendingIdsRef = useRef<Set<string>>(new Set());
   const [inspirationPois, setInspirationPois] = useState<HomeInspirationPoi[]>([]);
   const [inspirationOffset, setInspirationOffset] = useState(0);
+  const [geoLocation, setGeoLocation] = useState<ClientGeoLocation | null>(null);
+  const [selectedInspiration, setSelectedInspiration] = useState<HomeInspirationPoi | null>(null);
   const isCurrentConversationRunning = isRunning && streamConversationId === conversationId;
+
+  useEffect(() => {
+    if (!("geolocation" in navigator)) return;
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const { latitude, longitude, accuracy } = position.coords;
+        if (!isInBeijing(latitude, longitude)) {
+          setGeoLocation(null);
+          return;
+        }
+        setGeoLocation({
+          lat: latitude,
+          lng: longitude,
+          accuracy_meters: Number.isFinite(accuracy) ? accuracy : null,
+          source: "browser",
+          updated_at: new Date(position.timestamp || Date.now()).toISOString()
+        });
+      },
+      () => setGeoLocation(null),
+      { enableHighAccuracy: false, maximumAge: 5 * 60 * 1000, timeout: 8000 }
+    );
+  }, []);
 
   useEffect(() => {
     let disposed = false;
@@ -126,13 +157,14 @@ export function ChatHome({
         execute: false,
         fail_next_restaurant_booking: false,
         session_id: conversationId,
-        history: nextMessages.map((message) => ({
+        geo_location: geoLocation,
+        history: messages.map((message) => ({
           role: message.role === "assistant" ? "assistant" : "user",
           content: message.content
         }))
       });
     },
-    [conversationId, isRunning, messages, onMessagesChange, run]
+    [conversationId, geoLocation, isRunning, messages, onMessagesChange, run]
   );
 
   const submitPending = useCallback(
@@ -214,7 +246,7 @@ export function ChatHome({
                     type="button"
                     className="inspiration-poi-card"
                     key={`${poi.id}-${poi.name}`}
-                    onClick={() => submit(`我想去 ${poi.name}，帮我搭配一个本地生活方案。`)}
+                    onClick={() => setSelectedInspiration(poi)}
                   >
                     <img src={poi.image_url} alt={poi.name} loading="lazy" />
                     <span>
@@ -230,6 +262,77 @@ export function ChatHome({
           </div>
         </div>
       </div>
+      <InspirationDetailDrawer
+        poi={selectedInspiration}
+        onClose={() => setSelectedInspiration(null)}
+        onWantToGo={(poi) => {
+          setSelectedInspiration(null);
+          submit(`我想去 ${poi.name}，帮我搭配一个本地生活方案。`);
+        }}
+      />
     </div>
+  );
+}
+
+function InspirationDetailDrawer({
+  poi,
+  onClose,
+  onWantToGo
+}: {
+  poi: HomeInspirationPoi | null;
+  onClose: () => void;
+  onWantToGo: (poi: HomeInspirationPoi) => void;
+}) {
+  if (!poi) return null;
+
+  const tags = poi.tags.length ? poi.tags : [poi.tag || "本地生活"];
+
+  return (
+    <aside className="drawer" aria-label="灵感详情" onMouseDown={onClose}>
+      <div className="drawer-panel inspiration-drawer" onMouseDown={(event) => event.stopPropagation()}>
+        <header>
+          <div>
+            <span>灵感推荐</span>
+            <h2>{poi.name}</h2>
+          </div>
+          <AppleButton type="button" variant="ghost" size="sm" onClick={onClose} aria-label="关闭灵感详情">
+            <X size={18} />
+          </AppleButton>
+        </header>
+        <div className="place-cover">
+          {poi.image_url ? <img src={poi.image_url} alt={poi.name} /> : <span>{poi.name.slice(0, 1)}</span>}
+        </div>
+        <div className="drawer-content">
+          <section className="drawer-section">
+            <strong>推荐信息</strong>
+            <p>{poi.tag || "适合作为本次本地生活规划的候选地点。点击底部按钮后，我会围绕这里搭配完整方案。"}</p>
+          </section>
+          <div className="place-facts">
+            <span>
+              <MapPin size={16} />
+              {poi.category || "本地生活"}
+            </span>
+            <span>
+              <Clock size={16} />
+              {poi.duration_text || "1-3h"}
+            </span>
+            <span>
+              <Tags size={16} />
+              {poi.tag || tags[0] || "推荐"}
+            </span>
+          </div>
+          <div className="tag-row">
+            {tags.slice(0, 6).map((tag) => (
+              <SoftTag key={tag}>{tag}</SoftTag>
+            ))}
+          </div>
+        </div>
+        <div className="drawer-footer">
+          <AppleButton type="button" onClick={() => onWantToGo(poi)}>
+            想去此地
+          </AppleButton>
+        </div>
+      </div>
+    </aside>
   );
 }
