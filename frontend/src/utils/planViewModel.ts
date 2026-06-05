@@ -122,6 +122,16 @@ function timeRange(step: PlanStep) {
   return "时间待定";
 }
 
+function timeRangeWithArrival(step: PlanStep, arrivalTime?: string) {
+  if (arrivalTime && step.end_time && step.end_time !== "--:--") {
+    return `${arrivalTime} - ${step.end_time}`;
+  }
+  if (arrivalTime && (!step.start_time || step.start_time === "--:--")) {
+    return arrivalTime;
+  }
+  return timeRange(step);
+}
+
 function stepTraffic(step: PlanStep) {
   const route = step.metadata?.route as { distance_km?: number; duration_min?: number; mode?: string } | undefined;
   if (route?.duration_min || route?.distance_km) {
@@ -133,26 +143,57 @@ function stepTraffic(step: PlanStep) {
   return step.detail?.traffic || "交通信息待确认";
 }
 
-function stepToStop(step: PlanStep, index: number): PlanStopView {
+function isOriginStep(step: PlanStep) {
+  return step.type === "buffer" && (step.title === "起点" || step.title.includes("璧风"));
+}
+
+function isOriginDisplayStep(step: PlanStep) {
+  return step.type === "buffer" || step.target_id === "origin";
+}
+
+function segmentTraffic(segment?: RouteSegment) {
+  if (!segment) return "";
+  const mode = segment.transport_mode || "交通";
+  const distance = segment.distance_km ? `${segment.distance_km.toFixed(1)} 公里` : "";
+  const duration = segment.duration_min ? `约 ${Math.round(segment.duration_min)} 分钟` : "";
+  return [mode, distance, duration].filter(Boolean).join(" · ");
+}
+
+function stepToStop(step: PlanStep, index: number, arrivalTime?: string, originSegment?: RouteSegment): PlanStopView {
   const rating = step.metadata?.rating;
   const imageUrl = step.detail?.image_url ?? step.detail?.images?.[0] ?? null;
+  const isOrigin = isOriginDisplayStep(step);
   return {
     id: step.target_id || `${index}`,
     order: index + 1,
     label: String.fromCharCode(65 + index),
-    time: timeRange(step),
-    title: step.title,
-    address: step.location?.address || step.detail?.address || "地址待确认",
+    time: timeRangeWithArrival(step, arrivalTime),
+    title: isOriginDisplayStep(step) ? "起点" : step.title,
+    address: isOrigin ? "起点" : step.location?.address || step.detail?.address || "地址待确认",
     reason: step.reason || step.detail?.description || "符合本次偏好和行程节奏。",
     cost: step.cost || step.detail?.cost || 0,
-    traffic: stepTraffic(step),
-    imageUrl,
-    tags: step.detail?.tags?.filter(Boolean).slice(0, 5) ?? [],
+    traffic: isOriginDisplayStep(step) ? segmentTraffic(originSegment) : stepTraffic(step),
+    imageUrl: isOriginDisplayStep(step) ? null : imageUrl,
+    tags: isOrigin ? ["起点"] : step.detail?.tags?.filter(Boolean).slice(0, 5) ?? [],
     lat: step.location?.lat ?? null,
     lng: step.location?.lng ?? null,
-    rating: rating === undefined || rating === null ? null : String(rating),
+    rating: isOrigin || rating === undefined || rating === null ? null : String(rating),
     raw: step
   };
+}
+
+function routeSegmentArrivalTime(segment: RouteSegment | undefined, fallbackStart?: string) {
+  if (!segment || !fallbackStart || fallbackStart === "--:--") return undefined;
+  const duration = typeof segment.duration_min === "number" ? segment.duration_min : 0;
+  if (!duration) return fallbackStart;
+  const [hourText, minuteText = "0"] = fallbackStart.split(":");
+  const hour = Number(hourText);
+  const minute = Number(minuteText);
+  if (!Number.isFinite(hour) || !Number.isFinite(minute)) return fallbackStart;
+  const total = hour * 60 + minute + Math.round(duration);
+  const nextHour = Math.floor(total / 60) % 24;
+  const nextMinute = total % 60;
+  return `${String(nextHour).padStart(2, "0")}:${String(nextMinute).padStart(2, "0")}`;
 }
 
 function styleTagFromBadge(badge: string, indexHint: number) {
@@ -198,7 +239,18 @@ function routeSummary(plan: Plan, stops: PlanStopView[], distance: string): Plan
 }
 
 export function planToViewModel(plan: Plan, badge = "推荐", indexHint = 0): PlanViewModel {
-  const stops = plan.steps.map(stepToStop);
+  const rawSteps = plan.steps ?? [];
+  const hasOrigin = rawSteps.length > 1 && isOriginDisplayStep(rawSteps[0]);
+  const originDeparture = hasOrigin ? rawSteps[0].start_time || rawSteps[0].end_time : undefined;
+  const firstArrival = hasOrigin ? routeSegmentArrivalTime(plan.route?.segments?.[0], originDeparture) : undefined;
+  const stops = rawSteps.map((step, index) =>
+    stepToStop(
+      step,
+      index,
+      hasOrigin && index === 1 ? firstArrival : undefined,
+      hasOrigin && index === 0 ? plan.route?.segments?.[0] : undefined
+    )
+  );
   const distance = distanceText(plan);
   const reason =
     plan.rationale?.[0] ||

@@ -13,7 +13,10 @@ interface TimelineNodeProps {
 }
 
 export function TimelineNode({ stop, selected = false, onHover, onOpen, onModify }: TimelineNodeProps) {
+  const isOrigin = stop.raw.type === "buffer" && stop.title === "起点";
+  const originLike = isOrigin || stop.raw.type === "buffer" || stop.raw.target_id === "origin";
   const openFromKeyboard = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (originLike) return;
     if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
       onOpen(stop);
@@ -33,31 +36,35 @@ export function TimelineNode({ stop, selected = false, onHover, onOpen, onModify
         className="timeline-node-main"
         role="button"
         tabIndex={0}
-        onClick={() => onOpen(stop)}
+        onClick={() => {
+          if (!originLike) onOpen(stop);
+        }}
         onKeyDown={openFromKeyboard}
       >
         <div className="timeline-node-time">
           <Clock3 size={15} />
           <time>{stop.time}</time>
         </div>
-        <AppleButton
-          type="button"
-          variant="secondary"
-          size="sm"
-          className="timeline-node-replace"
-          onClick={(event) => {
-            event.stopPropagation();
-            onModify(stop);
-          }}
-        >
-          <RefreshCw size={14} />
-          替换
-        </AppleButton>
+        {!originLike ? (
+          <AppleButton
+            type="button"
+            variant="secondary"
+            size="sm"
+            className="timeline-node-replace"
+            onClick={(event) => {
+              event.stopPropagation();
+              onModify(stop);
+            }}
+          >
+            <RefreshCw size={14} />
+            替换
+          </AppleButton>
+        ) : null}
         <div className="timeline-node-body">
           {stop.imageUrl ? <img src={stop.imageUrl} alt={stop.title} loading="lazy" /> : null}
           <div className="timeline-node-content">
             <div className="timeline-node-title-row">
-              <h3>{stop.title}</h3>
+              <h3>{originLike ? "起点" : stop.title}</h3>
               {stop.cost ? (
                 <span className="timeline-node-cost">
                   <WalletCards size={14} />
