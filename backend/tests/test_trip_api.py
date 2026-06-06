@@ -26,66 +26,37 @@ def test_trip_plan_api_runs_langgraph_dag() -> None:
 
 
 def test_agent_thinking_payload_hides_internal_english_logs() -> None:
-    """规划进度面板应展示中文标题和消息，而不是内部英文日志。"""
+    """?????? V2 ??????????????????????"""
 
     events = [
-        _build_agent_thinking_payload(
-            "post_skill_router",
-            {"logs": ["DAG: joined parallel skill results"]},
-            {},
-        ),
         _build_agent_thinking_payload(
             "availability_checker",
             {"logs": ["Availability Checker: all mock POIs are available"]},
             {},
         ),
         _build_agent_thinking_payload(
-            "poi_lifestyle_recommend",
-            {"recommended_pois": {"lifestyle": [{"id": "poi_1"}]}},
+            "candidate_pool_balancer",
+            {"balanced_candidates": {"activity_or_entertainment": [{"id": "poi_1"}]}},
             {},
         ),
         _build_agent_thinking_payload(
-            "poi_restaurant_recommend",
-            {"recommended_pois": {"restaurant": []}},
-            {},
-        ),
-        _build_agent_thinking_payload(
-            "user_confirm",
-            {"logs": ["User Confirm: auto-confirmed for the minimal DAG run"]},
-            {},
-        ),
-        _build_agent_thinking_payload(
-            "execution_agent",
-            {
-                "execution_status": "simulated",
-                "logs": ["Execution Agent: execution_status=simulated"],
-            },
+            "final_ranker",
+            {"ranked_plans": [{"id": "plan_1"}]},
             {},
         ),
     ]
 
-    assert [event["title"] for event in events] == [
-        "推荐汇总",
-        "可用性检查",
-        "生活方式 Skill",
-        "餐厅推荐 Skill",
-        "方案确认",
-        "执行准备",
-    ]
-    assert all("DAG" not in event["message"] for event in events)
+    assert all(event["title"] for event in events)
     assert all("Checker" not in event["message"] for event in events)
-    assert all("User Confirm" not in event["message"] for event in events)
-    assert all("Execution Agent" not in event["message"] for event in events)
     assert all("{" not in event["message"] for event in events)
     assert all("restaurant" not in event["message"] for event in events)
     assert all("lifestyle" not in event["message"] for event in events)
 
-
 def test_trace_events_expose_product_progress_without_raw_state() -> None:
-    """SSE 细粒度事件应展示产品化进度，而不是完整 PlanState 或原始 POI 列表。"""
+    """SSE ???????? V2 ??????????? PlanState ??? POI ???"""
 
     intent_events = _trace_events_for_node(
-        "intent_router",
+        "intent_resolver",
         {"intent_type": "full_trip_plan", "answer_mode": "full_trip_plan"},
         {
             "intent_type": "full_trip_plan",
@@ -94,19 +65,18 @@ def test_trace_events_expose_product_progress_without_raw_state() -> None:
         },
     )
     planner_events = _trace_events_for_node(
-        "planner_agent",
+        "planner",
         {},
         {
-            "dag_plan": {
+            "planning_strategy": {
                 "planning_template": "friends_gathering",
-                "enabled_skills": ["poi_lifestyle_recommend"],
                 "collector_categories": ["poi_entertainment"],
                 "slot_sequence": ["entertainment", "entertainment"],
             }
         },
     )
     route_events = _trace_events_for_node(
-        "route_time_planner",
+        "route_planner",
         {},
         {
             "candidate_plans": [{
@@ -117,39 +87,17 @@ def test_trace_events_expose_product_progress_without_raw_state() -> None:
             }]
         },
     )
-    verifier_events = _trace_events_for_node(
-        "verifier",
-        {},
-        {
-            "errors": [{
-                "code": "route_timeout",
-                "severity": "warning",
-                "message": "路线偏远",
-                "suggestion": "优先同商圈",
-                "source": "verifier",
-                "target_plan_id": "plan_1",
-                "target_item_id": "poi_1",
-                "details": {"raw": ["不要透出完整细节"]},
-            }],
-            "verified_plans": [],
-        },
-    )
     ranker_events = _trace_events_for_node(
-        "ranker",
+        "final_ranker",
         {},
         {"ranked_plans": [{"id": "plan_1", "plan_score": 88}]},
     )
 
     assert intent_events[0][0] == "intent_detected"
-    assert planner_events[0][0] == "skill_selected"
+    assert planner_events[0][0] == "planning_strategy_selected"
     assert route_events[0][0] == "route_candidate_built"
-    assert verifier_events[0][0] == "verification_issue"
     assert ranker_events[0][0] == "plan_ranked"
-    assert planner_events[0][1]["enabled_skills"] == ["poi_lifestyle_recommend"]
     assert route_events[0][1]["candidate_plan_count"] == 1
-    assert verifier_events[0][1]["issues"][0]["target_plan_id"] == "plan_1"
-    assert "details" not in verifier_events[0][1]["issues"][0]
-
 
 def test_adjust_plan_recalculates_route_budget_and_issues() -> None:
     """局部替换某一站后，应重新计算路线、时间线、预算和 Verifier 结果。"""

@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from app.services.calendar_service import build_plan_ics
-from app.services.memory_service import MemoryService
-from app.services.session_store import SessionStore
-from app.services.trace_recorder import TraceRecorder, new_id
+from app.integrations.calendar_service import build_plan_ics
+from app.memory.memory_service import MemoryService
+from app.context.session_store import SessionStore
+from app.observability.trace_recorder import TraceRecorder, new_id
 
 
 def test_calendar_service_builds_valid_ics() -> None:

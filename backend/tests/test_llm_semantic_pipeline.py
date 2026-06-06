@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from app.llm_agents.intent_understanding_agent import build_llm_understanding
-from app.services.llm_output_schemas import IntentUnderstandingOutput, validate_llm_output
+from app.agents.intent_agent import build_llm_understanding
+from app.llm.output_schemas import IntentUnderstandingOutput, validate_llm_output
 
 
 def test_intent_understanding_schema_rejects_invalid_shape() -> None:
@@ -16,6 +16,6 @@ def test_intent_understanding_schema_rejects_invalid_shape() -> None:
 
 
 def test_intent_understanding_agent_returns_none_when_llm_unavailable(monkeypatch) -> None:
-    monkeypatch.setattr("app.llm_agents.intent_understanding_agent.call_chat_completion", lambda *_, **__: "")
+    monkeypatch.setattr("app.agents.intent_agent.call_chat_completion", lambda *_, **__: "")
 
     assert build_llm_understanding("周末想出去玩", {}, conversation_context={}) is None

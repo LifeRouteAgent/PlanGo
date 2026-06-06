@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from app.llm_agents.response_generation_agent import (
+from app.agents.response_agent import (
     apply_response_generation,
     compact_payload_for_llm,
 )
-from app.graph.nodes.response_nodes import response_generator_node
-from app.graph.state import create_planning_state
+from app.planning.nodes.response_nodes import response_generator_node
+from app.planning.state import create_planning_state
 
 
 def _payload() -> dict:
@@ -83,7 +83,7 @@ def test_apply_response_generation_only_changes_display_fields() -> None:
 
 def test_response_generator_node_uses_llm_display_fields(monkeypatch) -> None:
     monkeypatch.setattr(
-        "app.graph.nodes.response_nodes.generate_response_package",
+        "app.planning.nodes.response_nodes.generate_response_package",
         lambda payload: {
             "response_text": "LLM 生成的最终回复",
             "plans": [

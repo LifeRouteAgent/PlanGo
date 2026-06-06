@@ -3,8 +3,8 @@ from __future__ import annotations
 from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 
-from app.models.schemas import TripPlanRequest
-from app.services.trip_services import start_v2_plan_progress
+from app.api.schemas.trip import TripPlanRequest
+from app.planning.trip_services import start_v2_plan_progress
 from app.streaming.sse import progress_streaming_response
 
 router = APIRouter(prefix="/api/plans", tags=["planning-progress"])

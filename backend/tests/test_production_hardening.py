@@ -3,14 +3,14 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from app.services.checkpoint_store import CheckpointStore, TaskStatus
-from app.services.llm_output_schemas import (
+from app.runtime.checkpoint_store import CheckpointStore, TaskStatus
+from app.llm.output_schemas import (
     MemoryExtractionOutput,
     validate_llm_output,
 )
-from app.services.memory_service import MemoryService
-from app.services.policy_config import policy_config
-from app.services.tool_policy import ToolPolicy
+from app.memory.memory_service import MemoryService
+from app.planning.policy_config import policy_config
+from app.tools.tool_policy import ToolPolicy
 
 
 class _NoopVectorStore:
@@ -155,7 +155,7 @@ def test_policy_configs_load_from_files() -> None:
 
     assert policy_config.planning_rules.max_segment_route_minutes > 0
     assert "restaurant_booking" in policy_config.risk_policy.risk_levels
-    assert policy_config.category_policy.default_enabled_skills
+    assert policy_config.category_policy.default_logical_categories
 
 
 def test_local_life_benchmark_has_layered_paths() -> None:

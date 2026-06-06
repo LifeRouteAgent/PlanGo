@@ -9,7 +9,7 @@ from fastapi import APIRouter, Query
 from fastapi.responses import Response, StreamingResponse
 
 from app.config import settings
-from app.models.schemas import (
+from app.api.schemas.trip import (
     AdjustPlanRequest,
     DataSourceStatusResponse,
     ExecutePlanRequest,
@@ -17,20 +17,20 @@ from app.models.schemas import (
     TripPlanRequest,
     TripPlanResponse,
 )
-from app.services.calendar_service import build_plan_ics
-from app.services.checkpoint_store import CheckpointStore, TaskStatus, make_idempotency_key
-from app.services.memory_event_queue import MemoryEventQueue
-from app.services.memory_service import MemoryService
-from app.services.poi_repository import PoiRepository
-from app.services.trace_recorder import TraceRecorder, new_id, record_trace_event, set_trace_context
-from app.services.trip_services import (
+from app.integrations.calendar_service import build_plan_ics
+from app.runtime.checkpoint_store import CheckpointStore, TaskStatus, make_idempotency_key
+from app.memory.memory_event_queue import MemoryEventQueue
+from app.memory.memory_service import MemoryService
+from app.repositories.poi_repository import PoiRepository
+from app.observability.trace_recorder import TraceRecorder, new_id, record_trace_event, set_trace_context
+from app.planning.trip_services import (
     TaskRecoveryService,
     TripExecutionService,
     TripPlanningService,
     TripRevisionService,
     TripStreamingService,
 )
-from app.services.trip_progress import (
+from app.observability.trip_progress import (
     build_agent_thinking_payload as _build_agent_thinking_payload,
     effective_query_for_request as _effective_query_for_request,
     trace_events_for_node as _trace_events_for_node,

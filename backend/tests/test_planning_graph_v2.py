@@ -3,9 +3,9 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from app.graph.graph_builder import run_planning_request
-from app.graph.payloads import normalize_response_payload
-from app.graph.services import (
+from app.planning.graph_builder import run_planning_request
+from app.planning.payloads import normalize_response_payload
+from app.planning.services import (
     _route_segments_for_items,
     _timeline_with_origin,
     build_constraints,
@@ -14,7 +14,7 @@ from app.graph.services import (
     create_route_plans,
     resolve_intent,
 )
-from app.graph.state import (
+from app.planning.state import (
     CandidatePlan,
     CategoryTagRequirement,
     CompiledRecallQuery,
@@ -29,10 +29,10 @@ from app.graph.state import (
     create_planning_state,
     planning_state_to_legacy,
 )
-from app.services.session_preference_extractor import extract_session_preference_profile
-from app.services.poi_catalog_service import PoiCatalogService
-from app.models.schemas import TripPlanRequest
-from app.services.trip_services import TripPlanningService
+from app.memory.session_preference_extractor import extract_session_preference_profile
+from app.planning.poi_catalog_service import PoiCatalogService
+from app.api.schemas.trip import TripPlanRequest
+from app.planning.trip_services import TripPlanningService
 
 
 def test_minimal_planning_state_has_safe_defaults() -> None:
@@ -181,8 +181,8 @@ def test_single_category_graph_skips_route_planner() -> None:
 
 
 def test_plan_adjustment_uses_editor_branch(monkeypatch) -> None:
-    import app.graph.services.intent_service as intent_services
-    from app.services.session_store import SessionStore
+    import app.planning.services.intent_service as intent_services
+    from app.context.session_store import SessionStore
 
     monkeypatch.setattr(intent_services, "build_llm_understanding", lambda *args, **kwargs: None)
     monkeypatch.setattr(
@@ -298,7 +298,7 @@ def test_database_catalog_exposes_real_filter_fields_and_tags() -> None:
 
 
 def test_intent_tag_mapping_only_accepts_database_catalog_tags(monkeypatch) -> None:
-    import app.graph.services.intent_service as intent_services
+    import app.planning.services.intent_service as intent_services
 
     catalog = PoiCatalogService().load_catalog(query="想唱歌")
     knowledge = PoiCatalogService().background_knowledge(catalog)
@@ -352,7 +352,7 @@ def test_recall_compiler_carries_category_tag_filters() -> None:
 
 
 def test_catalog_rule_fallback_recognizes_tag_recommendation(monkeypatch) -> None:
-    import app.graph.services.intent_service as intent_services
+    import app.planning.services.intent_service as intent_services
 
     catalog = PoiCatalogService().load_catalog(query="推荐唱歌的地方，不要电影院")
     knowledge = PoiCatalogService().background_knowledge(catalog)
@@ -490,7 +490,7 @@ def test_inspiration_prompt_infers_must_poi_category() -> None:
 
 
 def test_unresolved_inspiration_must_poi_gets_safe_fallback_candidate(monkeypatch) -> None:
-    import app.graph.services.recall_service as recall_services
+    import app.planning.services.recall_service as recall_services
 
     monkeypatch.setattr(
         recall_services.PoiRepository,
@@ -520,7 +520,7 @@ def test_quick_start_hotspots_and_budget_templates() -> None:
 
 
 def test_message_origin_overrides_current_geo_location(monkeypatch) -> None:
-    import app.graph.services.intent_service as intent_services
+    import app.planning.services.intent_service as intent_services
 
     monkeypatch.setattr(
         intent_services.PoiRepository,
@@ -550,7 +550,7 @@ def test_message_origin_overrides_current_geo_location(monkeypatch) -> None:
 
 
 def test_current_geo_location_used_when_message_origin_unresolved(monkeypatch) -> None:
-    import app.graph.services.intent_service as intent_services
+    import app.planning.services.intent_service as intent_services
 
     monkeypatch.setattr(
         intent_services.PoiRepository,

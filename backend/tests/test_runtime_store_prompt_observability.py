@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from app.models.schemas import TripPlanRequest
-from app.services.prompt_registry import get_prompt_spec
-from app.services.runtime_store import FileRuntimeStore, get_runtime_store
-from app.services.trace_recorder import TraceRecorder
-from app.services.trip_services import TripPlanningService, TripRevisionService, TripStreamingService
+from app.api.schemas.trip import TripPlanRequest
+from app.llm.prompt_registry import get_prompt_spec
+from app.runtime.runtime_store import FileRuntimeStore, get_runtime_store
+from app.observability.trace_recorder import TraceRecorder
+from app.planning.trip_services import TripPlanningService, TripRevisionService, TripStreamingService
 
 
 def test_file_runtime_store_roundtrip_core_records() -> None:
@@ -66,7 +66,7 @@ def test_trip_routes_can_delegate_to_services(monkeypatch) -> None:
 
     def fake_plan(self, request):
         called["query"] = request.user_query
-        from app.models.schemas import TripPlanResponse
+        from app.api.schemas.trip import TripPlanResponse
 
         return TripPlanResponse(
             response_text="ok",

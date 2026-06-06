@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from app.graph.services import build_constraints, compile_recall_plan, resolve_intent
-from app.graph.state import POILogicalTagCatalog, POITableTagInfo
+from app.planning.services import build_constraints, compile_recall_plan, resolve_intent
+from app.planning.state import POILogicalTagCatalog, POITableTagInfo
 
 
 def test_poi_recall_compiler_uses_whitelisted_repository_tables() -> None:

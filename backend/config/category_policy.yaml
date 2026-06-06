@@ -8,16 +8,25 @@
     "relaxation": ["beauty", "restaurant"],
     "shopping_leisure": ["shopping", "restaurant", "entertainment"]
   },
-  "skill_categories": {
-    "poi_mix_recommend": ["attraction", "shopping", "activity"],
-    "poi_activity_recommend": ["activity", "entertainment"],
-    "poi_restaurant_recommend": ["restaurant"],
-    "poi_lifestyle_recommend": ["fitness", "beauty", "entertainment"]
+  "slot_categories": {
+    "restaurant": ["restaurant"],
+    "activity": ["activity", "attraction"],
+    "attraction": ["attraction"],
+    "activity_or_attraction": ["activity", "attraction"],
+    "activity_or_entertainment": ["activity", "entertainment", "attraction"],
+    "shopping": ["shopping"],
+    "entertainment": ["entertainment"],
+    "fitness": ["fitness"],
+    "beauty": ["beauty"],
+    "lifestyle": ["entertainment", "fitness", "beauty"]
   },
-  "default_enabled_skills": [
-    "poi_mix_recommend",
-    "poi_activity_recommend",
-    "poi_restaurant_recommend",
-    "poi_lifestyle_recommend"
+  "default_logical_categories": [
+    "restaurant",
+    "activity",
+    "attraction",
+    "shopping",
+    "fitness",
+    "entertainment",
+    "beauty"
   ]
 }

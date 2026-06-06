@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from app.graph.services import check_plan_availability
-from app.graph.state import CandidatePlan, PlanSlot, ScoredPOICandidate
+from app.planning.services import check_plan_availability
+from app.planning.state import CandidatePlan, PlanSlot, ScoredPOICandidate
 
 
 def test_availability_checker_filters_unavailable_plan() -> None:

@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.services.embedding_service import EmbeddingService
-from app.services.memory_service import MemoryService
-from app.services.vector_memory_store import VectorMemoryRecord
+from app.integrations.embedding_service import EmbeddingService
+from app.memory.memory_service import MemoryService
+from app.memory.vector_memory_store import VectorMemoryRecord
 
 
 class FakeVectorStore:
@@ -87,7 +87,7 @@ def test_memory_service_writes_file_and_vector_memory(monkeypatch) -> None:
     memory = MemoryService(vector_store=fake_store)  # type: ignore[arg-type]
     memory.clear(user_id="u1")
     monkeypatch.setattr(
-        "app.services.memory_service.extract_memory_updates",
+        "app.memory.memory_service.extract_memory_updates",
         lambda query, user_profile=None: {
             "should_update_profile": False,
             "scope": "temporary",
@@ -146,7 +146,7 @@ def test_memory_service_writes_long_term_profile_with_llm(monkeypatch) -> None:
     memory = MemoryService(vector_store=fake_store)  # type: ignore[arg-type]
     memory.clear(user_id="u_long")
     monkeypatch.setattr(
-        "app.services.memory_service.extract_memory_updates",
+        "app.memory.memory_service.extract_memory_updates",
         lambda query, user_profile=None: {
             "should_update_profile": True,
             "scope": "long_term",

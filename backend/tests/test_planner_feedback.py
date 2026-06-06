@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from app.graph.graph_builder import run_planning_request
+from app.planning.graph_builder import run_planning_request
 
 
 def test_v2_planning_failure_context_stays_internal() -> None:

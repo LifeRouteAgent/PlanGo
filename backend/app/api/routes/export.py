@@ -7,11 +7,11 @@ import time
 from fastapi import APIRouter
 from fastapi.responses import Response
 
-from app.models.schemas import ExportPlanRequest
-from app.services.memory_event_queue import MemoryEventQueue
-from app.services.product_pdf_service import build_product_plan_pdf
-from app.services.tool_harness import ToolHarness
-from app.services.trace_recorder import record_trace_event, set_trace_context
+from app.api.schemas.trip import ExportPlanRequest
+from app.memory.memory_event_queue import MemoryEventQueue
+from app.export.product_pdf_service import build_product_plan_pdf
+from app.tools.tool_harness import ToolHarness
+from app.observability.trace_recorder import record_trace_event, set_trace_context
 
 router = APIRouter(prefix="/export", tags=["export"])
 _PDF_CACHE: dict[str, dict[str, object]] = {}

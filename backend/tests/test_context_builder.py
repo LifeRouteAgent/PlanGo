@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from app.services.context_builder import ContextBuilder
+from app.context.context_builder import ContextBuilder
 
 
 def test_context_builder_limits_memory_snippets() -> None:

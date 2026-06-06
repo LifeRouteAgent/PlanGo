@@ -6,13 +6,13 @@ from fastapi import APIRouter, Body, HTTPException, Query
 from fastapi.responses import StreamingResponse
 
 from app.api.routes.trip import stream_plan_trip
-from app.models.schemas import TripPlanRequest
-from app.services.amap_weather_service import AmapWeatherService
-from app.services.memory_event_queue import MemoryEventQueue
-from app.services.memory_service import MemoryService
-from app.services.poi_repository import PoiRepository
-from app.services.trace_recorder import record_trace_event
-from app.tools.poi_schema import (
+from app.api.schemas.trip import TripPlanRequest
+from app.integrations.amap_weather_service import AmapWeatherService
+from app.memory.memory_event_queue import MemoryEventQueue
+from app.memory.memory_service import MemoryService
+from app.repositories.poi_repository import PoiRepository
+from app.observability.trace_recorder import record_trace_event
+from app.domain.poi import (
     POI_ACTIVITY,
     POI_ATTRACTION,
     POI_BEAUTY,

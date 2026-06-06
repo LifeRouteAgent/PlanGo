@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from app.graph.services import build_constraints, resolve_intent
+from app.planning.services import build_constraints, resolve_intent
 
 
 def test_followup_budget_context_becomes_plan_adjustment() -> None:

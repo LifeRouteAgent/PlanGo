@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from app.graph.services import build_constraints, resolve_intent
+from app.planning.services import build_constraints, resolve_intent
 
 
 def test_v2_constraint_builder_parses_budget_and_uses_defaults() -> None:

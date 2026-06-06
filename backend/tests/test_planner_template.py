@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from app.graph.services import build_constraints, resolve_intent
+from app.planning.services import build_constraints, resolve_intent
 
 
 def test_planning_template_maps_to_required_slots() -> None:

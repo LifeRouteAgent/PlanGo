@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from app.services.checkpoint_store import CheckpointStore, TaskStatus, make_idempotency_key
-from app.services.eval_runner import EvalCase, EvalRunner
-from app.services.memory_store import FileMemoryStore, make_cache_key
-from app.services.tool_policy import RiskLevel, ToolPolicy
+from app.runtime.checkpoint_store import CheckpointStore, TaskStatus, make_idempotency_key
+from app.evaluation.eval_runner import EvalCase, EvalRunner
+from app.memory.memory_store import FileMemoryStore, make_cache_key
+from app.tools.tool_policy import RiskLevel, ToolPolicy
 
 
 def test_memory_store_session_and_tool_cache_ttl() -> None:

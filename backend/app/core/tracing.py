@@ -3,7 +3,7 @@ from __future__ import annotations
 from time import perf_counter
 from typing import Any
 
-from app.services.trace_recorder import new_id, record_trace_event
+from app.observability.trace_recorder import new_id, record_trace_event
 
 
 def new_trace_id() -> str:

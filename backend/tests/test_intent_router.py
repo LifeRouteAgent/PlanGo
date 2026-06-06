@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from app.graph.graph_builder import run_planning_request
-from app.graph.state import planning_state_to_legacy
+from app.planning.graph_builder import run_planning_request
+from app.planning.state import planning_state_to_legacy
 
 
 def _node_names(query: str) -> tuple[str, list[str], dict]:

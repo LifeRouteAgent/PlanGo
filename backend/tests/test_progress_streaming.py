@@ -7,8 +7,8 @@ from app.bus.event import Event
 from app.bus.event_bus import InMemoryEventBus, publish_event_sync
 from app.bus.subscribers.frontend_subscriber import FrontendSubscriber
 from app.bus.subscribers.progress_projector import ProgressProjector
-from app.models.schemas import TripPlanRequest
-from app.services.trip_services import start_v2_plan_progress
+from app.api.schemas.trip import TripPlanRequest
+from app.planning.trip_services import start_v2_plan_progress
 from app.streaming.sse import sse_encode
 from app.streaming.stream_manager import StreamManager
 
@@ -125,7 +125,7 @@ def test_large_payload_does_not_enter_frontend_event() -> None:
 
 
 def test_background_plan_progress_stream_receives_key_events(monkeypatch) -> None:
-    import app.services.trip_services as trip_services
+    import app.planning.trip_services as trip_services
 
     def fake_run(initial):
         for event_type, node_name, payload in [

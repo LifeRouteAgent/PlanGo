@@ -28,8 +28,8 @@ def health() -> dict[str, str]:
 
 
 def run_once(user_query: str) -> dict:
-    from app.graph.graph_builder import run_planning_request
-    from app.graph.state import planning_state_to_legacy
+    from app.planning.graph_builder import run_planning_request
+    from app.planning.state import planning_state_to_legacy
 
     return planning_state_to_legacy(run_planning_request(user_query))
 

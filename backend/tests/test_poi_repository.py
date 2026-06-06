@@ -3,8 +3,8 @@ from __future__ import annotations
 import pytest
 
 from app.config import settings
-from app.services.poi_repository import PoiRepository
-from app.tools.poi_schema import POI_RESTAURANT
+from app.repositories.poi_repository import PoiRepository
+from app.domain.poi import POI_RESTAURANT
 
 
 @pytest.mark.skipif(not settings.use_database, reason="local database is not enabled")
