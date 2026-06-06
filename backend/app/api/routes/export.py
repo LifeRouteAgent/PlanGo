@@ -131,7 +131,7 @@ def _build_pdf_bytes(request: ExportPlanRequest) -> bytes:
         ),
         lambda: build_product_plan_pdf(request.plan),
     )
-    data = result.get("data") if isinstance(result.get("data"), dict) else {}
+    data = result.data if isinstance(result.data, dict) else {}
     pdf_bytes = data.get("value") if isinstance(data, dict) else None
     return pdf_bytes if isinstance(pdf_bytes, bytes) else build_product_plan_pdf(request.plan)
 

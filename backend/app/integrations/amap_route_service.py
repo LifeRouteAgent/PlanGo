@@ -7,7 +7,7 @@ import httpx
 
 from app.config import settings
 from app.tools.tool_harness import ToolHarness
-from app.tools.tool_policy import ToolCallRequest
+from app.tools.tool_policy import ToolCallRequest, ToolCallResult
 
 
 @dataclass(frozen=True)
@@ -99,7 +99,7 @@ class AmapRouteService:
         self.call_log.extend(harness.call_log)
         return (
             _route_result_data(result)
-            if result.get("success")
+            if result.success
             else _fallback_estimate(fallback_distance_km)
         )
 
@@ -195,8 +195,8 @@ def _safe_route_point(poi: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _route_result_data(result: dict[str, Any]) -> AmapRouteEstimate | None:
-    data = result.get("data")
+def _route_result_data(result: ToolCallResult) -> AmapRouteEstimate | None:
+    data = result.data
     if isinstance(data, AmapRouteEstimate):
         return data
     if isinstance(data, dict) and isinstance(data.get("value"), AmapRouteEstimate):

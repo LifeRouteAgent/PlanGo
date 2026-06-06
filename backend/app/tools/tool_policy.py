@@ -4,7 +4,7 @@ import hashlib
 import json
 from dataclasses import asdict, dataclass, field
 from enum import IntEnum, StrEnum
-from typing import Any, Literal, TypedDict
+from typing import Any, Literal
 
 from app.runtime.checkpoint_store import make_idempotency_key
 
@@ -52,19 +52,20 @@ class ToolCallRequest:
     confirmed_source: str = ""
 
 
-class ToolCallResult(TypedDict, total=False):
+@dataclass
+class ToolCallResult:
     """统一工具调用结果。"""
 
-    success: bool
-    data: dict[str, Any] | str | list[Any] | None
-    error_code: str | None
-    source: str
-    fetched_at: str
-    expires_at: str | None
-    confidence: float
-    fallback_used: bool
-    attempts: int
-    latency_ms: int
+    success: bool = False
+    data: dict[str, Any] | str | list[Any] | None = None
+    error_code: str | None = None
+    source: str = "live"
+    fetched_at: str = ""
+    expires_at: str | None = None
+    confidence: float = 0.0
+    fallback_used: bool = False
+    attempts: int = 0
+    latency_ms: int = 0
 
 
 @dataclass

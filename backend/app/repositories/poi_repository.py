@@ -547,8 +547,8 @@ class PoiRepository:
             ToolCallRequest(tool_name="database.poi.table_counts", risk_level=1),
             self._table_counts_once,
         )
-        data = result.get("data")
-        return data if result.get("success") and isinstance(data, dict) else {}
+        data = result.data
+        return data if result.success and isinstance(data, dict) else {}
 
     def _table_counts_once(self) -> dict[str, int]:
         counts: dict[str, int] = {}

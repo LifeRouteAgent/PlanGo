@@ -149,7 +149,7 @@ def call_chat_completion(
         ),
         _request,
     )
-    data = result.get("data") if isinstance(result.get("data"), dict) else {}
+    data = result.data if isinstance(result.data, dict) else {}
     content = data.get("value") if isinstance(data, dict) else None
     record_trace_event(
         "llm_result",
@@ -157,15 +157,15 @@ def call_chat_completion(
             "provider": provider,
             "model": model,
             **prompt_meta,
-            "success": bool(result.get("success") and content),
-            "source": result.get("source"),
-            "latency_ms": result.get("latency_ms"),
-            "attempts": result.get("attempts"),
-            "error": result.get("error_code"),
+            "success": bool(result.success and content),
+            "source": result.source,
+            "latency_ms": result.latency_ms,
+            "attempts": result.attempts,
+            "error": result.error_code,
             "content_preview": str(content)[:600] if content else "",
         },
     )
-    return str(content) if result.get("success") and content else None
+    return str(content) if result.success and content else None
 
 
 def _active_provider() -> str:

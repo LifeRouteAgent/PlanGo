@@ -7,7 +7,7 @@ import loguru
 
 from app.config import settings
 from app.tools.tool_harness import ToolHarness
-from app.tools.tool_policy import ToolCallRequest
+from app.tools.tool_policy import ToolCallRequest, ToolCallResult
 
 
 def get_amp_weather_service() -> AmapWeatherService:
@@ -61,7 +61,7 @@ class AmapWeatherService:
             city_code,
         )
         self.call_log.extend(harness.call_log)
-        return _weather_result_data(result) if result.get("success") else _fallback_weather("error")
+        return _weather_result_data(result) if result.success else _fallback_weather("error")
 
     def _current_weather_live(self, city_code: str) -> dict[str, Any]:
         response = httpx.get(
@@ -108,8 +108,8 @@ def _city_code(city: str | None) -> str:
     return city or "110000"
 
 
-def _weather_result_data(result: dict[str, Any]) -> dict[str, Any] | None:
-    data = result.get("data")
+def _weather_result_data(result: ToolCallResult) -> dict[str, Any] | None:
+    data = result.data
     if isinstance(data, dict) and "value" in data and isinstance(data["value"], dict):
         return data["value"]
     return data if isinstance(data, dict) else None

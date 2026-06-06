@@ -170,18 +170,12 @@ class ToolHarness:
         issues = policy.validate(request)
         if issues:
             record_trace_event("tool_failed", {**_redact_request(request), "issues": issues})
-            return {
-                "success": False,
-                "data": None,
-                "error_code": issues[0]["code"],
-                "source": "policy",
-                "fetched_at": _now_iso(),
-                "expires_at": None,
-                "confidence": 0.0,
-                "fallback_used": False,
-                "attempts": 0,
-                "latency_ms": 0,
-            }
+            return ToolCallResult(
+                success=False,
+                error_code=issues[0]["code"],
+                source="policy",
+                fetched_at=_now_iso(),
+            )
         if request.requires_confirmation:
             record_trace_event("tool_confirm_required", _redact_request(request))
         record_trace_event("tool_started", _redact_request(request))
@@ -200,18 +194,18 @@ class ToolHarness:
         )
         if result.source == "fallback":
             record_trace_event("tool_fallback_used", _redact_request(request))
-        return {
-            "success": bool(result.success),
-            "data": result.data if isinstance(result.data, dict) else {"value": result.data},
-            "error_code": error_code,
-            "source": result.source,
-            "fetched_at": _now_iso(),
-            "expires_at": expires_at_from_ttl(ttl_seconds_for_tool(self.name)),
-            "confidence": 1.0 if result.success else 0.0,
-            "fallback_used": result.source == "fallback",
-            "attempts": result.attempts,
-            "latency_ms": result.latency_ms,
-        }
+        return ToolCallResult(
+            success=result.success,
+            data=result.data if isinstance(result.data, dict) else {"value": result.data},
+            error_code=error_code,
+            source=result.source,
+            fetched_at=_now_iso(),
+            expires_at=expires_at_from_ttl(ttl_seconds_for_tool(self.name)),
+            confidence=1.0 if result.success else 0.0,
+            fallback_used=result.source == "fallback",
+            attempts=result.attempts,
+            latency_ms=result.latency_ms,
+        )
 
     def _run_with_timeout(self, fn: Callable[..., T], *args: Any, **kwargs: Any) -> T:
         """用共享线程池为同步函数加超时控制。"""

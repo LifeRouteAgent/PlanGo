@@ -12,7 +12,7 @@ from pymysql.cursors import DictCursor
 
 from app.config import settings
 from app.planning.state import POILogicalTagCatalog, POITableTagInfo
-from app.repositories.poi_repository import CATEGORY_SQL_SPECS
+from app.repositories.constants import CATEGORY_SQL_SPECS
 
 NORMALIZED_RETURN_FIELDS = [
     "poi_id",
