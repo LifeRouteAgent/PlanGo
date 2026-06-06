@@ -6,6 +6,7 @@ import { usePlanStream } from "../../hooks/usePlanStream";
 import type { ClientGeoLocation, Plan } from "../../types/agent";
 import { AUTO_SUBMIT_EVENT, type AutoSubmitPayload } from "../../utils/autoSubmitEvent";
 import type { StoredChatMessage } from "../../utils/conversationStore";
+import { createId } from "../../utils/id";
 import { ChatPanelV2 } from "./ChatPanelV2";
 import { WelcomeHero } from "./WelcomeHero";
 
@@ -118,7 +119,7 @@ export function ChatHome({
       ? [
           ...streamBaseMessagesRef.current,
           {
-            id: crypto.randomUUID(),
+            id: createId(),
             role: "assistant" as const,
             content: assistantText
           }
@@ -139,7 +140,7 @@ export function ChatHome({
       const nextMessages: StoredChatMessage[] = [
         ...messages,
         {
-          id: crypto.randomUUID(),
+          id: createId(),
           role: "user",
           content: trimmedGoal
         }
@@ -147,7 +148,7 @@ export function ChatHome({
 
       onMessagesChange(nextMessages);
       streamBaseMessagesRef.current = nextMessages;
-      streamRunIdRef.current = crypto.randomUUID();
+      streamRunIdRef.current = createId();
       processedRunIdRef.current = "";
       setStreamConversationId(conversationId);
 

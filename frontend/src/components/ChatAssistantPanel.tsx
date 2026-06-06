@@ -2,6 +2,7 @@ import { ChevronDown, ChevronRight, Loader2, SendHorizontal } from "lucide-react
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import type { TimelineEvent } from "../hooks/usePlanStream";
 import type { ChatHistoryItem, Plan } from "../types/agent";
+import { createId } from "../utils/id";
 
 interface ChatMessage {
   id: string;
@@ -73,7 +74,7 @@ export function ChatAssistantPanel({ events, isRunning, plan, assistantText, onS
     setMessages((current) => [
       ...current,
       {
-        id: crypto.randomUUID(),
+        id: createId(),
         role: "assistant",
         content:
           assistantText.trim() ||
@@ -95,7 +96,7 @@ export function ChatAssistantPanel({ events, isRunning, plan, assistantText, onS
     setMessages((current) => [
       ...current,
       {
-        id: crypto.randomUUID(),
+        id: createId(),
         role: "user",
         content: goal,
         timestamp: nowTime(),

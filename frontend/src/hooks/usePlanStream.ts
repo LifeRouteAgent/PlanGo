@@ -1,6 +1,7 @@
 import { useCallback, useRef, useState } from "react";
 import { streamPlan } from "../api/streamClient";
 import type { FrontendProgressEvent, Plan, ProgressStatus, StreamEvent, StreamRequest, UserIntent } from "../types/agent";
+import { createId } from "../utils/id";
 
 export interface TimelineEvent {
   id: string;
@@ -18,7 +19,7 @@ const SESSION_STORAGE_KEY = "plango_session_id";
 function getOrCreateSessionId() {
   const cached = window.localStorage.getItem(SESSION_STORAGE_KEY);
   if (cached) return cached;
-  const sessionId = crypto.randomUUID();
+  const sessionId = createId();
   window.localStorage.setItem(SESSION_STORAGE_KEY, sessionId);
   return sessionId;
 }
@@ -61,7 +62,7 @@ export function usePlanStream() {
       return [
         ...current,
         {
-          id: crypto.randomUUID(),
+          id: createId(),
           label,
           detail,
           level,

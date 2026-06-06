@@ -1,6 +1,7 @@
 ﻿import type { Plan, PlanStep, StreamEvent, StreamRequest, WeatherInfo } from "../types/agent";
 
 import type { FrontendProgressEvent } from "../types/agent";
+import { createId } from "../utils/id";
 
 type StreamHandler = (event: StreamEvent) => void;
 
@@ -228,7 +229,7 @@ function buildPlanFromSource(
   const firstStep = steps[0];
   const firstPlaceStep = steps.find((step) => step.type !== "buffer");
   const lastStep = steps[steps.length - 1];
-  const planId = asString(source.plan_id ?? source.id, crypto.randomUUID());
+  const planId = asString(source.plan_id ?? source.id, createId());
   const title = asString(source.title, "本地生活推荐方案");
   const fitSummary = asString(asRecord(source.fit_summary).summary ?? source.recommendation_reason ?? response.response_text, "根据偏好、时间、距离和预算生成。");
   const tags = cleanTags(source.tags, ["本地生活", "路线可执行", "智能规划"], 4);
@@ -594,7 +595,7 @@ export async function exportPlanPdf(plan: Plan) {
 }
 
 export async function createSession() {
-  return { session_id: crypto.randomUUID(), city: "beijing" };
+  return { session_id: createId(), city: "beijing" };
 }
 
 export async function startVoiceInput() {
@@ -680,4 +681,3 @@ export async function selectAlternative(planId: string, alternativeId: string) {
   const selected = plan.alternatives?.find((item) => item.id === alternativeId);
   return { plan, selected_alternative: selected };
 }
-

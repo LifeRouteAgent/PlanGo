@@ -19,6 +19,7 @@ import {
   type StoredChatMessage
 } from "./utils/conversationStore";
 import { AUTO_SUBMIT_EVENT, type AutoSubmitPayload } from "./utils/autoSubmitEvent";
+import { createId } from "./utils/id";
 import { planToViewModel, type PlanViewModel } from "./utils/planViewModel";
 
 type AppRoute = "/" | "/plan" | "/plan/detail" | "/share";
@@ -75,7 +76,7 @@ function badgeFor(index: number) {
 }
 
 function planLinkMessageId(plan: Plan) {
-  return `plan-link-${plan.id ?? plan.trace_id ?? crypto.randomUUID()}`;
+  return `plan-link-${plan.id ?? plan.trace_id ?? createId()}`;
 }
 
 function appendPlanLinkMessage(messages: StoredChatMessage[], plan: Plan | null) {
@@ -270,7 +271,7 @@ export function App() {
   };
 
   const handlePreferenceSubmit = (message: string) => {
-    const pending = { id: crypto.randomUUID(), text: message };
+    const pending = { id: createId(), text: message };
     setPendingChatSubmit(pending);
     navigate("/");
     window.setTimeout(() => {
@@ -345,4 +346,3 @@ export function App() {
     </main>
   );
 }
-

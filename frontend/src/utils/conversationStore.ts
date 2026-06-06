@@ -1,4 +1,5 @@
 import type { Plan } from "../types/agent";
+import { createId } from "./id";
 
 export interface StoredChatMessage {
   id: string;
@@ -35,7 +36,7 @@ export function welcomeMessage(): StoredChatMessage {
 export function createEmptyConversation(): ConversationRecord {
   const now = new Date().toISOString();
   return {
-    id: crypto.randomUUID(),
+    id: createId(),
     title: "新的对话",
     messages: [welcomeMessage()],
     plan: null,
