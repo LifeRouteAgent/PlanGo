@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-from app.domain.poi import (
-    POI_ACTIVITY,
+from app.repositories.constants import (
     POI_ATTRACTION,
-    POI_BEAUTY,
-    POI_ENTERTAINMENT,
-    POI_FITNESS,
-    POI_RESTAURANT,
     POI_SHOPPING,
+    POI_ACTIVITY,
+    POI_RESTAURANT,
+    POI_FITNESS,
+    POI_ENTERTAINMENT,
+    POI_BEAUTY,
 )
 
 CATEGORY_KEYWORDS: tuple[tuple[str, tuple[str, ...]], ...] = (

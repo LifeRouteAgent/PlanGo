@@ -8,14 +8,14 @@ from app.llm.output_schemas import IntentUnderstandingOutput, validate_llm_outpu
 from app.llm.llm_client import call_chat_completion, extract_json_object
 from app.llm.prompt_registry import load_prompt_template
 from app.observability.trace_recorder import record_trace_event
-from app.domain.poi import (
-    POI_ACTIVITY,
+from app.repositories.constants import (
     POI_ATTRACTION,
-    POI_BEAUTY,
-    POI_ENTERTAINMENT,
-    POI_FITNESS,
-    POI_RESTAURANT,
     POI_SHOPPING,
+    POI_ACTIVITY,
+    POI_RESTAURANT,
+    POI_FITNESS,
+    POI_ENTERTAINMENT,
+    POI_BEAUTY,
 )
 
 ALLOWED_INTENTS = {

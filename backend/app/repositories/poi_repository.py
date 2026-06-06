@@ -2,360 +2,25 @@ from __future__ import annotations
 
 import json
 from collections.abc import Iterable
-from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, List
 
 import pymysql
 from pymysql.cursors import DictCursor
 
 from app.config import settings
+from app.repositories.schemas import PoiRecallConstraints, CategorySqlSpec
+from app.repositories.constants import (
+    CATEGORY_SQL_SPECS,
+    NAME_SEARCH_LIMIT,
+    RATING_FALLBACKS,
+    BUDGET_FALLBACK_MULTIPLIERS,
+    RADIUS_FALLBACK_MULTIPLIERS,
+    SEARCH_COLLATION,
+    POI_CATEGORIES,
+)
 from app.tools.tool_harness import ToolHarness
 from app.tools.tool_policy import ToolCallRequest
 from app.compat.legacy_plan_state import PoiRecord
-from app.domain.poi import (
-    POI_ACTIVITY,
-    POI_ATTRACTION,
-    POI_BEAUTY,
-    POI_ENTERTAINMENT,
-    POI_FITNESS,
-    POI_RESTAURANT,
-    POI_SHOPPING,
-    make_poi_record,
-)
-
-
-@dataclass(frozen=True)
-class PoiRecallConstraints:
-    """数据库候选召回阶段使用的轻量约束。
-
-    这个对象只放 SQL 层真正需要的字段：位置半径、预算、评分、排除词和少量偏好词。
-    复杂的场景解释、文案生成、方案排序仍留给 Skill/Route/Ranker，避免 SQL 层变成 God Object。
-    """
-
-    origin_lat: float | None = None
-    origin_lon: float | None = None
-    radius_km: float | None = None
-    budget: float | None = None
-    people_count: int = 1
-    scene_type: str = "unknown"
-    duration_hours: float | None = None
-    movement_policy: str = "balanced_local"
-    candidate_strategy: str = ""
-    preference_keywords: tuple[str, ...] = field(default_factory=tuple)
-    excluded_keywords: tuple[str, ...] = field(default_factory=tuple)
-
-    @property
-    def has_origin(self) -> bool:
-        return self.origin_lat is not None and self.origin_lon is not None
-
-    @property
-    def per_person_budget(self) -> float | None:
-        if self.budget is None or self.budget <= 0:
-            return None
-        return self.budget / max(1, self.people_count)
-
-    def for_trace(self) -> dict[str, Any]:
-        return {
-            "origin_lat": self.origin_lat,
-            "origin_lon": self.origin_lon,
-            "radius_km": self.radius_km,
-            "budget": self.budget,
-            "people_count": self.people_count,
-            "scene_type": self.scene_type,
-            "duration_hours": self.duration_hours,
-            "movement_policy": self.movement_policy,
-            "candidate_strategy": self.candidate_strategy,
-            "preference_keywords": list(self.preference_keywords),
-            "excluded_keywords": list(self.excluded_keywords),
-        }
-
-
-@dataclass(frozen=True)
-class CategorySqlSpec:
-    """每张 POI 表的白名单 SQL 字段映射。"""
-
-    table: str
-    id_expr: str
-    name_expr: str
-    category: str
-    subcategory_expr: str
-    lat_expr: str
-    lon_expr: str
-    address_expr: str
-    rating_expr: str | None
-    price_expr: str | None
-    open_expr: str
-    tag_expr: str
-    image_expr: str
-    images_expr: str
-    base_where: str
-    order_expr: str
-    filter_fields: tuple[str, ...] = ()
-    tag_fields: tuple[str, ...] = ()
-
-
-CATEGORY_SQL_SPECS: dict[str, CategorySqlSpec] = {
-    POI_RESTAURANT: CategorySqlSpec(
-        table="poi_restaurant",
-        id_expr="source_id",
-        name_expr="name",
-        category=POI_RESTAURANT,
-        subcategory_expr="COALESCE(NULLIF(biz_category, ''), 'restaurant')",
-        lat_expr="lat",
-        lon_expr="lng",
-        address_expr="address",
-        rating_expr="rating",
-        price_expr="cost",
-        open_expr="open_time",
-        tag_expr="CONCAT_WS(' ', cuisine_tag, keytag, type, query_label)",
-        image_expr="head_image",
-        images_expr="photos",
-        base_where="name <> '' AND lat IS NOT NULL AND lng IS NOT NULL",
-        order_expr="COALESCE(favorite_num, 0) DESC",
-        filter_fields=(
-            "name",
-            "biz_category",
-            "cuisine_tag",
-            "keytag",
-            "type",
-            "query_label",
-            "city",
-            "district",
-            "business_area",
-            "lat",
-            "lng",
-            "rating",
-            "cost",
-            "open_time",
-            "favorite_num",
-        ),
-        tag_fields=("cuisine_tag", "keytag", "type", "query_label"),
-    ),
-    POI_ACTIVITY: CategorySqlSpec(
-        table="poi_activities",
-        id_expr="CAST(activity_id AS CHAR)",
-        name_expr="title",
-        category=POI_ACTIVITY,
-        subcategory_expr="'activity'",
-        lat_expr="CAST(SUBSTRING_INDEX(location, ',', 1) AS DECIMAL(10, 6))",
-        lon_expr="CAST(SUBSTRING_INDEX(location, ',', -1) AS DECIMAL(10, 6))",
-        address_expr="address_desc",
-        rating_expr=None,
-        price_expr="price",
-        open_expr="available_date",
-        tag_expr="CONCAT_WS(' ', subtitle, CAST(category_info AS CHAR))",
-        image_expr="NULL",
-        images_expr="images",
-        base_where=(
-            "title <> '' AND location IS NOT NULL AND location <> '' AND INSTR(location, ',') > 0"
-        ),
-        order_expr="updated_time DESC",
-        filter_fields=(
-            "title",
-            "subtitle",
-            "category_info",
-            "city_id",
-            "category_id",
-            "sub_category_id",
-            "leaf_category_id",
-            "location",
-            "price",
-            "available_date",
-            "updated_time",
-        ),
-        tag_fields=("subtitle",),
-    ),
-    POI_ATTRACTION: CategorySqlSpec(
-        table="poi_attractions",
-        id_expr="CAST(id AS CHAR)",
-        name_expr="name",
-        category=POI_ATTRACTION,
-        subcategory_expr="'attraction'",
-        lat_expr="lat",
-        lon_expr="lng",
-        address_expr="address",
-        rating_expr="score",
-        price_expr=None,
-        open_expr="JSON_EXTRACT(open_time, '$')",
-        tag_expr="tags",
-        image_expr="head_image",
-        images_expr="NULL",
-        base_where="name <> '' AND lat IS NOT NULL AND lng IS NOT NULL",
-        order_expr="COALESCE(hot_score, 0) DESC",
-        filter_fields=(
-            "name",
-            "name_en",
-            "alias",
-            "tags",
-            "dest_id",
-            "lat",
-            "lng",
-            "score",
-            "comment_score",
-            "open_time",
-            "suggested_duration",
-            "hot_score",
-        ),
-        tag_fields=("tags",),
-    ),
-    POI_SHOPPING: CategorySqlSpec(
-        table="poi_shoppings",
-        id_expr="source_id",
-        name_expr="name",
-        category=POI_SHOPPING,
-        subcategory_expr="COALESCE(NULLIF(categories, ''), 'shopping')",
-        lat_expr="lat",
-        lon_expr="lng",
-        address_expr="address",
-        rating_expr="comment_score",
-        price_expr=None,
-        open_expr="open_time_tips",
-        tag_expr="CONCAT_WS(' ', tags, categories)",
-        image_expr="head_image",
-        images_expr="images",
-        base_where="name <> '' AND lat IS NOT NULL AND lng IS NOT NULL",
-        order_expr="COALESCE(comment_num, 0) DESC",
-        filter_fields=(
-            "name",
-            "name_local",
-            "name_en",
-            "brand_name_cn",
-            "tags",
-            "categories",
-            "lat",
-            "lng",
-            "comment_score",
-            "open_time_tips",
-            "comment_num",
-        ),
-        tag_fields=("tags", "categories"),
-    ),
-    POI_FITNESS: CategorySqlSpec(
-        table="poi_fitness",
-        id_expr="source_id",
-        name_expr="name",
-        category=POI_FITNESS,
-        subcategory_expr="COALESCE(NULLIF(fitness_tag, ''), 'fitness')",
-        lat_expr="lat",
-        lon_expr="lng",
-        address_expr="address",
-        rating_expr="rating",
-        price_expr="cost",
-        open_expr="open_time",
-        tag_expr="CONCAT_WS(' ', fitness_tag, keytag, type, query_label)",
-        image_expr="head_image",
-        images_expr="photos",
-        base_where="name <> '' AND lat IS NOT NULL AND lng IS NOT NULL",
-        order_expr="COALESCE(favorite_num, 0) DESC",
-        filter_fields=(
-            "name",
-            "biz_category",
-            "fitness_tag",
-            "keytag",
-            "type",
-            "query_label",
-            "city",
-            "district",
-            "business_area",
-            "lat",
-            "lng",
-            "rating",
-            "cost",
-            "open_time",
-            "favorite_num",
-        ),
-        tag_fields=("fitness_tag", "keytag", "type", "query_label"),
-    ),
-    POI_ENTERTAINMENT: CategorySqlSpec(
-        table="poi_entertainment",
-        id_expr="source_id",
-        name_expr="name",
-        category=POI_ENTERTAINMENT,
-        subcategory_expr="COALESCE(NULLIF(entertainment_type, ''), 'entertainment')",
-        lat_expr="lat",
-        lon_expr="lng",
-        address_expr="address",
-        rating_expr="rating",
-        price_expr="cost",
-        open_expr="open_time",
-        tag_expr="CONCAT_WS(' ', entertainment_type, keytag, type, query_label)",
-        image_expr="head_image",
-        images_expr="photos",
-        base_where="name <> '' AND lat IS NOT NULL AND lng IS NOT NULL",
-        order_expr="COALESCE(groupbuy_num, 0) DESC",
-        filter_fields=(
-            "name",
-            "biz_category",
-            "entertainment_type",
-            "keytag",
-            "type",
-            "query_label",
-            "city",
-            "district",
-            "business_area",
-            "lat",
-            "lng",
-            "rating",
-            "cost",
-            "open_time",
-            "groupbuy_num",
-        ),
-        tag_fields=("entertainment_type", "keytag", "type", "query_label"),
-    ),
-    POI_BEAUTY: CategorySqlSpec(
-        table="poi_beauty",
-        id_expr="source_id",
-        name_expr="name",
-        category=POI_BEAUTY,
-        subcategory_expr="COALESCE(NULLIF(beauty_type, ''), 'beauty')",
-        lat_expr="lat",
-        lon_expr="lng",
-        address_expr="address",
-        rating_expr="rating",
-        price_expr="cost",
-        open_expr="open_time",
-        tag_expr=(
-            "CONCAT_WS(' ', service_tag, beauty_type, query_keywords, keytag, type, query_label)"
-        ),
-        image_expr="head_image",
-        images_expr="photos",
-        base_where="name <> '' AND lat IS NOT NULL AND lng IS NOT NULL",
-        order_expr="COALESCE(favorite_num, 0) DESC",
-        filter_fields=(
-            "name",
-            "biz_category",
-            "service_tag",
-            "beauty_type",
-            "query_keywords",
-            "keytag",
-            "type",
-            "query_label",
-            "city",
-            "district",
-            "business_area",
-            "lat",
-            "lng",
-            "rating",
-            "cost",
-            "open_time",
-            "favorite_num",
-        ),
-        tag_fields=(
-            "service_tag",
-            "beauty_type",
-            "query_keywords",
-            "keytag",
-            "type",
-            "query_label",
-        ),
-    ),
-}
-
-NAME_SEARCH_LIMIT = 10
-RATING_FALLBACKS: tuple[float | None, ...] = (4.2, 4.0, 3.8, None)
-BUDGET_FALLBACK_MULTIPLIERS: tuple[float | None, ...] = (1.0, 1.25, 1.6, None)
-RADIUS_FALLBACK_MULTIPLIERS: tuple[float, ...] = (1.0, 1.4, 2.0, 2.6)
-SEARCH_COLLATION = "utf8mb4_unicode_ci"
 
 
 class PoiRepository:
@@ -369,28 +34,25 @@ class PoiRepository:
         self._limit_per_category = limit_per_category
 
     def fetch_by_categories(
-        self,
-        categories: Iterable[str],
-        recall_constraints: PoiRecallConstraints | None = None,
+        self, categories: List[str], recall_constraints: PoiRecallConstraints | None = None
     ) -> dict[str, list[PoiRecord]]:
         """按逻辑类别批量读取 POI。
 
         `recall_constraints` 为空时保持兼容，仍按各表评分/热度召回；传入后启用动态 SQL 筛选。
         """
 
-        category_list = list(categories)
         harness = ToolHarness(
             name="database.poi.fetch_by_categories",
             timeout_seconds=8,
             max_retries=1,
-            fallback=lambda *_args, **_kwargs: {category: [] for category in category_list},
+            fallback=lambda *_args, **_kwargs: {category: [] for category in categories},
         )
         result = harness.run_request(
             ToolCallRequest(
                 tool_name="database.poi.fetch_by_categories",
                 risk_level=1,
                 params={
-                    "categories": category_list,
+                    "categories": categories,
                     "limit": self._limit_per_category,
                     "recall_constraints": (
                         recall_constraints.for_trace() if recall_constraints else None
@@ -398,18 +60,18 @@ class PoiRepository:
                 },
             ),
             self._fetch_by_categories_once,
-            category_list,
+            categories,
             recall_constraints,
         )
-        data = result.get("data")
+        data = result.data
         return (
             data
-            if result.get("success") and isinstance(data, dict)
-            else {category: [] for category in category_list}
+            if result.success and isinstance(data, dict)
+            else {category: [] for category in categories}
         )
 
     def fetch_by_name_keywords(
-        self, keywords: Iterable[str], *, categories: Iterable[str] | None = None
+        self, keywords: Iterable[str], *, categories: List[str] | None = None
     ) -> dict[str, list[PoiRecord]]:
         """按用户明确点名的地点关键词检索 POI。
 
@@ -417,7 +79,7 @@ class PoiRepository:
         """
 
         keyword_list = [keyword.strip() for keyword in keywords if keyword and keyword.strip()]
-        category_list = list(categories or CATEGORY_SQL_SPECS.keys())
+        category_list = categories or list(POI_CATEGORIES)
         harness = ToolHarness(
             name="database.poi.fetch_by_name_keywords",
             timeout_seconds=8,
@@ -434,17 +96,15 @@ class PoiRepository:
             keyword_list,
             category_list,
         )
-        data = result.get("data")
+        data = result.data
         return (
             data
-            if result.get("success") and isinstance(data, dict)
+            if result.success and isinstance(data, dict)
             else {category: [] for category in category_list}
         )
 
     def _fetch_by_categories_once(
-        self,
-        categories: Iterable[str],
-        recall_constraints: PoiRecallConstraints | None = None,
+        self, categories: List[str], recall_constraints: PoiRecallConstraints | None = None
     ) -> dict[str, list[PoiRecord]]:
         """执行一次真实数据库召回，外层由 ToolHarness 负责 timeout/retry/fallback。"""
 
@@ -457,17 +117,12 @@ class PoiRepository:
                         result[category] = []
                         continue
                     result[category] = self._fetch_category_with_fallback(
-                        cursor,
-                        spec,
-                        recall_constraints,
+                        cursor, spec, recall_constraints
                     )
         return result
 
     def _fetch_category_with_fallback(
-        self,
-        cursor: DictCursor,
-        spec: CategorySqlSpec,
-        constraints: PoiRecallConstraints | None,
+        self, cursor: DictCursor, spec: CategorySqlSpec, constraints: PoiRecallConstraints | None
     ) -> list[PoiRecord]:
         """按评分、预算和半径逐步放宽召回。
 
@@ -508,7 +163,7 @@ class PoiRepository:
     def _fetch_by_name_keywords_once(
         self,
         keywords: Iterable[str],
-        categories: Iterable[str],
+        categories: List[str],
     ) -> dict[str, list[PoiRecord]]:
         """执行一次按名称关键词检索。"""
 
@@ -736,9 +391,7 @@ class PoiRepository:
         return f"CASE WHEN {' OR '.join(likes)} THEN 0 ELSE 1 END"
 
     def _max_price(
-        self,
-        constraints: PoiRecallConstraints | None,
-        budget_multiplier: float | None,
+        self, constraints: PoiRecallConstraints | None, budget_multiplier: float | None
     ) -> float | None:
         if not constraints or budget_multiplier is None:
             return None
@@ -881,3 +534,38 @@ class PoiRepository:
             if text not in cleaned:
                 cleaned.append(text)
         return cleaned
+
+
+def make_poi_record(
+    *,
+    id: str,
+    name: str,
+    category: str,
+    subcategory: str,
+    lat: float,
+    lon: float,
+    address: str,
+    rating: float,
+    price_level: str,
+    open_status: str,
+    tags: list[str],
+) -> PoiRecord:
+    """构造统一 POI 记录。
+
+    这个函数是 Collector 的唯一出口格式。Gate 6 接入高德数据时，只需要把
+    高德原始字段映射到这里，而不需要改 Skill 和 DAG。
+    """
+
+    return {
+        "id": id,
+        "name": name,
+        "category": category,
+        "subcategory": subcategory,
+        "lat": lat,
+        "lon": lon,
+        "address": address,
+        "rating": rating,
+        "price_level": price_level,
+        "open_status": open_status,
+        "tags": tags,
+    }

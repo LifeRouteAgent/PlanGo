@@ -12,15 +12,15 @@ from app.memory.memory_event_queue import MemoryEventQueue
 from app.memory.memory_service import MemoryService
 from app.repositories.poi_repository import PoiRepository
 from app.observability.trace_recorder import record_trace_event
-from app.domain.poi import (
-    POI_ACTIVITY,
+from app.repositories.constants import (
     POI_ATTRACTION,
+    POI_SHOPPING,
+    POI_ACTIVITY,
+    POI_RESTAURANT,
+    POI_FITNESS,
+    POI_ENTERTAINMENT,
     POI_BEAUTY,
     POI_CATEGORIES,
-    POI_ENTERTAINMENT,
-    POI_FITNESS,
-    POI_RESTAURANT,
-    POI_SHOPPING,
 )
 
 router = APIRouter(prefix="/api", tags=["compat"])
