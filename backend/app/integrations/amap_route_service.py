@@ -7,6 +7,7 @@ import httpx
 
 from app.config import settings
 from app.tools.tool_harness import ToolHarness
+from app.tools.tool_policy import ToolCallRequest
 
 
 @dataclass(frozen=True)
@@ -70,26 +71,26 @@ class AmapRouteService:
         )
         if not self.enabled:
             result = harness.run_request(
-                {
-                    "tool_name": "amap.route.estimate_segment",
-                    "risk_level": 1,
-                    "params": {"enabled": False, "fallback_distance_km": fallback_distance_km},
-                },
+                ToolCallRequest(
+                    tool_name="amap.route.estimate_segment",
+                    risk_level=1,
+                    params={"enabled": False, "fallback_distance_km": fallback_distance_km},
+                ),
                 lambda: _fallback_estimate(fallback_distance_km),
             )
             self.call_log.extend(harness.call_log)
             return _route_result_data(result) or _fallback_estimate(fallback_distance_km)
 
         result = harness.run_request(
-            {
-                "tool_name": "amap.route.estimate_segment",
-                "risk_level": 1,
-                "params": {
+            ToolCallRequest(
+                tool_name="amap.route.estimate_segment",
+                risk_level=1,
+                params={
                     "origin": _safe_route_point(previous),
                     "destination": _safe_route_point(current),
                     "fallback_distance_km": fallback_distance_km,
                 },
-            },
+            ),
             self._estimate_segment_live,
             previous,
             current,

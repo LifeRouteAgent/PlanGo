@@ -41,11 +41,13 @@ def get_client_config() -> dict[str, str]:
 
 @router.post("/plan", response_model=TripPlanResponse)
 def plan_trip(request: TripPlanRequest) -> TripPlanResponse:
+    # todo: 这里不用依赖注入什么的就直接这么调用吗? 每次是不是都重新创建一个对象啊?
     return TripPlanningService().plan(request)
 
 
 @router.post("/plan/stream")
 def stream_plan_trip(request: TripPlanRequest) -> StreamingResponse:
+    # todo: 这里不用依赖注入什么的就直接这么调用吗? 每次是不是都重新创建一个对象啊?
     return _streaming_response(TripStreamingService().stream(request))
 
 

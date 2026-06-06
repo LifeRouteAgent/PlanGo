@@ -3,9 +3,15 @@ from __future__ import annotations
 from typing import Any
 
 import httpx
+import loguru
 
 from app.config import settings
 from app.tools.tool_harness import ToolHarness
+from app.tools.tool_policy import ToolCallRequest
+
+
+def get_amp_weather_service() -> AmapWeatherService:
+    return AmapWeatherService()
 
 
 class AmapWeatherService:
@@ -34,22 +40,23 @@ class AmapWeatherService:
             fallback=lambda: _fallback_weather("unconfigured" if not self.enabled else "error"),
         )
         if not self.enabled:
+            loguru.logger.warning("无高德 api, current_weather 使用本地 mock 数据")
             result = harness.run_request(
-                {
-                    "tool_name": "amap.weather.current",
-                    "risk_level": 1,
-                    "params": {"city": city_code, "enabled": False},
-                },
+                ToolCallRequest(
+                    tool_name="amap.weather.current",
+                    risk_level=1,
+                    params={"city": city_code, "enabled": False},
+                ),
                 lambda: _fallback_weather("unconfigured"),
             )
             self.call_log.extend(harness.call_log)
             return _weather_result_data(result) or _fallback_weather("unconfigured")
         result = harness.run_request(
-            {
-                "tool_name": "amap.weather.current",
-                "risk_level": 1,
-                "params": {"city": city_code},
-            },
+            ToolCallRequest(
+                tool_name="amap.weather.current",
+                risk_level=1,
+                params={"city": city_code},
+            ),
             self._current_weather_live,
             city_code,
         )

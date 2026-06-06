@@ -11,6 +11,7 @@ from app.config import settings
 from app.llm.prompt_registry import get_prompt_spec
 from app.observability.trace_recorder import record_trace_event
 from app.tools.tool_harness import ToolHarness
+from app.tools.tool_policy import ToolCallRequest
 
 
 def is_llm_enabled() -> bool:
@@ -136,18 +137,16 @@ def call_chat_completion(
         fallback=lambda: None,
     )
     result = harness.run_request(
-        {
-            "tool_name": f"llm.{provider}.chat_completion",
-            "risk_level": 1,
-            "user_id": "system",
-            "session_id": "",
-            "task_id": "",
-            "params": {
+        ToolCallRequest(
+            tool_name=f"llm.{provider}.chat_completion",
+            risk_level=1,
+            user_id="system",
+            params={
                 "provider": provider,
                 "model": model,
                 **prompt_meta,
             },
-        },
+        ),
         _request,
     )
     data = result.get("data") if isinstance(result.get("data"), dict) else {}

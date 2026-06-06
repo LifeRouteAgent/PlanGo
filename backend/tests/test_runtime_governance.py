@@ -3,7 +3,7 @@ from __future__ import annotations
 from app.runtime.checkpoint_store import CheckpointStore, TaskStatus, make_idempotency_key
 from app.evaluation.eval_runner import EvalCase, EvalRunner
 from app.memory.memory_store import FileMemoryStore, make_cache_key
-from app.tools.tool_policy import RiskLevel, ToolPolicy
+from app.tools.tool_policy import RiskLevel, ToolCallRequest, ToolPolicy
 
 
 def test_memory_store_session_and_tool_cache_ttl() -> None:
@@ -89,14 +89,14 @@ def test_tool_policy_requires_confirmation_and_verified_target() -> None:
     """Level 3 工具必须确认、必须幂等，并且目标来自已验证候选。"""
 
     policy = ToolPolicy()
-    request = {
-        "tool_name": "mock.reserve",
-        "risk_level": int(RiskLevel.TRANSACTION),
-        "user_id": "u1",
-        "session_id": "s1",
-        "task_id": "t1",
-        "idempotency_key": "idem_1",
-        "params": {
+    request = ToolCallRequest(
+        tool_name="mock.reserve",
+        risk_level=int(RiskLevel.TRANSACTION),
+        user_id="u1",
+        session_id="s1",
+        task_id="t1",
+        idempotency_key="idem_1",
+        params={
             "target_id": "poi_1",
             "validated_item_ids": ["poi_2"],
             "confirmed": True,
@@ -104,14 +104,14 @@ def test_tool_policy_requires_confirmation_and_verified_target() -> None:
             "people_count": 2,
             "budget": 300,
         },
-        "requires_confirmation": True,
-        "confirmed_source": "unit_test",
-    }
+        requires_confirmation=True,
+        confirmed_source="unit_test",
+    )
 
     issues = policy.validate(request)
 
     assert any(issue["code"] == "target_not_verified" for issue in issues)
-    request["params"]["validated_item_ids"] = ["poi_1"]
+    request.params["validated_item_ids"] = ["poi_1"]
     assert policy.validate(request) == []
 
 

@@ -10,6 +10,7 @@ from pymysql.cursors import DictCursor
 
 from app.config import settings
 from app.tools.tool_harness import ToolHarness
+from app.tools.tool_policy import ToolCallRequest
 from app.compat.legacy_plan_state import PoiRecord
 from app.domain.poi import (
     POI_ACTIVITY,
@@ -385,17 +386,17 @@ class PoiRepository:
             fallback=lambda *_args, **_kwargs: {category: [] for category in category_list},
         )
         result = harness.run_request(
-            {
-                "tool_name": "database.poi.fetch_by_categories",
-                "risk_level": 1,
-                "params": {
+            ToolCallRequest(
+                tool_name="database.poi.fetch_by_categories",
+                risk_level=1,
+                params={
                     "categories": category_list,
                     "limit": self._limit_per_category,
                     "recall_constraints": (
                         recall_constraints.for_trace() if recall_constraints else None
                     ),
                 },
-            },
+            ),
             self._fetch_by_categories_once,
             category_list,
             recall_constraints,
@@ -424,11 +425,11 @@ class PoiRepository:
             fallback=lambda *_args, **_kwargs: {category: [] for category in category_list},
         )
         result = harness.run_request(
-            {
-                "tool_name": "database.poi.fetch_by_name_keywords",
-                "risk_level": 1,
-                "params": {"keywords": keyword_list, "categories": category_list},
-            },
+            ToolCallRequest(
+                tool_name="database.poi.fetch_by_name_keywords",
+                risk_level=1,
+                params={"keywords": keyword_list, "categories": category_list},
+            ),
             self._fetch_by_name_keywords_once,
             keyword_list,
             category_list,
@@ -543,7 +544,7 @@ class PoiRepository:
             fallback=lambda: {},
         )
         result = harness.run_request(
-            {"tool_name": "database.poi.table_counts", "risk_level": 1, "params": {}},
+            ToolCallRequest(tool_name="database.poi.table_counts", risk_level=1),
             self._table_counts_once,
         )
         data = result.get("data")

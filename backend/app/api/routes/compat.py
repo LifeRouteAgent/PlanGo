@@ -2,12 +2,12 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Body, HTTPException, Query
+from fastapi import APIRouter, Body, HTTPException, Query, Depends
 from fastapi.responses import StreamingResponse
 
 from app.api.routes.trip import stream_plan_trip
 from app.api.schemas.trip import TripPlanRequest
-from app.integrations.amap_weather_service import AmapWeatherService
+from app.integrations.amap_weather_service import get_amp_weather_service
 from app.memory.memory_event_queue import MemoryEventQueue
 from app.memory.memory_service import MemoryService
 from app.repositories.poi_repository import PoiRepository
@@ -97,10 +97,9 @@ def home_inspirations(
 
 
 @router.get("/home/weather")
-def home_weather() -> dict[str, Any]:
+def home_weather(amap_weather_service=Depends(get_amp_weather_service)) -> dict[str, Any]:
     """首页侧边栏天气。当前产品仅支持北京，因此固定读取北京实时天气。"""
-
-    weather = AmapWeatherService().current_weather("beijing")
+    weather = amap_weather_service.current_weather("beijing")
     return {"city": "北京", "supported_scope": "目前仅支持北京", "weather": weather}
 
 

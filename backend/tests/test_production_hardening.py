@@ -10,7 +10,7 @@ from app.llm.output_schemas import (
 )
 from app.memory.memory_service import MemoryService
 from app.planning.policy_config import policy_config
-from app.tools.tool_policy import ToolPolicy
+from app.tools.tool_policy import ToolCallRequest, ToolPolicy
 
 
 class _NoopVectorStore:
@@ -107,29 +107,33 @@ def test_tool_policy_requires_confirmation_source_for_level2_plus() -> None:
     """Level 2+ 工具不仅要确认，还要记录确认来源，便于审计。"""
 
     policy = ToolPolicy(validated_item_ids={"poi_1"})
-    issues = policy.validate({
-        "tool_name": "restaurant_booking",
-        "risk_level": 3,
-        "idempotency_key": "idem_1",
-        "params": {
-            "target_id": "poi_1",
-            "validated_item_ids": ["poi_1"],
-            "confirmed": True,
-        },
-    })
+    issues = policy.validate(
+        ToolCallRequest(
+            tool_name="restaurant_booking",
+            risk_level=3,
+            idempotency_key="idem_1",
+            params={
+                "target_id": "poi_1",
+                "validated_item_ids": ["poi_1"],
+                "confirmed": True,
+            },
+        )
+    )
     assert any(issue["code"] == "validation_failed" for issue in issues)
 
-    issues = policy.validate({
-        "tool_name": "restaurant_booking",
-        "risk_level": 3,
-        "idempotency_key": "idem_1",
-        "confirmed_source": "execute_plan_button",
-        "params": {
-            "target_id": "poi_1",
-            "validated_item_ids": ["poi_1"],
-            "confirmed": True,
-        },
-    })
+    issues = policy.validate(
+        ToolCallRequest(
+            tool_name="restaurant_booking",
+            risk_level=3,
+            idempotency_key="idem_1",
+            confirmed_source="execute_plan_button",
+            params={
+                "target_id": "poi_1",
+                "validated_item_ids": ["poi_1"],
+                "confirmed": True,
+            },
+        )
+    )
     assert issues == []
 
 

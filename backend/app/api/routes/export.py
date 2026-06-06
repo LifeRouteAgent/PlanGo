@@ -11,6 +11,7 @@ from app.api.schemas.trip import ExportPlanRequest
 from app.memory.memory_event_queue import MemoryEventQueue
 from app.export.product_pdf_service import build_product_plan_pdf
 from app.tools.tool_harness import ToolHarness
+from app.tools.tool_policy import ToolCallRequest
 from app.observability.trace_recorder import record_trace_event, set_trace_context
 
 router = APIRouter(prefix="/export", tags=["export"])
@@ -117,17 +118,17 @@ def export_plan_pdf(request: ExportPlanRequest) -> Response:
 def _build_pdf_bytes(request: ExportPlanRequest) -> bytes:
     harness = ToolHarness(name="pdf.export.plan", timeout_seconds=8, max_retries=1)
     result = harness.run_request(
-        {
-            "tool_name": "pdf.export.plan",
-            "risk_level": 2,
-            "session_id": request.session_id or "export_session",
-            "params": {
+        ToolCallRequest(
+            tool_name="pdf.export.plan",
+            risk_level=2,
+            session_id=request.session_id or "export_session",
+            params={
                 "plan_id": request.plan.get("id"),
                 "confirmed": True,
                 "confirmed_source": "export_pdf_button",
             },
-            "confirmed_source": "export_pdf_button",
-        },
+            confirmed_source="export_pdf_button",
+        ),
         lambda: build_product_plan_pdf(request.plan),
     )
     data = result.get("data") if isinstance(result.get("data"), dict) else {}

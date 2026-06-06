@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import contextvars
-import json
 import time
 import uuid
 from collections.abc import Callable
 from typing import Any, TypeVar
+
+import loguru
 
 from app.runtime.runtime_paths import TRACES_DIR, ensure_runtime_dirs
 from app.runtime.runtime_store import get_runtime_store
@@ -86,6 +87,8 @@ class TraceRecorder:
                 "error": payload.get("error"),
                 "output_summary": payload.get("output_summary", {}),
             })
+        else:
+            loguru.logger.info("event_type={!r} 非 node_run 类型, 不予记录", event_type)
 
     def time_node(
         self, node_name: str, fn: Callable[[], T], *, input_summary: dict[str, Any] | None = None

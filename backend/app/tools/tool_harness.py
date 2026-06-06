@@ -7,6 +7,8 @@ from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeout
 from dataclasses import dataclass, field
 from typing import Any, TypeVar
 
+from tenacity import RetryCallState, retry, stop_after_attempt, wait_exponential
+
 from app.memory.memory_store import (
     FileMemoryStore,
     expires_at_from_ttl,
@@ -21,6 +23,11 @@ from app.tools.tool_policy import ToolCallRequest, ToolCallResult, ToolPolicy
 logger = logging.getLogger("liferoute.tool_harness")
 
 T = TypeVar("T")
+
+_TOOL_EXECUTOR_MAX_WORKERS = 8
+_TOOL_EXECUTOR = ThreadPoolExecutor(
+    max_workers=_TOOL_EXECUTOR_MAX_WORKERS, thread_name_prefix="tool-harness"
+)
 
 
 @dataclass
@@ -64,57 +71,82 @@ class ToolHarness:
     call_log: list[dict[str, Any]] = field(default_factory=list)
 
     def run(self, fn: Callable[..., T], *args: Any, **kwargs: Any) -> HarnessResult:
-        """执行同步工具函数，并返回标准化结果。"""
+        """执行同步工具函数，并返回标准化结果。
 
-        last_error: str | None = None
-        for attempt in range(1, self.max_retries + 2):
-            # todo: 有意思, 这里记录延迟的方式使用的是 `time.perf_counter()` 而不像 trace 里面似的, 用的是 time.time
-            started = time.perf_counter()
-            try:
-                data = self._run_with_timeout(fn, *args, **kwargs)
-                latency = int((time.perf_counter() - started) * 1000)
-                self._record(True, latency, attempt, "live", None)
-                self._cache_result(args=args, kwargs=kwargs, data=data, source="live")
+        重试/退避由 tenacity 驱动；所有重试耗尽后走 fallback（如有）。
+        工具函数本身通过模块级共享线程池执行，避免每次调用创建线程池。
+        """
+
+        _retry_state_ref: list[RetryCallState | None] = [None]
+
+        def _capture_state(retry_state: RetryCallState) -> None:
+            """tenacity before_sleep 回调：在下次重试前捕获 retry_state 用于计数。"""
+            _retry_state_ref[0] = retry_state
+
+        def _fallback(retry_state: RetryCallState) -> HarnessResult:
+            """tenacity retry_error_callback：所有重试都失败后调用。"""
+            if not self.fallback:
                 return HarnessResult(
-                    success=True,
-                    data=data,
-                    source="live",
-                    latency_ms=latency,
-                    attempts=attempt,
+                    success=False,
+                    error=str(retry_state.outcome.exception()) if retry_state.outcome else "",
+                    source="failed",
+                    attempts=retry_state.attempt_number,
                 )
-            except (
-                Exception
-            ) as exc:  # noqa: BLE001 - Harness 必须吞掉所有工具异常并转成结构化结果。
-                last_error = str(exc)
-                latency = int((time.perf_counter() - started) * 1000)
-                self._record(False, latency, attempt, "live", last_error)
-                if attempt <= self.max_retries:
-                    time.sleep(self.retry_backoff_seconds * attempt)
 
-        if self.fallback:
             fallback_started = time.perf_counter()
             try:
                 data = self.fallback(*args, **kwargs)
-                latency = int((time.perf_counter() - fallback_started) * 1000)
-                self._record(True, latency, -1, "fallback", None)
-                self._cache_result(args=args, kwargs=kwargs, data=data, source="fallback")
-                return HarnessResult(
-                    success=True,
-                    data=data,
-                    source="fallback",
-                    latency_ms=latency,
-                    attempts=self.max_retries + 1,
-                )
             except Exception as exc:  # noqa: BLE001
-                last_error = f"{last_error}; fallback failed: {exc}" if last_error else str(exc)
-                self._record(False, 0, -1, "fallback", str(exc))
+                error = str(exc)
+                self._record(False, 0, -1, "fallback", error)
+                orig_error = str(retry_state.outcome.exception()) if retry_state.outcome else ""
+                return HarnessResult(
+                    success=False,
+                    error=f"{orig_error}; fallback failed: {error}" if orig_error else error,
+                    source="failed",
+                    attempts=retry_state.attempt_number,
+                )
 
-        return HarnessResult(
-            success=False,
-            error=last_error,
-            source="failed",
-            attempts=self.max_retries + 1,
+            latency = int((time.perf_counter() - fallback_started) * 1000)
+            self._record(True, latency, -1, "fallback", None)
+            self._cache_result(args=args, kwargs=kwargs, data=data, source="fallback")
+            return HarnessResult(
+                success=True,
+                data=data,
+                source="fallback",
+                latency_ms=latency,
+                attempts=retry_state.attempt_number,
+            )
+
+        @retry(
+            stop=stop_after_attempt(self.max_retries + 1),
+            wait=wait_exponential(
+                multiplier=self.retry_backoff_seconds, min=self.retry_backoff_seconds
+            ),
+            before_sleep=_capture_state,
+            retry_error_callback=_fallback,
         )
+        def _attempt() -> HarnessResult:
+            """单次工具调用（含超时）；失败时抛异常让 tenacity 重试."""
+            rs = _retry_state_ref[0]
+            attempt = (rs.attempt_number + 1) if rs else 1
+            started = time.perf_counter()
+            try:
+                data = self._run_with_timeout(fn, *args, **kwargs)
+            except Exception as exc:
+                latency = int((time.perf_counter() - started) * 1000)
+                self._record(False, latency, attempt, "live", str(exc))
+                raise
+            latency = int((time.perf_counter() - started) * 1000)
+            self._record(True, latency, attempt, "live", None)
+            self._cache_result(args=args, kwargs=kwargs, data=data, source="live")
+            return HarnessResult(
+                success=True, data=data, source="live", latency_ms=latency, attempts=attempt
+            )
+
+        result = _attempt()
+
+        return result
 
     def run_request(
         self,
@@ -131,12 +163,9 @@ class ToolHarness:
         """
 
         policy = policy or ToolPolicy()
-        request = dict(request)
-        request["requires_confirmation"] = policy.requires_confirmation(
-            int(request.get("risk_level", 1))
-        )
-        if int(request.get("risk_level", 1)) >= 3:
-            request["idempotency_key"] = policy.ensure_idempotency_key(request)
+        request.requires_confirmation = policy.requires_confirmation(request.risk_level)
+        if request.risk_level >= 3:
+            request.idempotency_key = policy.ensure_idempotency_key(request)
         record_trace_event("tool_requested", _redact_request(request))
         issues = policy.validate(request)
         if issues:
@@ -153,7 +182,7 @@ class ToolHarness:
                 "attempts": 0,
                 "latency_ms": 0,
             }
-        if request.get("requires_confirmation"):
+        if request.requires_confirmation:
             record_trace_event("tool_confirm_required", _redact_request(request))
         record_trace_event("tool_started", _redact_request(request))
         result = self.run(fn, *args, **kwargs)
@@ -185,16 +214,13 @@ class ToolHarness:
         }
 
     def _run_with_timeout(self, fn: Callable[..., T], *args: Any, **kwargs: Any) -> T:
-        """用线程池为同步函数加超时控制。"""
-        # todo: 这个线程池, 每次调用都新启动一个线程池吗? 还是说底层共用的?
-        #   能否用异步的方式呢? 也不知道 Python 异步支持得如何
-        with ThreadPoolExecutor(max_workers=1) as executor:
-            future = executor.submit(fn, *args, **kwargs)
-            try:
-                return future.result(timeout=self.timeout_seconds)
-            except FutureTimeoutError as exc:
-                future.cancel()
-                raise TimeoutError(f"{self.name} timeout after {self.timeout_seconds}s") from exc
+        """用共享线程池为同步函数加超时控制。"""
+        future = _TOOL_EXECUTOR.submit(fn, *args, **kwargs)
+        try:
+            return future.result(timeout=self.timeout_seconds)
+        except FutureTimeoutError as exc:
+            future.cancel()
+            raise TimeoutError(f"{self.name} timeout after {self.timeout_seconds}s") from exc
 
     def _record(
         self,
@@ -273,15 +299,15 @@ class ToolHarness:
 def _redact_request(request: ToolCallRequest) -> dict[str, Any]:
     """Trace 中只记录治理相关摘要，不记录完整敏感参数。"""
 
-    params = request.get("params", {}) or {}
+    params = request.params
     return {
-        "tool_name": request.get("tool_name"),
-        "risk_level": request.get("risk_level"),
-        "user_id": request.get("user_id"),
-        "session_id": request.get("session_id"),
-        "task_id": request.get("task_id"),
-        "idempotency_key": request.get("idempotency_key"),
-        "requires_confirmation": request.get("requires_confirmation"),
+        "tool_name": request.tool_name,
+        "risk_level": request.risk_level,
+        "user_id": request.user_id,
+        "session_id": request.session_id,
+        "task_id": request.task_id,
+        "idempotency_key": request.idempotency_key,
+        "requires_confirmation": request.requires_confirmation,
         "param_keys": sorted(params.keys()),
         "target_id": params.get("target_id") or params.get("poi_id"),
     }

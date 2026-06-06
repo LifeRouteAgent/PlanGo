@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from enum import IntEnum, StrEnum
 from typing import Any, Literal, TypedDict
 
@@ -36,19 +36,20 @@ class ToolFailureCode(StrEnum):
     UNKNOWN = "unknown"
 
 
-class ToolCallRequest(TypedDict, total=False):
+@dataclass
+class ToolCallRequest:
     """统一工具调用请求。"""
 
     tool_name: str
-    risk_level: int
-    user_id: str
-    session_id: str
-    task_id: str
-    idempotency_key: str | None
-    params: dict[str, Any]
-    requires_confirmation: bool
-    confirmed: bool
-    confirmed_source: str
+    risk_level: int = RiskLevel.QUERY
+    user_id: str = ""
+    session_id: str = ""
+    task_id: str = ""
+    idempotency_key: str | None = None
+    params: dict[str, Any] = field(default_factory=dict)
+    requires_confirmation: bool = False
+    confirmed: bool = False
+    confirmed_source: str = ""
 
 
 class ToolCallResult(TypedDict, total=False):
@@ -87,11 +88,11 @@ class ToolPolicy:
         """校验工具参数和权限边界。"""
 
         issues: list[dict[str, Any]] = []
-        risk_level = int(request.get("risk_level", RiskLevel.QUERY))
-        params = request.get("params", {}) or {}
-        confirmed = bool(request.get("confirmed") or params.get("confirmed"))
+        risk_level = int(request.risk_level)
+        params = request.params
+        confirmed = bool(request.confirmed or params.get("confirmed"))
         confirmed_source = str(
-            request.get("confirmed_source")
+            request.confirmed_source
             or params.get("confirmed_source")
             or params.get("confirmation_source")
             or ""
@@ -103,7 +104,7 @@ class ToolPolicy:
             issues.append(_issue("validation_failed", "Level 2+ 工具必须记录确认来源。"))
         if risk_level == RiskLevel.PAYMENT:
             issues.append(_issue("payment_required", "支付/退款工具 v1 不允许自动执行。"))
-        if risk_level >= RiskLevel.TRANSACTION and not request.get("idempotency_key"):
+        if risk_level >= RiskLevel.TRANSACTION and not request.idempotency_key:
             issues.append(_issue("validation_failed", "交易工具缺少 idempotency_key。"))
 
         issues.extend(_validate_common_params(params))
@@ -120,13 +121,13 @@ class ToolPolicy:
     def ensure_idempotency_key(self, request: ToolCallRequest) -> str:
         """为交易工具补齐幂等键。"""
 
-        if request.get("idempotency_key"):
-            return str(request["idempotency_key"])
-        params = request.get("params", {}) or {}
+        if request.idempotency_key:
+            return request.idempotency_key
+        params = request.params
         return make_idempotency_key(
-            user_id=str(request.get("user_id") or "default"),
-            task_id=str(request.get("task_id") or ""),
-            action_type=str(request.get("tool_name") or ""),
+            user_id=request.user_id or "default",
+            task_id=request.task_id,
+            action_type=request.tool_name,
             target_id=str(params.get("target_id") or params.get("poi_id") or ""),
             slot_time=str(params.get("slot_time") or params.get("start_time") or ""),
             amount=params.get("amount", ""),
@@ -156,7 +157,7 @@ class ToolPolicy:
 def tool_request_hash(request: ToolCallRequest) -> str:
     """生成工具请求 hash，用于缓存和重复调用检测。"""
 
-    raw = json.dumps(request, sort_keys=True, default=str)
+    raw = json.dumps(asdict(request), sort_keys=True, default=str)
     return hashlib.sha1(raw.encode("utf-8")).hexdigest()
 
 
