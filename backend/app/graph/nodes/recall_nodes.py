@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from app.graph.nodes.common import append_trace, ensure_state
-from app.graph.services import collect_candidates, compile_recall_plan
+from app.graph.services.recall_service import collect_candidates, compile_recall_plan
 from app.graph.state import PlanningState
 
 

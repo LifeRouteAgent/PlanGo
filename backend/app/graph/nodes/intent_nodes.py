@@ -4,7 +4,7 @@ from typing import Any
 from uuid import uuid4
 
 from app.graph.nodes.common import append_trace, ensure_state
-from app.graph.services import resolve_intent
+from app.graph.services.intent_service import resolve_intent
 from app.graph.state import AsyncEventInfo, PlanningState
 from app.services.memory_event_queue import MemoryEventQueue
 from app.services.poi_catalog_service import PoiCatalogService

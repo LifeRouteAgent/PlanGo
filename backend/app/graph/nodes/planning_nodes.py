@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from app.graph.nodes.common import append_trace, ensure_state
-from app.graph.services import create_route_plans
+from app.graph.services.routing_service import create_route_plans
 from app.graph.state import PlanningState
 
 

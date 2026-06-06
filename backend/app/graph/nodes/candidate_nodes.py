@@ -4,7 +4,7 @@ from typing import Any
 
 from app.graph.nodes.common import append_trace, ensure_state
 from app.graph.payloads import normalize_response_payload
-from app.graph.services import balance_candidates, score_candidates
+from app.graph.services.candidate_service import balance_candidates, score_candidates
 from app.graph.state import PlanningState
 
 

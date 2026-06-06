@@ -181,10 +181,10 @@ def test_single_category_graph_skips_route_planner() -> None:
 
 
 def test_plan_adjustment_uses_editor_branch(monkeypatch) -> None:
-    import app.graph.services as graph_services
+    import app.graph.services.intent_service as intent_services
     from app.services.session_store import SessionStore
 
-    monkeypatch.setattr(graph_services, "build_llm_understanding", lambda *args, **kwargs: None)
+    monkeypatch.setattr(intent_services, "build_llm_understanding", lambda *args, **kwargs: None)
     monkeypatch.setattr(
         SessionStore,
         "load",
@@ -298,12 +298,12 @@ def test_database_catalog_exposes_real_filter_fields_and_tags() -> None:
 
 
 def test_intent_tag_mapping_only_accepts_database_catalog_tags(monkeypatch) -> None:
-    import app.graph.services as graph_services
+    import app.graph.services.intent_service as intent_services
 
     catalog = PoiCatalogService().load_catalog(query="想唱歌")
     knowledge = PoiCatalogService().background_knowledge(catalog)
     monkeypatch.setattr(
-        graph_services,
+        intent_services,
         "build_llm_understanding",
         lambda *args, **kwargs: {
             "intent_type": "category_recommend",
@@ -352,12 +352,12 @@ def test_recall_compiler_carries_category_tag_filters() -> None:
 
 
 def test_catalog_rule_fallback_recognizes_tag_recommendation(monkeypatch) -> None:
-    import app.graph.services as graph_services
+    import app.graph.services.intent_service as intent_services
 
     catalog = PoiCatalogService().load_catalog(query="推荐唱歌的地方，不要电影院")
     knowledge = PoiCatalogService().background_knowledge(catalog)
     monkeypatch.setattr(
-        graph_services,
+        intent_services,
         "build_llm_understanding",
         lambda *args, **kwargs: {"intent_type": "simple_qa"},
     )
@@ -490,10 +490,10 @@ def test_inspiration_prompt_infers_must_poi_category() -> None:
 
 
 def test_unresolved_inspiration_must_poi_gets_safe_fallback_candidate(monkeypatch) -> None:
-    import app.graph.services as graph_services
+    import app.graph.services.recall_service as recall_services
 
     monkeypatch.setattr(
-        graph_services.PoiRepository,
+        recall_services.PoiRepository,
         "fetch_by_name_keywords",
         lambda self, keywords, categories=None: {category: [] for category in (categories or [])},
     )
@@ -520,10 +520,10 @@ def test_quick_start_hotspots_and_budget_templates() -> None:
 
 
 def test_message_origin_overrides_current_geo_location(monkeypatch) -> None:
-    import app.graph.services as graph_services
+    import app.graph.services.intent_service as intent_services
 
     monkeypatch.setattr(
-        graph_services.PoiRepository,
+        intent_services.PoiRepository,
         "fetch_by_name_keywords",
         lambda self, keywords, categories=None: {
             "poi_attractions": [
@@ -550,10 +550,10 @@ def test_message_origin_overrides_current_geo_location(monkeypatch) -> None:
 
 
 def test_current_geo_location_used_when_message_origin_unresolved(monkeypatch) -> None:
-    import app.graph.services as graph_services
+    import app.graph.services.intent_service as intent_services
 
     monkeypatch.setattr(
-        graph_services.PoiRepository,
+        intent_services.PoiRepository,
         "fetch_by_name_keywords",
         lambda self, keywords, categories=None: {category: [] for category in (categories or [])},
     )

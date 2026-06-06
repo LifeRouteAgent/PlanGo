@@ -4,7 +4,7 @@ from typing import Any
 
 from app.graph.nodes.common import append_trace, ensure_state
 from app.graph.payloads import normalize_response_payload
-from app.graph.services import assemble_state_response
+from app.graph.services.response_service import assemble_state_response
 from app.graph.state import PlanningState
 from app.llm_agents.response_generation_agent import (
     apply_response_generation,
