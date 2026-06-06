@@ -118,12 +118,17 @@ def final_score(
     risk_penalty_value: float,
     weights: POIScoreWeights = DEFAULT_POI_SCORE_WEIGHTS,
 ) -> float:
-    return 100 * (
-        weights.distance * distance_score_value
-        + weights.tag * tag_score_value
-        + weights.keyword * keyword_score_value
-        + weights.quality * quality_score_value
-    ) + memory_score_value * weights.memory_bonus - risk_penalty_value * weights.risk_penalty
+    return (
+        100
+        * (
+            weights.distance * distance_score_value
+            + weights.tag * tag_score_value
+            + weights.keyword * keyword_score_value
+            + weights.quality * quality_score_value
+        )
+        + memory_score_value * weights.memory_bonus
+        - risk_penalty_value * weights.risk_penalty
+    )
 
 
 def quality_score(rating: float | None) -> float:

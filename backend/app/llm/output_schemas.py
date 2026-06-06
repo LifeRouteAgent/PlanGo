@@ -200,4 +200,3 @@ def validate_llm_output(
             error=str(exc),
             schema_name=schema.__name__,
         )
-

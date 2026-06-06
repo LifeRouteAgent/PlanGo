@@ -56,6 +56,7 @@ from app.planning.payloads import normalize_response_payload
 
 from app.planning.services.common import *
 
+
 def compile_recall_plan(
     logical: LogicalRecallPlan, constraints: FinalConstraints, catalog: Any
 ) -> CompiledRecallPlan:
@@ -99,11 +100,14 @@ def compile_recall_plan(
         ),
     )
 
+
 def collect_candidates(
     compiled: CompiledRecallPlan, constraints: FinalConstraints
 ) -> tuple[dict[str, list[SafePOICandidate]], RecallStats]:
     origin = constraints.hard_constraints.origin
-    legacy_categories = list(dict.fromkeys(f"poi_{query.logical_category}" for query in compiled.queries))
+    legacy_categories = list(
+        dict.fromkeys(f"poi_{query.logical_category}" for query in compiled.queries)
+    )
     name_repository = PoiRepository(limit_per_category=80)
     must = (
         name_repository.fetch_by_name_keywords(
@@ -127,14 +131,18 @@ def collect_candidates(
             people_count=1,
             scene_type="v2",
             duration_hours=(constraints.time_policy.duration_minutes or 270) / 60,
-            preference_keywords=tuple(_dedupe([
-                *constraints.soft_preferences.preference_keywords,
-                *query.filters.get("positive_logic_tags", []),
-            ])),
-            excluded_keywords=tuple(_dedupe([
-                *constraints.hard_constraints.avoid_keywords,
-                *query.filters.get("negative_logic_tags", []),
-            ])),
+            preference_keywords=tuple(
+                _dedupe([
+                    *constraints.soft_preferences.preference_keywords,
+                    *query.filters.get("positive_logic_tags", []),
+                ])
+            ),
+            excluded_keywords=tuple(
+                _dedupe([
+                    *constraints.hard_constraints.avoid_keywords,
+                    *query.filters.get("negative_logic_tags", []),
+                ])
+            ),
         )
         rows = repository.fetch_by_categories([legacy], recall_constraints=recall_constraints)
         items = [*_safe_candidates(rows.get(legacy, []), query, False)]
@@ -148,17 +156,28 @@ def collect_candidates(
                 items.extend(name_matches[1:])
                 hard_must_added = True
             elif not must_found:
-                items.append(_synthetic_must_candidate(compiled.must_poi_resolution.keywords[0], query))
+                items.append(
+                    _synthetic_must_candidate(compiled.must_poi_resolution.keywords[0], query)
+                )
                 hard_must_added = True
         else:
             items.extend(name_matches)
         items = list({item.poi_id: item for item in items}.values())
         result.setdefault(query.slot_id, []).extend(items)
-        stats.append(QueryRecallStat(query_id=query.query_id, raw_count=len(items), after_hard_filter_count=len(items)))
+        stats.append(
+            QueryRecallStat(
+                query_id=query.query_id, raw_count=len(items), after_hard_filter_count=len(items)
+            )
+        )
     total = sum(len(items) for items in result.values())
-    return result, RecallStats(by_query=stats, total_raw_count=total, total_after_filter_count=total)
+    return result, RecallStats(
+        by_query=stats, total_raw_count=total, total_after_filter_count=total
+    )
 
-def _safe_candidates(rows: list[dict[str, Any]], query: CompiledRecallQuery, must: bool) -> list[SafePOICandidate]:
+
+def _safe_candidates(
+    rows: list[dict[str, Any]], query: CompiledRecallQuery, must: bool
+) -> list[SafePOICandidate]:
     return [
         SafePOICandidate(
             poi_id=str(row.get("id")),
@@ -166,7 +185,9 @@ def _safe_candidates(rows: list[dict[str, Any]], query: CompiledRecallQuery, mus
             logical_category=query.logical_category,
             physical_table=query.physical_table,
             subcategory=row.get("subcategory"),
-            logic_tags=_clean_logic_tags(row.get("tags", []), query.logical_category, row.get("subcategory")),
+            logic_tags=_clean_logic_tags(
+                row.get("tags", []), query.logical_category, row.get("subcategory")
+            ),
             address=row.get("address"),
             lat=row.get("lat"),
             lng=row.get("lon"),
@@ -185,6 +206,7 @@ def _safe_candidates(rows: list[dict[str, Any]], query: CompiledRecallQuery, mus
         )
         for row in rows
     ]
+
 
 def _synthetic_must_candidate(name: str, query: CompiledRecallQuery) -> SafePOICandidate:
     safe_name = str(name or "用户指定地点").strip()[:80] or "用户指定地点"
@@ -206,4 +228,3 @@ def _synthetic_must_candidate(name: str, query: CompiledRecallQuery) -> SafePOIC
         must_include=True,
         raw_extra={"open_status": "unknown"},
     )
-

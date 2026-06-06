@@ -56,6 +56,7 @@ from app.planning.payloads import normalize_response_payload
 
 from app.planning.services.common import *
 
+
 def score_candidates(
     raw: dict[str, list[SafePOICandidate]], constraints: FinalConstraints, memory_tags: list[str]
 ) -> dict[str, list[ScoredPOICandidate]]:
@@ -71,20 +72,25 @@ def score_candidates(
             if not item.must_include and item.rating is not None and item.rating < floor:
                 continue
             quality = min(1, (item.rating or 4.0) / 5)
-            distance = 0.65 if item.distance_km is None else max(
-                0, 1 - item.distance_km / max(1, constraints.distance_policy.max_radius_km)
+            distance = (
+                0.65
+                if item.distance_km is None
+                else max(
+                    0, 1 - item.distance_km / max(1, constraints.distance_policy.max_radius_km)
+                )
             )
             budget = _budget_score(item.avg_price, constraints.budget_policy.soft_upper_per_person)
             logic = _tag_overlap(item.logic_tags, liked_tags)
             keyword = _keyword_match(item, preference_keywords)
             memory = _tag_overlap(item.logic_tags, memory_tags)
-            risk = (0.08 if item.avg_price is None else 0) + (0.06 if item.lat is None or item.lng is None else 0)
-            final = 100 * (
-                0.30 * distance
-                + 0.30 * logic
-                + 0.30 * keyword
-                + 0.10 * quality
-            ) + memory * 5 - risk * 100
+            risk = (0.08 if item.avg_price is None else 0) + (
+                0.06 if item.lat is None or item.lng is None else 0
+            )
+            final = (
+                100 * (0.30 * distance + 0.30 * logic + 0.30 * keyword + 0.10 * quality)
+                + memory * 5
+                - risk * 100
+            )
             scored.append(
                 ScoredPOICandidate(
                     **item.model_dump(),
@@ -106,7 +112,10 @@ def score_candidates(
         result[slot] = sorted(scored, key=lambda item: item.final_poi_score, reverse=True)
     return result
 
-def balance_candidates(scored: dict[str, list[ScoredPOICandidate]]) -> dict[str, list[ScoredPOICandidate]]:
+
+def balance_candidates(
+    scored: dict[str, list[ScoredPOICandidate]],
+) -> dict[str, list[ScoredPOICandidate]]:
     result: dict[str, list[ScoredPOICandidate]] = {}
     slot_count = max(1, len(scored))
     keep_limit = _balanced_keep_limit(slot_count)
@@ -115,8 +124,17 @@ def balance_candidates(scored: dict[str, list[ScoredPOICandidate]]) -> dict[str,
         selected: list[ScoredPOICandidate] = list(must)
         seen: dict[tuple[str, str, str, str], int] = {}
         for item in items:
-            band = "near" if (item.distance_km or 0) <= 3 else "mid" if (item.distance_km or 0) <= 8 else "far"
-            key = (item.logical_category, item.subcategory or item.logical_category, _price_band(item.avg_price), band)
+            band = (
+                "near"
+                if (item.distance_km or 0) <= 3
+                else "mid" if (item.distance_km or 0) <= 8 else "far"
+            )
+            key = (
+                item.logical_category,
+                item.subcategory or item.logical_category,
+                _price_band(item.avg_price),
+                band,
+            )
             if item in selected:
                 continue
             if seen.get(key, 0) >= 4 and len(selected) < keep_limit * 0.75:
@@ -136,12 +154,14 @@ def balance_candidates(scored: dict[str, list[ScoredPOICandidate]]) -> dict[str,
         result[slot] = selected
     return result
 
+
 def _balanced_keep_limit(slot_count: int) -> int:
     if slot_count <= 1:
         return 150
     if slot_count == 2:
         return 80
     return 100
+
 
 def _price_band(price: float | None) -> str:
     if price is None or price <= 0:
@@ -151,4 +171,3 @@ def _price_band(price: float | None) -> str:
     if price < 200:
         return "mid"
     return "high"
-

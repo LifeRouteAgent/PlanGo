@@ -106,7 +106,9 @@ class ContextBuilder:
             "recommended_pois",
         )
         tool_evidence = _tool_evidence(state, top_k=12, clipped_fields=clipped_fields)
-        evidence_refs = [item.get("evidence_ref") for item in tool_evidence if item.get("evidence_ref")]
+        evidence_refs = [
+            item.get("evidence_ref") for item in tool_evidence if item.get("evidence_ref")
+        ]
         return {
             "current_intent": {
                 "intent_type": state.get("intent_type"),
@@ -133,7 +135,11 @@ class ContextBuilder:
             },
             "tool_evidence": tool_evidence,
             "conversation_summary": _conversation_summary(state),
-            "poi_knowledge": state.get("poi_knowledge", {}) if isinstance(state.get("poi_knowledge"), dict) else {},
+            "poi_knowledge": (
+                state.get("poi_knowledge", {})
+                if isinstance(state.get("poi_knowledge"), dict)
+                else {}
+            ),
             "prompt_meta": {
                 "agent_name": agent_name,
                 "token_budget": token_budget,
@@ -286,9 +292,12 @@ def _hard_constraints(constraints: dict[str, Any], state: dict[str, Any]) -> dic
         "avoid_tags",
         "indoor_preferred",
     }
-    result = {key: constraints.get(key) for key in keys if constraints.get(key) not in (None, "", [])}
+    result = {
+        key: constraints.get(key) for key in keys if constraints.get(key) not in (None, "", [])
+    }
     confirmed_actions = [
-        action for action in state.get("booking_actions", []) or []
+        action
+        for action in state.get("booking_actions", []) or []
         if isinstance(action, dict) and action.get("status") in {"confirmed", "success"}
     ]
     if confirmed_actions:
@@ -334,7 +343,9 @@ def _top_k_pois_by_category(
             continue
         if len(items) > top_k:
             clipped_fields.append(f"{field_name}.{category}[{top_k}:{len(items)}]")
-        sorted_items = sorted(items, key=lambda item: item.get("score", item.get("rating", 0)), reverse=True)
+        sorted_items = sorted(
+            items, key=lambda item: item.get("score", item.get("rating", 0)), reverse=True
+        )
         result[str(category)] = [_compact_poi(item) for item in sorted_items[:top_k]]
     return result
 
@@ -406,13 +417,20 @@ def _tool_evidence(
 def _conversation_summary(state: dict[str, Any]) -> dict[str, Any]:
     """会话摘要只保留规划相关信息，不保留完整聊天历史。"""
 
-    session_memory = state.get("session_memory", {}) if isinstance(state.get("session_memory"), dict) else {}
+    session_memory = (
+        state.get("session_memory", {}) if isinstance(state.get("session_memory"), dict) else {}
+    )
     return {
         "confirmed": session_memory.get("confirmed", []),
         "rejected_plans": session_memory.get("rejected_plans", []),
-        "selected_plan_id": session_memory.get("selected_plan_id") or (state.get("selected_plan") or {}).get("id", ""),
+        "selected_plan_id": (
+            session_memory.get("selected_plan_id")
+            or (state.get("selected_plan") or {}).get("id", "")
+        ),
         "recent_revisions": _safe_list(session_memory.get("recent_revisions"))[-5:],
-        "pending_question": state.get("clarify_question", "") if state.get("need_clarification") else "",
+        "pending_question": (
+            state.get("clarify_question", "") if state.get("need_clarification") else ""
+        ),
     }
 
 

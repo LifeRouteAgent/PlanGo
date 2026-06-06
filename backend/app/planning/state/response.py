@@ -5,6 +5,7 @@ from app.planning.state.constraints import *  # noqa: F403
 from app.planning.state.recall import *  # noqa: F403
 from app.planning.state.plans import *  # noqa: F403
 
+
 class ResponseState(StateModel):
     response_type: str = "simple_text"
     response_payload: dict[str, Any] | None = None
@@ -92,7 +93,9 @@ def create_planning_state(
             timezone=timezone,
             source=source,
         ),
-        user_info=UserInfo(user_id=effective_user, city=city, geo_location=geo, default_origin=origin),
+        user_info=UserInfo(
+            user_id=effective_user, city=city, geo_location=geo, default_origin=origin
+        ),
         context=ContextState(
             conversation_context=ConversationContext(last_user_message=user_message)
         ),
@@ -113,7 +116,8 @@ def planning_state_from_legacy(state: dict[str, Any]) -> PlanningState:
         last_request_type=str(state.get("intent_type") or "") or None,
         last_constraints_snapshot=state.get("constraints") or None,
         last_ranked_plans=list(state.get("ranked_plans") or []),
-        selected_or_referenced_plan_id=str((state.get("selected_plan") or {}).get("id") or "") or None,
+        selected_or_referenced_plan_id=str((state.get("selected_plan") or {}).get("id") or "")
+        or None,
     )
     return result
 
@@ -149,7 +153,9 @@ def planning_state_to_legacy(state: PlanningState) -> dict[str, Any]:
     ]
     return {
         "response_text": state.response.final_text or "",
-        "execution_status": "simulated" if payload.get("selected_plan") or payload.get("plans") else "pending",
+        "execution_status": (
+            "simulated" if payload.get("selected_plan") or payload.get("plans") else "pending"
+        ),
         "intent_type": intent_type,
         "answer_mode": "simple_qa" if request_type == "simple_qa" else "trip_plan",
         "need_clarification": False,
@@ -158,7 +164,9 @@ def planning_state_to_legacy(state: PlanningState) -> dict[str, Any]:
         "selected_plan": payload.get("selected_plan", {}),
         "ranked_plans": payload.get("plans", []),
         "errors": [*state.debug.errors, *response_issues],
-        "logs": [trace.message or f"{trace.node}: {trace.status}" for trace in state.debug.node_trace],
+        "logs": [
+            trace.message or f"{trace.node}: {trace.status}" for trace in state.debug.node_trace
+        ],
         "session_id": state.state_meta.session_id,
         "trace_id": state.state_meta.request_id,
         "run_id": state.state_meta.state_id,
@@ -183,7 +191,11 @@ def _public_constraints(state: PlanningState) -> dict[str, Any]:
     understanding = state.llm_understanding
     return {
         "city": constraints.hard_constraints.city,
-        "origin_name": constraints.hard_constraints.origin.name if constraints.hard_constraints.origin else None,
+        "origin_name": (
+            constraints.hard_constraints.origin.name
+            if constraints.hard_constraints.origin
+            else None
+        ),
         "required_slots": list(constraints.hard_constraints.required_slots),
         "avoid_keywords": list(constraints.hard_constraints.avoid_keywords),
         "duration_minutes": constraints.time_policy.duration_minutes,
@@ -192,7 +204,11 @@ def _public_constraints(state: PlanningState) -> dict[str, Any]:
             if constraints.time_policy.duration_minutes
             else None
         ),
-        "start_time": constraints.time_policy.start_time.strftime("%H:%M") if constraints.time_policy.start_time else None,
+        "start_time": (
+            constraints.time_policy.start_time.strftime("%H:%M")
+            if constraints.time_policy.start_time
+            else None
+        ),
         "budget": constraints.budget_policy.total_budget,
         "budget_per_person": constraints.budget_policy.budget_per_person,
         "people_count": understanding.scene.people_count if understanding else None,

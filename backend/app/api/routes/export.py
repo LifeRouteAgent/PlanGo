@@ -54,7 +54,9 @@ def download_prepared_plan_pdf(token: str) -> Response:
         cached["bytes"],
         media_type="application/pdf",
         headers={
-            "Content-Disposition": f'attachment; filename="{cached.get("filename") or "plango-plan.pdf"}"',
+            "Content-Disposition": (
+                f'attachment; filename="{cached.get("filename") or "plango-plan.pdf"}"'
+            ),
         },
     )
 

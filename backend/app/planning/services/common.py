@@ -85,8 +85,24 @@ SCENE_SLOTS = {
 }
 
 MEAL_KEYWORDS = (
-    "吃饭", "吃喝", "餐厅", "餐馆", "美食", "午饭", "午餐", "晚饭", "晚餐",
-    "早饭", "早餐", "下午茶", "咖啡", "轻食", "火锅", "烧烤", "甜品", "喝咖啡",
+    "吃饭",
+    "吃喝",
+    "餐厅",
+    "餐馆",
+    "美食",
+    "午饭",
+    "午餐",
+    "晚饭",
+    "晚餐",
+    "早饭",
+    "早餐",
+    "下午茶",
+    "咖啡",
+    "轻食",
+    "火锅",
+    "烧烤",
+    "甜品",
+    "喝咖啡",
 )
 
 INSPIRATION_MUST_PATTERN = re.compile(r"我想去\s*(?P<name>.+?)\s*[，,]\s*帮我搭配")
@@ -97,8 +113,10 @@ ORIGIN_TEXT_PATTERNS = (
     re.compile(r"(?P<name>[^，,。；;]{2,24})\s*(?:附近|周边)\s*(?:出发|开始|安排|找|推荐)"),
 )
 
+
 def _dedupe(values: list[str]) -> list[str]:
     return list(dict.fromkeys(value for value in values if value))
+
 
 def _dedupe_dict_list(values: list[Any]) -> list[Any]:
     result: list[Any] = []
@@ -111,13 +129,15 @@ def _dedupe_dict_list(values: list[Any]) -> list[Any]:
         result.append(value)
     return result
 
+
 def _safe_float_value(value: Any) -> float | None:
     try:
         if value is None or value == "":
             return None
         return float(value)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return None
+
 
 def _keyword_match(item: SafePOICandidate, keywords: list[str]) -> float:
     if not keywords:
@@ -128,10 +148,12 @@ def _keyword_match(item: SafePOICandidate, keywords: list[str]) -> float:
     ).lower()
     return sum(1 for keyword in keywords if str(keyword).lower() in text) / len(keywords)
 
+
 def _budget_score(price: float | None, soft_upper: float | None) -> float:
     if price is None or soft_upper is None:
         return 0.65
     return 1.0 if price <= soft_upper else max(0, 1 - (price - soft_upper) / max(1, soft_upper))
+
 
 def _tag_overlap(tags: list[str], desired: list[str]) -> float:
     if not desired:
@@ -139,7 +161,10 @@ def _tag_overlap(tags: list[str], desired: list[str]) -> float:
     text = " ".join(tags)
     return sum(1 for tag in desired if tag in text) / len(desired)
 
-def _clean_logic_tags(values: Any, category: str, subcategory: Any = None, limit: int = 6) -> list[str]:
+
+def _clean_logic_tags(
+    values: Any, category: str, subcategory: Any = None, limit: int = 6
+) -> list[str]:
     result: list[str] = []
     candidates = list(values) if isinstance(values, list) else [values]
     if subcategory:
@@ -155,11 +180,15 @@ def _clean_logic_tags(values: Any, category: str, subcategory: Any = None, limit
         result.append(_category_label(category))
     return result
 
+
 def _clean_tag_text(value: Any) -> str:
     text = str(value or "").strip()
     if not text:
         return ""
-    if any(mark in text for mark in ("{", "}", "[", "]", "sub_category_id", "leaf_category_id", "category_id")):
+    if any(
+        mark in text
+        for mark in ("{", "}", "[", "]", "sub_category_id", "leaf_category_id", "category_id")
+    ):
         return ""
     text = re.sub(r"\s+", " ", text)
     text = text.strip(" ，,。；;：:|/\\")
@@ -169,9 +198,19 @@ def _clean_tag_text(value: Any) -> str:
         return ""
     if not text or len(text) > 15:
         return ""
-    if text.lower() in {"activity", "attraction", "restaurant", "shopping", "entertainment", "fitness", "beauty", "mixed"}:
+    if text.lower() in {
+        "activity",
+        "attraction",
+        "restaurant",
+        "shopping",
+        "entertainment",
+        "fitness",
+        "beauty",
+        "mixed",
+    }:
         return ""
     return text
+
 
 def _category_label(category: str | None) -> str:
     return {
@@ -184,6 +223,7 @@ def _category_label(category: str | None) -> str:
         "beauty": "放松",
     }.get(str(category or ""), "本地生活")
 
+
 def _image_list(images: Any, image_url: Any = None) -> list[str]:
     result: list[str] = []
     for value in [image_url, *(images if isinstance(images, list) else [images])]:
@@ -193,6 +233,7 @@ def _image_list(images: Any, image_url: Any = None) -> list[str]:
         if text.startswith(("http://", "https://")) and text not in result:
             result.append(text)
     return result[:8]
+
 
 def _first_image_value(image_url: Any, images: Any) -> str | None:
     values = _image_list(images, image_url)

@@ -8,7 +8,6 @@ from typing import Any
 from fastapi import APIRouter, Query
 from fastapi.responses import Response, StreamingResponse
 
-from app.config import settings
 from app.api.schemas.trip import (
     AdjustPlanRequest,
     DataSourceStatusResponse,
@@ -17,12 +16,11 @@ from app.api.schemas.trip import (
     TripPlanRequest,
     TripPlanResponse,
 )
+from app.config import settings
 from app.integrations.calendar_service import build_plan_ics
-from app.runtime.checkpoint_store import CheckpointStore, TaskStatus, make_idempotency_key
 from app.memory.memory_event_queue import MemoryEventQueue
 from app.memory.memory_service import MemoryService
-from app.repositories.poi_repository import PoiRepository
-from app.observability.trace_recorder import TraceRecorder, new_id, record_trace_event, set_trace_context
+from app.observability.trace_recorder import TraceRecorder, new_id, set_trace_context
 from app.planning.trip_services import (
     TaskRecoveryService,
     TripExecutionService,
@@ -30,11 +28,8 @@ from app.planning.trip_services import (
     TripRevisionService,
     TripStreamingService,
 )
-from app.observability.trip_progress import (
-    build_agent_thinking_payload as _build_agent_thinking_payload,
-    effective_query_for_request as _effective_query_for_request,
-    trace_events_for_node as _trace_events_for_node,
-)
+from app.repositories.poi_repository import PoiRepository
+from app.runtime.checkpoint_store import CheckpointStore, make_idempotency_key
 
 router = APIRouter(prefix="/trip", tags=["trip"])
 
@@ -71,9 +66,14 @@ def stream_execute_plan(request: ExecutePlanRequest) -> StreamingResponse:
         checkpoint = CheckpointStore()
         task_id = request.task_id or str(request.plan.get("task_id") or new_id("task"))
         if not checkpoint.load(task_id):
-            checkpoint.create(session_id=session_id, user_id=session_id, trace_id=trace_id, task_id=task_id)
+            checkpoint.create(
+                session_id=session_id, user_id=session_id, trace_id=trace_id, task_id=task_id
+            )
         steps = _execution_steps(request.plan)
-        yield _sse("execution_start", {"plan_id": request.plan.get("id"), "total_steps": len(steps), "task_id": task_id})
+        yield _sse(
+            "execution_start",
+            {"plan_id": request.plan.get("id"), "total_steps": len(steps), "task_id": task_id},
+        )
         service = TripExecutionService()
         valid_ids = service.validated_item_ids(request.plan)
         for step in steps:
@@ -85,26 +85,32 @@ def stream_execute_plan(request: ExecutePlanRequest) -> StreamingResponse:
                 action_type=str(step.get("type") or "step"),
                 target_id=target_id,
             )
-            checkpoint.append_action(task_id, {
-                "action_id": str(step["id"]),
-                "type": str(step["type"]),
-                "risk_level": int(risk),
-                "status": "running",
-                "idempotency_key": key,
-                "request": {**step, "validated_item_ids": valid_ids},
-                "result": None,
-            })
+            checkpoint.append_action(
+                task_id,
+                {
+                    "action_id": str(step["id"]),
+                    "type": str(step["type"]),
+                    "risk_level": int(risk),
+                    "status": "running",
+                    "idempotency_key": key,
+                    "request": {**step, "validated_item_ids": valid_ids},
+                    "result": None,
+                },
+            )
             yield _sse("execution_step", {**step, "status": "running"})
             time.sleep(0.15)
-            checkpoint.append_action(task_id, {
-                "action_id": str(step["id"]),
-                "type": str(step["type"]),
-                "risk_level": int(risk),
-                "status": "success",
-                "idempotency_key": key,
-                "request": step,
-                "result": {"simulated": True},
-            })
+            checkpoint.append_action(
+                task_id,
+                {
+                    "action_id": str(step["id"]),
+                    "type": str(step["type"]),
+                    "risk_level": int(risk),
+                    "status": "success",
+                    "idempotency_key": key,
+                    "request": step,
+                    "result": {"simulated": True},
+                },
+            )
             yield _sse("execution_step", {**step, "status": "done", "result": "模拟执行完成"})
         MemoryEventQueue().publish_plan_feedback(
             request.plan,
@@ -115,7 +121,9 @@ def stream_execute_plan(request: ExecutePlanRequest) -> StreamingResponse:
             run_id=run_id,
             session_id=session_id,
         )
-        yield _sse("execution_done", {"status": "done", "message": "模拟执行完成，未调用真实第三方 API。"})
+        yield _sse(
+            "execution_done", {"status": "done", "message": "模拟执行完成，未调用真实第三方 API。"}
+        )
 
     return _streaming_response(events())
 
@@ -130,9 +138,15 @@ def adjust_plan(request: AdjustPlanRequest) -> dict[str, Any]:
     if index is None:
         return {"ok": False, "plan": plan, "message": "没有找到要替换的地点。"}
     old = items[index]
-    alternatives = PoiRepository(limit_per_category=10).fetch_by_categories([str(old.get("category") or "")])
+    alternatives = PoiRepository(limit_per_category=10).fetch_by_categories(
+        [str(old.get("category") or "")]
+    )
     replacement = next(
-        (dict(item) for item in alternatives.get(str(old.get("category") or ""), []) if str(item.get("id")) != request.poi_id),
+        (
+            dict(item)
+            for item in alternatives.get(str(old.get("category") or ""), [])
+            if str(item.get("id")) != request.poi_id
+        ),
         None,
     )
     if replacement is None:
@@ -143,7 +157,12 @@ def adjust_plan(request: AdjustPlanRequest) -> dict[str, Any]:
         "title": f"{plan.get('title', '方案')}（已局部调整）",
         "recommendation_reason": f"已按“{request.prompt}”替换单站，建议重新确认路线和预算。",
     })
-    return {"ok": True, "plan": plan, "message": "已完成单站替换。", "issues": plan.get("issues", [])}
+    return {
+        "ok": True,
+        "plan": plan,
+        "message": "已完成单站替换。",
+        "issues": plan.get("issues", []),
+    }
 
 
 @router.post("/calendar/ics")
@@ -208,7 +227,11 @@ def clear_memory(user_id: str | None = Query(default=None)) -> dict[str, Any]:
 
 
 @router.get("/memory/search")
-def search_memory(query: str = Query(default=""), limit: int = Query(default=5, ge=1, le=20), user_id: str = Query(default="default")) -> dict[str, Any]:
+def search_memory(
+    query: str = Query(default=""),
+    limit: int = Query(default=5, ge=1, le=20),
+    user_id: str = Query(default="default"),
+) -> dict[str, Any]:
     return {"items": MemoryService().semantic_search(query, limit=limit, user_id=user_id)}
 
 

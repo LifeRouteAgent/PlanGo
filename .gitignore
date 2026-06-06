@@ -21,3 +21,4 @@ Thumbs.db
 *.tsbuildinfo
 .vscode/
 backend/data/runtime/
+.idea/

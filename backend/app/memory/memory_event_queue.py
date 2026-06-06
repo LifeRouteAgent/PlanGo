@@ -156,7 +156,9 @@ class MemoryEventQueue:
                     event.get("plan") if isinstance(event.get("plan"), dict) else {},
                     user_id=user_id,
                     stage=str(event.get("stage") or "plan_selected"),
-                    feedback=event.get("feedback") if isinstance(event.get("feedback"), dict) else {},
+                    feedback=(
+                        event.get("feedback") if isinstance(event.get("feedback"), dict) else {}
+                    ),
                 )
             else:
                 self.memory.observe_user_query(

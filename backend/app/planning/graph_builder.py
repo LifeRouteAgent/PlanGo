@@ -209,7 +209,9 @@ def _business_event_payload(
                 "intent_parsed",
                 {
                     "request_type": understanding.intent.request_type,
-                    "target_categories": list(understanding.poi_recall_intent.target_logical_categories),
+                    "target_categories": list(
+                        understanding.poi_recall_intent.target_logical_categories
+                    ),
                     "slot_count": len(understanding.slots.required_slots),
                 },
             )
@@ -229,20 +231,31 @@ def _business_event_payload(
         return ("poi_scored", {"total_count": sum(len(items) for items in scored.values())})
     if name == "candidate_pool_balancer":
         candidates = patch.get("candidates")
-        balanced = candidates.balanced_candidates if candidates else state.candidates.balanced_candidates
-        return ("poi_filtered", {"balanced_counts": {slot: len(items) for slot, items in balanced.items()}})
+        balanced = (
+            candidates.balanced_candidates if candidates else state.candidates.balanced_candidates
+        )
+        return (
+            "poi_filtered",
+            {"balanced_counts": {slot: len(items) for slot, items in balanced.items()}},
+        )
     if name == "route_planner":
         plans = patch.get("plans")
         return ("plan_generated", {"plan_count": len(plans.candidate_plans) if plans else 0})
     if name == "availability_checker":
         plans = patch.get("plans")
-        return ("plan_validated", {"available_plan_count": len(plans.candidate_plans) if plans else 0})
+        return (
+            "plan_validated",
+            {"available_plan_count": len(plans.candidate_plans) if plans else 0},
+        )
     if name == "failure_analyzer":
         debug = patch.get("debug")
         reason = (debug.recall_debug if debug else state.debug.recall_debug).get("failure_reason")
         return ("plan_insufficient", {"failure_reason": reason or "unknown"})
     if name == "fallback_relaxation":
-        return ("constraint_relaxed", {"failure_reason": state.debug.recall_debug.get("failure_reason") or "unknown"})
+        return (
+            "constraint_relaxed",
+            {"failure_reason": state.debug.recall_debug.get("failure_reason") or "unknown"},
+        )
     if name == "final_ranker":
         plans = patch.get("plans")
         return ("plan_ranked", {"plan_count": len(plans.ranked_plans) if plans else 0})
@@ -255,7 +268,11 @@ planning_graph_v2 = build_planning_graph_v2()
 
 
 def run_planning_graph(input_data: PlanningState | dict[str, Any]) -> PlanningState:
-    state = input_data if isinstance(input_data, PlanningState) else PlanningState.model_validate(input_data)
+    state = (
+        input_data
+        if isinstance(input_data, PlanningState)
+        else PlanningState.model_validate(input_data)
+    )
     result = planning_graph_v2.invoke(state)
     return result if isinstance(result, PlanningState) else PlanningState.model_validate(result)
 

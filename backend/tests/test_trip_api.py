@@ -52,6 +52,7 @@ def test_agent_thinking_payload_hides_internal_english_logs() -> None:
     assert all("restaurant" not in event["message"] for event in events)
     assert all("lifestyle" not in event["message"] for event in events)
 
+
 def test_trace_events_expose_product_progress_without_raw_state() -> None:
     """SSE ???????? V2 ??????????? PlanState ??? POI ???"""
 
@@ -98,6 +99,7 @@ def test_trace_events_expose_product_progress_without_raw_state() -> None:
     assert route_events[0][0] == "route_candidate_built"
     assert ranker_events[0][0] == "plan_ranked"
     assert route_events[0][1]["candidate_plan_count"] == 1
+
 
 def test_adjust_plan_recalculates_route_budget_and_issues() -> None:
     """局部替换某一站后，应重新计算路线、时间线、预算和 Verifier 结果。"""

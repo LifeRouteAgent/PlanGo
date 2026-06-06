@@ -57,7 +57,9 @@ class PlanningException(AppException):
 
 
 class NoCandidatePOIException(PlanningException):
-    def __init__(self, message: str = "没有可用候选 POI", details: dict[str, Any] | None = None) -> None:
+    def __init__(
+        self, message: str = "没有可用候选 POI", details: dict[str, Any] | None = None
+    ) -> None:
         super().__init__(message, details or {})
         self.error_code = "NO_CANDIDATE_POI"
 

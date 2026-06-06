@@ -65,12 +65,10 @@ def extract_session_preference_profile(
     """
 
     text = query or ""
-    preferred_categories = _dedupe(
-        [
-            *_categories_from_understanding(understanding),
-            *_categories_from_keywords(text),
-        ]
-    )
+    preferred_categories = _dedupe([
+        *_categories_from_understanding(understanding),
+        *_categories_from_keywords(text),
+    ])
     activity_preferences = _matched_keywords(text, ACTIVITY_KEYWORDS)
     dining_preferences = _matched_keywords(text, DINING_KEYWORDS)
     route_preferences = [
@@ -79,13 +77,11 @@ def extract_session_preference_profile(
         if any(keyword in text for keyword in keywords)
     ]
     negative_preferences = _negative_preferences(text)
-    soft_preferences = _dedupe(
-        [
-            *_safe_terms(activity_preferences),
-            *_safe_terms(dining_preferences),
-            *_safe_terms(_keywords_from_understanding(understanding)),
-        ]
-    )
+    soft_preferences = _dedupe([
+        *_safe_terms(activity_preferences),
+        *_safe_terms(dining_preferences),
+        *_safe_terms(_keywords_from_understanding(understanding)),
+    ])
     hard_constraints = _hard_constraints_from_understanding(understanding)
     if route_preferences:
         hard_constraints["route_preferences"] = route_preferences
@@ -118,7 +114,9 @@ def extract_session_preference_profile(
         soft_preferences=soft_preferences,
         negative_preferences=_safe_terms(negative_preferences),
         preferred_categories=preferred_categories,
-        confidence=0.82 if soft_preferences or preferred_categories or negative_preferences else 0.5,
+        confidence=(
+            0.82 if soft_preferences or preferred_categories or negative_preferences else 0.5
+        ),
     )
 
 
@@ -172,9 +170,7 @@ def _negative_preferences(text: str) -> list[str]:
         if any(marker in prefix for marker in NEGATIVE_MARKERS):
             result.append(keyword)
             result.extend(
-                category
-                for category, keywords in CATEGORY_KEYWORDS.items()
-                if keyword in keywords
+                category for category, keywords in CATEGORY_KEYWORDS.items() if keyword in keywords
             )
     return _dedupe(result)
 

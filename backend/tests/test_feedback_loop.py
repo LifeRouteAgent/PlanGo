@@ -11,6 +11,9 @@ def test_v2_records_retry_or_failure_context_without_v1_replan_loop() -> None:
 
     assert "availability_checker" in nodes
     assert "final_ranker" in nodes
-    assert state.response.response_payload["response_type"] in {"plan_cards", "plan_adjustment_result"}
+    assert state.response.response_payload["response_type"] in {
+        "plan_cards",
+        "plan_adjustment_result",
+    }
     assert state.response.response_payload.get("plans") is not None
     assert "raw_candidates" not in state.response.response_payload

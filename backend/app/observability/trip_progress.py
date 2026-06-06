@@ -43,36 +43,63 @@ def trace_events_for_node(
     del patch
     state = current_state or {}
     if node_name in {"intent_router", "intent_resolver"}:
-        return [("intent_detected", {
-            "stage": "understanding", "title": "理解需求", "message": "已识别请求类型和目标类别。",
-            "intent_type": state.get("intent_type", ""), "answer_mode": state.get("answer_mode", ""),
-            "target_categories": _safe_list(state.get("target_categories")),
-        })]
+        return [(
+            "intent_detected",
+            {
+                "stage": "understanding",
+                "title": "理解需求",
+                "message": "已识别请求类型和目标类别。",
+                "intent_type": state.get("intent_type", ""),
+                "answer_mode": state.get("answer_mode", ""),
+                "target_categories": _safe_list(state.get("target_categories")),
+            },
+        )]
     if node_name in {"planner"}:
         plan = state.get("dag_plan") or state.get("planning_strategy") or {}
-        return [("planning_strategy_selected", {
-            "stage": "planning", "title": "选择规划策略", "message": "已确定规划策略和活动槽位。",
-            "planning_template": plan.get("planning_template", ""),
-            "collector_categories": _safe_list(plan.get("collector_categories")),
-            "slot_sequence": _safe_list(plan.get("slot_sequence") or plan.get("required_slots")),
-            "movement_policy": plan.get("movement_policy", ""), "candidate_strategy": plan.get("candidate_strategy", ""),
-        })]
+        return [(
+            "planning_strategy_selected",
+            {
+                "stage": "planning",
+                "title": "选择规划策略",
+                "message": "已确定规划策略和活动槽位。",
+                "planning_template": plan.get("planning_template", ""),
+                "collector_categories": _safe_list(plan.get("collector_categories")),
+                "slot_sequence": _safe_list(
+                    plan.get("slot_sequence") or plan.get("required_slots")
+                ),
+                "movement_policy": plan.get("movement_policy", ""),
+                "candidate_strategy": plan.get("candidate_strategy", ""),
+            },
+        )]
     if node_name in {"route_planner"}:
         plans = state.get("candidate_plans") or []
         first = plans[0] if plans and isinstance(plans[0], dict) else {}
-        return [("route_candidate_built", {
-            "stage": "routing", "title": "生成动线", "message": f"已组合 {len(plans)} 个带时间线的候选方案。",
-            "candidate_plan_count": len(plans), "best_duration_minutes": first.get("total_duration_minutes"),
-            "best_route_minutes": first.get("route_minutes"), "best_budget": first.get("estimated_budget"),
-        })]
+        return [(
+            "route_candidate_built",
+            {
+                "stage": "routing",
+                "title": "生成动线",
+                "message": f"已组合 {len(plans)} 个带时间线的候选方案。",
+                "candidate_plan_count": len(plans),
+                "best_duration_minutes": first.get("total_duration_minutes"),
+                "best_route_minutes": first.get("route_minutes"),
+                "best_budget": first.get("estimated_budget"),
+            },
+        )]
     if node_name in {"pre_ranker", "final_ranker", "single_category_ranker"}:
         plans = state.get("ranked_plans") or []
         first = plans[0] if plans and isinstance(plans[0], dict) else {}
-        return [("plan_ranked", {
-            "stage": "ranking_plans", "title": "方案排序", "message": f"已综合排序出 {len(plans)} 个方案。",
-            "ranked_count": len(plans), "selected_plan_id": first.get("id") or first.get("plan_id"),
-            "top_plan_score": first.get("plan_score"),
-        })]
+        return [(
+            "plan_ranked",
+            {
+                "stage": "ranking_plans",
+                "title": "方案排序",
+                "message": f"已综合排序出 {len(plans)} 个方案。",
+                "ranked_count": len(plans),
+                "selected_plan_id": first.get("id") or first.get("plan_id"),
+                "top_plan_score": first.get("plan_score"),
+            },
+        )]
     return []
 
 
@@ -93,4 +120,3 @@ def effective_query_for_request(saved_session: dict[str, Any] | None, current_qu
 
 def _safe_list(value: Any) -> list[Any]:
     return value if isinstance(value, list) else []
-

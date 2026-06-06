@@ -1,6 +1,7 @@
 from app.planning.state.base import *  # noqa: F403
 from app.planning.state.context import OriginPoint
 
+
 class HardConstraints(StateModel):
     city: str | None = None
     origin: OriginPoint | None = None
@@ -71,4 +72,3 @@ class FinalConstraints(StateModel):
     rating_policy: RatingPolicy = Field(default_factory=RatingPolicy)
     fallback_policy: FallbackPolicy = Field(default_factory=FallbackPolicy)
     merge_policy_applied: dict[str, str] = Field(default_factory=dict)
-

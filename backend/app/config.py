@@ -84,7 +84,7 @@ def _get_int(config: dict[str, Any], key: str, default: int) -> int:
 
     try:
         return int(os.environ.get(key, config.get(key, default)))
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return default
 
 
@@ -99,7 +99,9 @@ class Settings:
     redis_url: str = _get(_CONFIG, "REDIS_URL", "")
     es_url: str = _get(_CONFIG, "ES_URL", "")
     llm_provider: str = _get(_CONFIG, "LLM_PROVIDER", "deepseek")
-    llm_model: str = _get_alias(_CONFIG, ("LLM_MODEL", "DEEPSEEK_MODEL", "MIMO_MODEL"), "deepseek-v4-pro")
+    llm_model: str = _get_alias(
+        _CONFIG, ("LLM_MODEL", "DEEPSEEK_MODEL", "MIMO_MODEL"), "deepseek-v4-pro"
+    )
     llm_timeout: int = _get_int(_CONFIG, "LLM_TIMEOUT", 60)
     max_recent_turns: int = _get_int(_CONFIG, "MAX_RECENT_TURNS", 8)
     max_memory_items: int = _get_int(_CONFIG, "MAX_MEMORY_ITEMS", 20)
@@ -148,4 +150,3 @@ class Settings:
 
 
 settings = Settings()
-

@@ -19,7 +19,8 @@ def session_state_saver_node(value: PlanningState | dict[str, Any]) -> dict[str,
             state=safe,
             response=safe,
             is_revision=bool(
-                state.llm_understanding and state.llm_understanding.intent.request_type == "plan_adjustment"
+                state.llm_understanding
+                and state.llm_understanding.intent.request_type == "plan_adjustment"
             ),
         )
     return {"debug": append_trace(state, "session_state_saver", "会话摘要已保存")}

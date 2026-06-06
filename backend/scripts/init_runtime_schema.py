@@ -11,7 +11,6 @@ if str(ROOT) not in sys.path:
 
 from app.config import settings  # noqa: E402
 
-
 DDL = [
     """
     CREATE TABLE IF NOT EXISTS runtime_sessions (

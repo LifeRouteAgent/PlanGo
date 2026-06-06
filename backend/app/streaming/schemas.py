@@ -5,7 +5,6 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-
 ProgressStatus = Literal["pending", "running", "success", "warning", "failed"]
 
 

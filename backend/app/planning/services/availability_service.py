@@ -57,6 +57,7 @@ from app.planning.payloads import normalize_response_payload
 from app.planning.services.common import *
 from app.planning.services.ranking_service import _candidate_index
 
+
 def check_plan_availability(
     candidate_plans: list[CandidatePlan],
     scored: dict[str, list[ScoredPOICandidate]],
@@ -93,6 +94,7 @@ def check_plan_availability(
             filtered.append(plan)
     return AvailabilityResults(by_poi=by_poi), filtered, warnings_by_plan
 
+
 def analyze_failure_reason(
     raw: dict[str, list[SafePOICandidate]],
     balanced: dict[str, list[ScoredPOICandidate]],
@@ -107,7 +109,8 @@ def analyze_failure_reason(
     if not candidate_plans:
         return "route_infeasible"
     failed_availability = [
-        item for item in availability.by_poi.values()
+        item
+        for item in availability.by_poi.values()
         if item.open_status == "closed"
         or item.reservation_available is False
         or item.queue_risk == "high"
@@ -117,6 +120,7 @@ def analyze_failure_reason(
     if len(checked_plans) < 3:
         return "category_diversity_insufficient"
     return "unknown"
+
 
 def relax_constraints_for_failure(
     constraints: FinalConstraints, recall: LogicalRecallPlan, reason: str, iteration: int
@@ -128,7 +132,10 @@ def relax_constraints_for_failure(
         30,
     )
     relaxed.distance_policy.max_pair_distance_km = min(
-        max(relaxed.distance_policy.max_pair_distance_km * 1.35, relaxed.distance_policy.fallback_radius_km),
+        max(
+            relaxed.distance_policy.max_pair_distance_km * 1.35,
+            relaxed.distance_policy.fallback_radius_km,
+        ),
         30,
     )
     relaxed.rating_policy.min_rating_initial = max(
@@ -145,8 +152,11 @@ def relax_constraints_for_failure(
             if iteration >= 1:
                 requirement.positive_logic_tags = requirement.positive_logic_tags[:1]
     if reason == "route_infeasible":
-        relaxed.hard_constraints.max_route_minutes = int((relaxed.hard_constraints.max_route_minutes or 90) * 1.25)
+        relaxed.hard_constraints.max_route_minutes = int(
+            (relaxed.hard_constraints.max_route_minutes or 90) * 1.25
+        )
     return relaxed, relaxed_recall
+
 
 def _mock_availability(item: ScoredPOICandidate) -> POIAvailability:
     raw_open = str(item.raw_extra.get("open_status") or "unknown").lower()
@@ -154,7 +164,10 @@ def _mock_availability(item: ScoredPOICandidate) -> POIAvailability:
     if open_status not in {"open", "closed", "open_unknown"}:
         open_status = "open"
     seed = sum(ord(char) for char in item.poi_id + item.name)
-    reservation_required = item.logical_category in {"restaurant", "activity", "entertainment", "beauty"} or (item.rating or 0) >= 4.6
+    reservation_required = (
+        item.logical_category in {"restaurant", "activity", "entertainment", "beauty"}
+        or (item.rating or 0) >= 4.6
+    )
     reservation_available = None if not reservation_required else seed % 53 != 0
     queue_risk = "high" if seed % 41 == 0 else "medium" if (item.rating or 0) >= 4.7 else "low"
     ticket_available = "available"
@@ -173,4 +186,3 @@ def _mock_availability(item: ScoredPOICandidate) -> POIAvailability:
         table_available=table_available,
         source="mock_availability_v2",
     )
-

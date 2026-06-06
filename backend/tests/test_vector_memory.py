@@ -134,7 +134,10 @@ def test_plan_feedback_uses_stage_weights_for_profile_confidence() -> None:
 
     assert after_export["favorite_categories"]["poi_entertainment"] == 1.1
     assert after_execute["favorite_categories"]["poi_entertainment"] == 3.3
-    assert after_execute["category_confidence"]["poi_entertainment"] > after_export["category_confidence"]["poi_entertainment"]
+    assert (
+        after_execute["category_confidence"]["poi_entertainment"]
+        > after_export["category_confidence"]["poi_entertainment"]
+    )
     assert fake_store.memories[-1].memory_type == "plan_executed"
     assert fake_store.memories[-1].weight == 2.2
 

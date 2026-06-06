@@ -15,8 +15,15 @@ from app.planning.state import POILogicalTagCatalog, POITableTagInfo
 from app.repositories.poi_repository import CATEGORY_SQL_SPECS
 
 NORMALIZED_RETURN_FIELDS = [
-    "poi_id", "name", "subcategory", "logic_tags", "address",
-    "lat", "lng", "rating", "avg_price",
+    "poi_id",
+    "name",
+    "subcategory",
+    "logic_tags",
+    "address",
+    "lat",
+    "lng",
+    "rating",
+    "avg_price",
 ]
 CATEGORY_NAMES = {
     "restaurant": "餐厅美食",
@@ -136,7 +143,11 @@ class PoiCatalogService:
             for alias, hint in SEMANTIC_ALIAS_HINTS.items():
                 if hint["category"] != category:
                     continue
-                target = negative if alias in negative_text else positive if alias in positive_text else None
+                target = (
+                    negative
+                    if alias in negative_text
+                    else positive if alias in positive_text else None
+                )
                 if target is None:
                     continue
                 target.extend(tag for tag in available if tag in hint["tags"])
@@ -167,7 +178,9 @@ class PoiCatalogService:
                 _cache = self._load_from_database(now)
             except Exception:  # noqa: BLE001
                 _cache = CatalogSnapshot(
-                    physical_fields={spec.table: list(spec.filter_fields) for spec in CATEGORY_SQL_SPECS.values()},
+                    physical_fields={
+                        spec.table: list(spec.filter_fields) for spec in CATEGORY_SQL_SPECS.values()
+                    },
                     tags={category: list(tags) for category, tags in FALLBACK_TAGS.items()},
                     loaded_at=now,
                 )
@@ -191,7 +204,9 @@ class PoiCatalogService:
                     )
                     columns = [str(row["COLUMN_NAME"]) for row in cursor.fetchall()]
                     physical_fields[spec.table] = columns
-                    tags[logical] = self._load_tags(cursor, spec.table, spec.tag_fields, set(columns))
+                    tags[logical] = self._load_tags(
+                        cursor, spec.table, spec.tag_fields, set(columns)
+                    )
         return CatalogSnapshot(physical_fields=physical_fields, tags=tags, loaded_at=loaded_at)
 
     def _load_tags(
@@ -205,14 +220,12 @@ class PoiCatalogService:
         for field in tag_fields:
             if field not in existing_fields:
                 continue
-            cursor.execute(
-                f"""
+            cursor.execute(f"""
                 SELECT CAST(`{field}` AS CHAR) AS tag_value, COUNT(*) AS tag_count
                 FROM `{table}`
                 WHERE `{field}` IS NOT NULL AND TRIM(CAST(`{field}` AS CHAR)) <> ''
                 GROUP BY `{field}`
-                """
-            )
+                """)
             for row in cursor.fetchall():
                 count = int(row.get("tag_count") or 0)
                 for tag in self._split_tags(row.get("tag_value")):
@@ -223,7 +236,8 @@ class PoiCatalogService:
         selected = list(all_tags[:PROMPT_TOP_TAGS_PER_CATEGORY])
         lowered = query.lower()
         matched = [
-            tag for tag in all_tags
+            tag
+            for tag in all_tags
             if tag.lower() in lowered or (len(query) >= 2 and lowered in tag.lower())
         ]
         for alias, hint in SEMANTIC_ALIAS_HINTS.items():

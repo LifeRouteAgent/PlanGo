@@ -4,7 +4,11 @@ from app.api.schemas.trip import TripPlanRequest
 from app.llm.prompt_registry import get_prompt_spec
 from app.runtime.runtime_store import FileRuntimeStore, get_runtime_store
 from app.observability.trace_recorder import TraceRecorder
-from app.planning.trip_services import TripPlanningService, TripRevisionService, TripStreamingService
+from app.planning.trip_services import (
+    TripPlanningService,
+    TripRevisionService,
+    TripStreamingService,
+)
 
 
 def test_file_runtime_store_roundtrip_core_records() -> None:
@@ -13,13 +17,16 @@ def test_file_runtime_store_roundtrip_core_records() -> None:
     store = FileRuntimeStore()
     store.save_session("sess_runtime_unit", {"session_id": "sess_runtime_unit", "value": 1})
     store.save_task("task_runtime_unit", {"task_id": "task_runtime_unit", "status": "CREATED"})
-    store.put_tool_cache("cache_runtime_unit", {
-        "cache_key": "cache_runtime_unit",
-        "tool_name": "unit.tool",
-        "request_hash": "hash",
-        "result_summary": {"ok": True},
-        "expires_at": "2999-01-01T00:00:00Z",
-    })
+    store.put_tool_cache(
+        "cache_runtime_unit",
+        {
+            "cache_key": "cache_runtime_unit",
+            "tool_name": "unit.tool",
+            "request_hash": "hash",
+            "result_summary": {"ok": True},
+            "expires_at": "2999-01-01T00:00:00Z",
+        },
+    )
 
     assert store.load_session("sess_runtime_unit")["value"] == 1
     assert store.load_task("task_runtime_unit")["status"] == "CREATED"

@@ -10,7 +10,13 @@ import pymysql
 from pymysql.cursors import DictCursor
 
 from app.config import settings
-from app.runtime.runtime_paths import SESSIONS_DIR, TASKS_DIR, TOOL_CACHE_DIR, TRACES_DIR, ensure_runtime_dirs
+from app.runtime.runtime_paths import (
+    SESSIONS_DIR,
+    TASKS_DIR,
+    TOOL_CACHE_DIR,
+    TRACES_DIR,
+    ensure_runtime_dirs,
+)
 
 
 class NodeMetricRecord(TypedDict, total=False):
@@ -163,7 +169,9 @@ class MySqlRuntimeStore:
         self._check_connection()
 
     def load_session(self, session_id: str) -> dict[str, Any] | None:
-        row = self._fetch_one("SELECT payload FROM runtime_sessions WHERE session_id=%s", session_id)
+        row = self._fetch_one(
+            "SELECT payload FROM runtime_sessions WHERE session_id=%s", session_id
+        )
         return _loads_payload(row["payload"]) if row else None
 
     def save_session(self, session_id: str, payload: dict[str, Any]) -> None:
@@ -203,8 +211,12 @@ class MySqlRuntimeStore:
         )
 
     def list_tasks(self) -> list[dict[str, Any]]:
-        rows = self._fetch_all("SELECT payload FROM runtime_tasks ORDER BY updated_at DESC LIMIT 500")
-        return [payload for row in rows if isinstance((payload := _loads_payload(row["payload"])), dict)]
+        rows = self._fetch_all(
+            "SELECT payload FROM runtime_tasks ORDER BY updated_at DESC LIMIT 500"
+        )
+        return [
+            payload for row in rows if isinstance((payload := _loads_payload(row["payload"])), dict)
+        ]
 
     def get_tool_cache(self, key: str) -> dict[str, Any] | None:
         row = self._fetch_one(
@@ -253,7 +265,9 @@ class MySqlRuntimeStore:
             "SELECT payload FROM runtime_trace_events WHERE trace_id=%s ORDER BY id ASC",
             trace_id,
         )
-        return [payload for row in rows if isinstance((payload := _loads_payload(row["payload"])), dict)]
+        return [
+            payload for row in rows if isinstance((payload := _loads_payload(row["payload"])), dict)
+        ]
 
     def record_node_metric(self, metric: NodeMetricRecord) -> None:
         self._execute(
@@ -291,8 +305,7 @@ class MySqlRuntimeStore:
                 trace_id,
             )
         else:
-            rows = self._fetch_all(
-                """
+            rows = self._fetch_all("""
                 SELECT trace_id, run_id, session_id, node_name,
                        UNIX_TIMESTAMP(started_at) AS started_ts,
                        UNIX_TIMESTAMP(ended_at) AS ended_ts,
@@ -300,8 +313,7 @@ class MySqlRuntimeStore:
                 FROM runtime_node_metrics
                 ORDER BY created_at DESC
                 LIMIT 500
-                """
-            )
+                """)
         return [_metric_from_row(row) for row in rows]
 
     def health(self) -> dict[str, Any]:
@@ -334,7 +346,9 @@ class MySqlRuntimeStore:
 class ResilientRuntimeStore:
     """MySQL 优先、文件 fallback 的运行态存储。"""
 
-    def __init__(self, primary: RuntimeStore | None, fallback: FileRuntimeStore, primary_error: str = "") -> None:
+    def __init__(
+        self, primary: RuntimeStore | None, fallback: FileRuntimeStore, primary_error: str = ""
+    ) -> None:
         self.primary = primary
         self.fallback = fallback
         self.primary_error = primary_error
@@ -404,13 +418,15 @@ def _read_json(path: Path) -> dict[str, Any] | None:
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
         return payload if isinstance(payload, dict) else None
-    except (OSError, json.JSONDecodeError):
+    except OSError, json.JSONDecodeError:
         return None
 
 
 def _write_json(path: Path, payload: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
+    path.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2, default=str), encoding="utf-8"
+    )
 
 
 def _dumps_payload(payload: Any) -> str:

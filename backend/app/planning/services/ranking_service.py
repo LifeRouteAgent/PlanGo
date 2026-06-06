@@ -56,6 +56,7 @@ from app.planning.payloads import normalize_response_payload
 
 from app.planning.services.common import *
 
+
 def rank_route_plans(
     candidate_plans: list[CandidatePlan],
     scored: dict[str, list[ScoredPOICandidate]],
@@ -82,20 +83,18 @@ def rank_route_plans(
             - features.warning_penalty * 20,
             2,
         )
-        ranked_pairs.append(
-            (
-                plan,
-                RankedPlan(
-                    plan_id=plan.plan_id,
-                    rank=0,
-                    plan_score=max(0, score),
-                    rank_label="candidate",
-                    rank_features=features,
-                    why_ranked_high=_plan_rank_reasons(features),
-                    tradeoffs=_plan_tradeoffs(features),
-                ),
-            )
-        )
+        ranked_pairs.append((
+            plan,
+            RankedPlan(
+                plan_id=plan.plan_id,
+                rank=0,
+                plan_score=max(0, score),
+                rank_label="candidate",
+                rank_features=features,
+                why_ranked_high=_plan_rank_reasons(features),
+                tradeoffs=_plan_tradeoffs(features),
+            ),
+        ))
     ranked_pairs.sort(key=lambda pair: pair[1].plan_score, reverse=True)
     selected_plans: list[CandidatePlan] = []
     ranked_plans: list[RankedPlan] = []
@@ -125,8 +124,10 @@ def rank_route_plans(
         ranked_plans.append(ranked)
     return selected_plans, ranked_plans
 
+
 def _candidate_index(scored: dict[str, list[ScoredPOICandidate]]) -> dict[str, ScoredPOICandidate]:
     return {item.poi_id: item for group in scored.values() for item in group}
+
 
 def _plan_rank_features(
     plan: CandidatePlan,
@@ -138,12 +139,26 @@ def _plan_rank_features(
     if not items:
         return PlanRankFeatures(warning_penalty=1)
     avg_score = sum(item.final_poi_score for item in items) / max(1, len(items)) / 100
-    distance = 1 - min(1, (plan.route_summary.total_route_minutes or 0) / max(1, constraints.hard_constraints.max_route_minutes or 90))
-    total_minutes = sum(slot.duration_minutes or 0 for slot in plan.slots) + (plan.route_summary.total_route_minutes or 0)
-    time_fit = 1 - min(1, total_minutes / max(1, (constraints.hard_constraints.max_total_duration_minutes or 270) * 1.4))
-    budget_fit = {"good": 1.0, "unknown": 0.75, "slightly_over": 0.55, "over": 0.2}.get(plan.budget_summary.budget_fit, 0.6)
+    distance = 1 - min(
+        1,
+        (plan.route_summary.total_route_minutes or 0)
+        / max(1, constraints.hard_constraints.max_route_minutes or 90),
+    )
+    total_minutes = sum(slot.duration_minutes or 0 for slot in plan.slots) + (
+        plan.route_summary.total_route_minutes or 0
+    )
+    time_fit = 1 - min(
+        1,
+        total_minutes
+        / max(1, (constraints.hard_constraints.max_total_duration_minutes or 270) * 1.4),
+    )
+    budget_fit = {"good": 1.0, "unknown": 0.75, "slightly_over": 0.55, "over": 0.2}.get(
+        plan.budget_summary.budget_fit, 0.6
+    )
     rating = sum((item.rating or 4.0) / 5 for item in items) / max(1, len(items))
-    diversity = len({(item.logical_category, item.subcategory) for item in items}) / max(1, len(items))
+    diversity = len({(item.logical_category, item.subcategory) for item in items}) / max(
+        1, len(items)
+    )
     warning = 0.0
     if availability:
         for item in items:
@@ -163,6 +178,7 @@ def _plan_rank_features(
         diversity_bonus=diversity,
     )
 
+
 def _plan_rank_reasons(features: PlanRankFeatures) -> list[str]:
     reasons: list[str] = []
     if features.preference_match >= 0.7:
@@ -175,6 +191,7 @@ def _plan_rank_reasons(features: PlanRankFeatures) -> list[str]:
         reasons.append("类型丰富")
     return reasons or ["综合排序靠前"]
 
+
 def _plan_tradeoffs(features: PlanRankFeatures) -> list[str]:
     tradeoffs: list[str] = []
     if features.warning_penalty:
@@ -184,4 +201,3 @@ def _plan_tradeoffs(features: PlanRankFeatures) -> list[str]:
     if features.distance_reasonable < 0.4:
         tradeoffs.append("路程偏长")
     return tradeoffs
-

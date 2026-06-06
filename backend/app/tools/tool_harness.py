@@ -132,7 +132,9 @@ class ToolHarness:
 
         policy = policy or ToolPolicy()
         request = dict(request)
-        request["requires_confirmation"] = policy.requires_confirmation(int(request.get("risk_level", 1)))
+        request["requires_confirmation"] = policy.requires_confirmation(
+            int(request.get("risk_level", 1))
+        )
         if int(request.get("risk_level", 1)) >= 3:
             request["idempotency_key"] = policy.ensure_idempotency_key(request)
         record_trace_event("tool_requested", _redact_request(request))
@@ -313,9 +315,7 @@ def _result_summary(data: Any) -> dict[str, Any]:
             "type": "dict",
             "keys": sorted(str(key) for key in data.keys())[:30],
             "counts": {
-                str(key): len(value)
-                for key, value in data.items()
-                if isinstance(value, list)
+                str(key): len(value) for key, value in data.items() if isinstance(value, list)
             },
         }
     if isinstance(data, list):

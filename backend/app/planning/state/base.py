@@ -25,4 +25,3 @@ LEGACY_CATEGORIES = {category: f"poi_{category}" for category in PHYSICAL_TABLES
 
 class StateModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
-

@@ -22,7 +22,11 @@ def plan_to_markdown(plan: dict[str, Any]) -> str:
         "",
     ]
 
-    reason = plan.get("recommendation_reason") or plan.get("fit_summary") or "该方案基于当前偏好、距离和时间窗口生成。"
+    reason = (
+        plan.get("recommendation_reason")
+        or plan.get("fit_summary")
+        or "该方案基于当前偏好、距离和时间窗口生成。"
+    )
     lines.extend(["## 推荐理由", "", str(reason), ""])
 
     pros = [str(item) for item in plan.get("pros", []) if item]
@@ -54,7 +58,9 @@ def plan_to_markdown(plan: dict[str, Any]) -> str:
             if not isinstance(item, dict):
                 continue
             lines.append(f"### {index}. {item.get('name', '未知地点')}")
-            lines.append(f"- 类别：{item.get('category', '本地生活')} / {item.get('subcategory', '未分类')}")
+            lines.append(
+                f"- 类别：{item.get('category', '本地生活')} / {item.get('subcategory', '未分类')}"
+            )
             lines.append(f"- 地址：{item.get('address', '地址待确认')}")
             if item.get("rating") not in (None, ""):
                 lines.append(f"- 评分：{item.get('rating')}")
@@ -63,12 +69,16 @@ def plan_to_markdown(plan: dict[str, Any]) -> str:
             reason = item.get("recommendation_reason") or item.get("reason")
             if reason:
                 lines.append(f"- 推荐理由：{reason}")
-            options = item.get("option_prompts") if isinstance(item.get("option_prompts"), list) else []
+            options = (
+                item.get("option_prompts") if isinstance(item.get("option_prompts"), list) else []
+            )
             if options:
                 lines.append("- 可选调整：" + "；".join(str(option) for option in options[:4]))
             lines.append("")
 
-    route_segments = plan.get("route_segments") if isinstance(plan.get("route_segments"), list) else []
+    route_segments = (
+        plan.get("route_segments") if isinstance(plan.get("route_segments"), list) else []
+    )
     if route_segments:
         lines.extend(["## 路线与交通", ""])
         for segment in route_segments:
@@ -87,7 +97,9 @@ def plan_to_markdown(plan: dict[str, Any]) -> str:
         lines.extend(["## 校验提示", ""])
         for issue in issues[:8]:
             if isinstance(issue, dict):
-                lines.append(f"- {issue.get('message', '存在待确认风险')}（建议：{issue.get('suggestion', '请确认后执行')}）")
+                lines.append(
+                    f"- {issue.get('message', '存在待确认风险')}（建议：{issue.get('suggestion', '请确认后执行')}）"
+                )
         lines.append("")
 
     return "\n".join(lines).strip() + "\n"
@@ -186,9 +198,13 @@ def build_markdown_pdf(plan: dict[str, Any]) -> bytes:
             story.append(Paragraph(_escape(line[4:]), h3))
         elif line.startswith("- "):
             content = line[2:]
-            if content.startswith(("方案评分：", "总时长：", "路线时间：", "总距离：", "预算估算：")):
+            if content.startswith(
+                ("方案评分：", "总时长：", "路线时间：", "总距离：", "预算估算：")
+            ):
                 key, _, value = content.partition("：")
-                overview_rows.append([Paragraph(_escape(key), base), Paragraph(_escape(value), base)])
+                overview_rows.append(
+                    [Paragraph(_escape(key), base), Paragraph(_escape(value), base)]
+                )
             else:
                 story.append(Paragraph("• " + _escape(content), bullet))
         else:
@@ -213,19 +229,17 @@ def _overview_table(
 
     table = table_cls(rows, colWidths=[42 * mm, 110 * mm])
     table.setStyle(
-        style_cls(
-            [
-                ("FONTNAME", (0, 0), (-1, -1), "STSong-Light"),
-                ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#f3f4f6")),
-                ("TEXTCOLOR", (0, 0), (-1, -1), colors.HexColor("#111827")),
-                ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#e5e7eb")),
-                ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                ("LEFTPADDING", (0, 0), (-1, -1), 7),
-                ("RIGHTPADDING", (0, 0), (-1, -1), 7),
-                ("TOPPADDING", (0, 0), (-1, -1), 6),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
-            ]
-        )
+        style_cls([
+            ("FONTNAME", (0, 0), (-1, -1), "STSong-Light"),
+            ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#f3f4f6")),
+            ("TEXTCOLOR", (0, 0), (-1, -1), colors.HexColor("#111827")),
+            ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#e5e7eb")),
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 7),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 7),
+            ("TOPPADDING", (0, 0), (-1, -1), 6),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+        ])
     )
     return table
 
@@ -234,9 +248,5 @@ def _escape(text: Any) -> str:
     """把 Markdown 文本安全转换为 ReportLab Paragraph 可渲染文本。"""
 
     return (
-        str(text)
-        .replace("&", "&amp;")
-        .replace("<", "&lt;")
-        .replace(">", "&gt;")
-        .replace("**", "")
+        str(text).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("**", "")
     )

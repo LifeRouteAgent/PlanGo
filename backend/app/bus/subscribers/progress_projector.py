@@ -38,10 +38,26 @@ BUSINESS_MESSAGES: dict[str, tuple[str, str, str]] = {
     "plan_generated": ("progress", "已生成初步方案", "已组合出初步方案，正在检查可执行性。"),
     "plan_validated": ("progress", "已检查方案可用性", "已检查营业、预约、排队和库存风险。"),
     "plan_ranked": ("progress", "已完成方案排序", "已选出当前最合适的候选方案。"),
-    "constraint_relaxed": ("warning", "已适度放宽条件", "候选不足，已在不违背核心需求的前提下放宽条件。"),
-    "plan_insufficient": ("warning", "方案数量不足", "当前可用方案较少，系统正在尝试放宽非核心条件。"),
-    "partial_result_used": ("warning", "使用部分结果", "部分信息不可用，系统会用已确认的信息继续规划。"),
-    "tool_failed": ("warning", "部分信息暂时不可用", "部分工具查询失败，系统正在使用可用信息继续规划。"),
+    "constraint_relaxed": (
+        "warning",
+        "已适度放宽条件",
+        "候选不足，已在不违背核心需求的前提下放宽条件。",
+    ),
+    "plan_insufficient": (
+        "warning",
+        "方案数量不足",
+        "当前可用方案较少，系统正在尝试放宽非核心条件。",
+    ),
+    "partial_result_used": (
+        "warning",
+        "使用部分结果",
+        "部分信息不可用，系统会用已确认的信息继续规划。",
+    ),
+    "tool_failed": (
+        "warning",
+        "部分信息暂时不可用",
+        "部分工具查询失败，系统正在使用可用信息继续规划。",
+    ),
     "run_finished": ("final", "规划完成", "已生成可执行方案。"),
     "run_failed": ("error", "规划暂时失败", "规划过程中出现问题，请稍后重试或放宽条件。"),
 }
@@ -114,7 +130,11 @@ def _status_for(event_type: str, frontend_type: str) -> str:
         return "warning"
     if event_type == "run_finished":
         return "success"
-    return "running" if event_type not in {"intent_parsed", "slots_generated", "plan_ranked"} else "success"
+    return (
+        "running"
+        if event_type not in {"intent_parsed", "slots_generated", "plan_ranked"}
+        else "success"
+    )
 
 
 def _safe_frontend_data(payload: dict[str, Any]) -> dict[str, Any]:

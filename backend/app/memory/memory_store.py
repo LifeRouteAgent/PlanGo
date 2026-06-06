@@ -54,7 +54,9 @@ class MemoryStore(Protocol):
 
     def load_user_profile(self, user_id: str) -> UserProfileMemory: ...
 
-    def update_user_profile(self, user_id: str, patch: dict[str, Any], source_event: str) -> None: ...
+    def update_user_profile(
+        self, user_id: str, patch: dict[str, Any], source_event: str
+    ) -> None: ...
 
     def load_session(self, session_id: str) -> SessionMemory: ...
 
@@ -64,7 +66,9 @@ class MemoryStore(Protocol):
 
     def put_tool_cache(self, entry: ToolCacheEntry) -> None: ...
 
-    def search_relevant_memory(self, query: str, user_id: str, limit: int) -> list[dict[str, Any]]: ...
+    def search_relevant_memory(
+        self, query: str, user_id: str, limit: int
+    ) -> list[dict[str, Any]]: ...
 
 
 class FileMemoryStore:
@@ -259,7 +263,7 @@ def _tool_cache_path(key: str) -> Path:
 def _read_json(path: Path, default: Any) -> Any:
     try:
         return json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
+    except OSError, json.JSONDecodeError:
         return default
 
 
@@ -283,7 +287,7 @@ def _iso_from_ts(value: float) -> str:
 def _parse_ts(value: str) -> float | None:
     try:
         return time.mktime(time.strptime(value, "%Y-%m-%dT%H:%M:%SZ"))
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return None
 
 

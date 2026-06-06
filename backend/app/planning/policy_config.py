@@ -45,7 +45,7 @@ class RiskPolicyConfig(BaseModel):
 
         try:
             return int(self.risk_levels.get(action_type, default))
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             return default
 
 

@@ -55,7 +55,9 @@ def generate_response_package(payload: dict[str, Any]) -> dict[str, Any] | None:
     return validation.data
 
 
-def apply_response_generation(payload: dict[str, Any], generation: dict[str, Any] | None) -> dict[str, Any]:
+def apply_response_generation(
+    payload: dict[str, Any], generation: dict[str, Any] | None
+) -> dict[str, Any]:
     """把 LLM 展示增强合并回 payload。
 
     只允许覆盖展示字段，不允许改变 items、route_segments、timeline 等事实字段。
@@ -87,7 +89,9 @@ def apply_response_generation(payload: dict[str, Any], generation: dict[str, Any
     result["plans"] = plans
     if plans:
         selected_id = str((result.get("selected_plan") or {}).get("id") or "")
-        result["selected_plan"] = next((plan for plan in plans if str(plan.get("id")) == selected_id), plans[0])
+        result["selected_plan"] = next(
+            (plan for plan in plans if str(plan.get("id")) == selected_id), plans[0]
+        )
     if generation.get("response_text"):
         result["_llm_final_text"] = str(generation["response_text"]).strip()
     return result
@@ -103,8 +107,14 @@ def compact_payload_for_llm(payload: dict[str, Any]) -> dict[str, Any]:
         "response_type": payload.get("response_type"),
         "summary": payload.get("summary"),
         "warnings": list(payload.get("warnings", []))[:5],
-        "plans": [_compact_plan(plan) for plan in payload.get("plans", [])[:3] if isinstance(plan, dict)],
-        "poi_list": [_compact_item(item) for item in payload.get("poi_list", [])[:8] if isinstance(item, dict)],
+        "plans": [
+            _compact_plan(plan) for plan in payload.get("plans", [])[:3] if isinstance(plan, dict)
+        ],
+        "poi_list": [
+            _compact_item(item)
+            for item in payload.get("poi_list", [])[:8]
+            if isinstance(item, dict)
+        ],
     }
 
 
@@ -120,7 +130,9 @@ def _compact_plan(plan: dict[str, Any]) -> dict[str, Any]:
         "route_minutes": plan.get("route_minutes"),
         "estimated_budget": plan.get("estimated_budget"),
         "warnings": list(plan.get("warnings", []))[:5],
-        "items": [_compact_item(item) for item in plan.get("items", [])[:5] if isinstance(item, dict)],
+        "items": [
+            _compact_item(item) for item in plan.get("items", [])[:5] if isinstance(item, dict)
+        ],
     }
 
 
@@ -170,5 +182,7 @@ def _apply_item_generation(plan: dict[str, Any], enrichment: dict[str, Any]) -> 
     for item in items:
         item_enrichment = item_enrichments.get(str(item.get("id") or ""))
         if item_enrichment and item_enrichment.get("recommendation_reason"):
-            item["recommendation_reason"] = str(item_enrichment["recommendation_reason"]).strip()[:80]
+            item["recommendation_reason"] = str(item_enrichment["recommendation_reason"]).strip()[
+                :80
+            ]
     plan["items"] = items

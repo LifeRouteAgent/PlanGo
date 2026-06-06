@@ -156,7 +156,11 @@ class CheckpointStore:
         existing = self.load(task_id) if task_id else None
         task = existing or self.create(
             session_id=str(state.get("session_id") or ""),
-            user_id=str((state.get("user_profile") or {}).get("user_id") or state.get("session_id") or "default"),
+            user_id=str(
+                (state.get("user_profile") or {}).get("user_id")
+                or state.get("session_id")
+                or "default"
+            ),
             trace_id=str(state.get("trace_id") or ""),
             task_id=task_id,
         )
@@ -205,7 +209,9 @@ class CheckpointStore:
         self.save(task)
         return task
 
-    def resume(self, task_id: str, tool_entries: list[ToolCacheEntry] | None = None) -> dict[str, Any]:
+    def resume(
+        self, task_id: str, tool_entries: list[ToolCacheEntry] | None = None
+    ) -> dict[str, Any]:
         """生成恢复决策，不直接重跑 DAG 或交易动作。"""
 
         task = self.load(task_id)
@@ -213,7 +219,9 @@ class CheckpointStore:
             return {"ok": False, "decision": "not_found", "message": "没有找到任务 checkpoint。"}
         actions = task.get("booking_actions", []) or []
         has_success = any(action.get("status") == "success" for action in actions)
-        unfinished = [action for action in actions if action.get("status") not in {"success", "compensated"}]
+        unfinished = [
+            action for action in actions if action.get("status") not in {"success", "compensated"}
+        ]
         expired = _expired_tool_entries(tool_entries or [])
         failed_unfinished = [action for action in unfinished if action.get("status") == "failed"]
         if has_success and failed_unfinished:
@@ -225,7 +233,11 @@ class CheckpointStore:
         elif expired:
             decision = "revalidate_tools"
         elif task.get("status") in {TaskStatus.FAILED.value, TaskStatus.PARTIALLY_EXECUTED.value}:
-            decision = "compensate" if task.get("status") == TaskStatus.PARTIALLY_EXECUTED.value else "require_user_confirmation"
+            decision = (
+                "compensate"
+                if task.get("status") == TaskStatus.PARTIALLY_EXECUTED.value
+                else "require_user_confirmation"
+            )
         else:
             decision = "continue"
         return {
@@ -283,7 +295,9 @@ def _status_from_actions(actions: list[BookingAction]) -> str:
     statuses = {action.get("status") for action in actions}
     if statuses <= {"success"}:
         return TaskStatus.COMPLETED.value
-    if "success" in statuses and any(status in statuses for status in {"failed", "running", "pending"}):
+    if "success" in statuses and any(
+        status in statuses for status in {"failed", "running", "pending"}
+    ):
         return TaskStatus.PARTIALLY_EXECUTED.value
     if "failed" in statuses:
         return TaskStatus.FAILED.value

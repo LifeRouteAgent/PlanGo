@@ -112,9 +112,21 @@ CATEGORY_SQL_SPECS: dict[str, CategorySqlSpec] = {
         base_where="name <> '' AND lat IS NOT NULL AND lng IS NOT NULL",
         order_expr="COALESCE(favorite_num, 0) DESC",
         filter_fields=(
-            "name", "biz_category", "cuisine_tag", "keytag", "type", "query_label",
-            "city", "district", "business_area", "lat", "lng", "rating", "cost",
-            "open_time", "favorite_num",
+            "name",
+            "biz_category",
+            "cuisine_tag",
+            "keytag",
+            "type",
+            "query_label",
+            "city",
+            "district",
+            "business_area",
+            "lat",
+            "lng",
+            "rating",
+            "cost",
+            "open_time",
+            "favorite_num",
         ),
         tag_fields=("cuisine_tag", "keytag", "type", "query_label"),
     ),
@@ -133,12 +145,22 @@ CATEGORY_SQL_SPECS: dict[str, CategorySqlSpec] = {
         tag_expr="CONCAT_WS(' ', subtitle, CAST(category_info AS CHAR))",
         image_expr="NULL",
         images_expr="images",
-        base_where="title <> '' AND location IS NOT NULL AND location <> '' AND INSTR(location, ',') > 0",
+        base_where=(
+            "title <> '' AND location IS NOT NULL AND location <> '' AND INSTR(location, ',') > 0"
+        ),
         order_expr="updated_time DESC",
         filter_fields=(
-            "title", "subtitle", "category_info", "city_id", "category_id",
-            "sub_category_id", "leaf_category_id", "location", "price",
-            "available_date", "updated_time",
+            "title",
+            "subtitle",
+            "category_info",
+            "city_id",
+            "category_id",
+            "sub_category_id",
+            "leaf_category_id",
+            "location",
+            "price",
+            "available_date",
+            "updated_time",
         ),
         tag_fields=("subtitle",),
     ),
@@ -160,8 +182,18 @@ CATEGORY_SQL_SPECS: dict[str, CategorySqlSpec] = {
         base_where="name <> '' AND lat IS NOT NULL AND lng IS NOT NULL",
         order_expr="COALESCE(hot_score, 0) DESC",
         filter_fields=(
-            "name", "name_en", "alias", "tags", "dest_id", "lat", "lng",
-            "score", "comment_score", "open_time", "suggested_duration", "hot_score",
+            "name",
+            "name_en",
+            "alias",
+            "tags",
+            "dest_id",
+            "lat",
+            "lng",
+            "score",
+            "comment_score",
+            "open_time",
+            "suggested_duration",
+            "hot_score",
         ),
         tag_fields=("tags",),
     ),
@@ -183,8 +215,17 @@ CATEGORY_SQL_SPECS: dict[str, CategorySqlSpec] = {
         base_where="name <> '' AND lat IS NOT NULL AND lng IS NOT NULL",
         order_expr="COALESCE(comment_num, 0) DESC",
         filter_fields=(
-            "name", "name_local", "name_en", "brand_name_cn", "tags", "categories",
-            "lat", "lng", "comment_score", "open_time_tips", "comment_num",
+            "name",
+            "name_local",
+            "name_en",
+            "brand_name_cn",
+            "tags",
+            "categories",
+            "lat",
+            "lng",
+            "comment_score",
+            "open_time_tips",
+            "comment_num",
         ),
         tag_fields=("tags", "categories"),
     ),
@@ -206,9 +247,21 @@ CATEGORY_SQL_SPECS: dict[str, CategorySqlSpec] = {
         base_where="name <> '' AND lat IS NOT NULL AND lng IS NOT NULL",
         order_expr="COALESCE(favorite_num, 0) DESC",
         filter_fields=(
-            "name", "biz_category", "fitness_tag", "keytag", "type", "query_label",
-            "city", "district", "business_area", "lat", "lng", "rating", "cost",
-            "open_time", "favorite_num",
+            "name",
+            "biz_category",
+            "fitness_tag",
+            "keytag",
+            "type",
+            "query_label",
+            "city",
+            "district",
+            "business_area",
+            "lat",
+            "lng",
+            "rating",
+            "cost",
+            "open_time",
+            "favorite_num",
         ),
         tag_fields=("fitness_tag", "keytag", "type", "query_label"),
     ),
@@ -230,9 +283,21 @@ CATEGORY_SQL_SPECS: dict[str, CategorySqlSpec] = {
         base_where="name <> '' AND lat IS NOT NULL AND lng IS NOT NULL",
         order_expr="COALESCE(groupbuy_num, 0) DESC",
         filter_fields=(
-            "name", "biz_category", "entertainment_type", "keytag", "type", "query_label",
-            "city", "district", "business_area", "lat", "lng", "rating", "cost",
-            "open_time", "groupbuy_num",
+            "name",
+            "biz_category",
+            "entertainment_type",
+            "keytag",
+            "type",
+            "query_label",
+            "city",
+            "district",
+            "business_area",
+            "lat",
+            "lng",
+            "rating",
+            "cost",
+            "open_time",
+            "groupbuy_num",
         ),
         tag_fields=("entertainment_type", "keytag", "type", "query_label"),
     ),
@@ -248,17 +313,40 @@ CATEGORY_SQL_SPECS: dict[str, CategorySqlSpec] = {
         rating_expr="rating",
         price_expr="cost",
         open_expr="open_time",
-        tag_expr="CONCAT_WS(' ', service_tag, beauty_type, query_keywords, keytag, type, query_label)",
+        tag_expr=(
+            "CONCAT_WS(' ', service_tag, beauty_type, query_keywords, keytag, type, query_label)"
+        ),
         image_expr="head_image",
         images_expr="photos",
         base_where="name <> '' AND lat IS NOT NULL AND lng IS NOT NULL",
         order_expr="COALESCE(favorite_num, 0) DESC",
         filter_fields=(
-            "name", "biz_category", "service_tag", "beauty_type", "query_keywords",
-            "keytag", "type", "query_label", "city", "district", "business_area",
-            "lat", "lng", "rating", "cost", "open_time", "favorite_num",
+            "name",
+            "biz_category",
+            "service_tag",
+            "beauty_type",
+            "query_keywords",
+            "keytag",
+            "type",
+            "query_label",
+            "city",
+            "district",
+            "business_area",
+            "lat",
+            "lng",
+            "rating",
+            "cost",
+            "open_time",
+            "favorite_num",
         ),
-        tag_fields=("service_tag", "beauty_type", "query_keywords", "keytag", "type", "query_label"),
+        tag_fields=(
+            "service_tag",
+            "beauty_type",
+            "query_keywords",
+            "keytag",
+            "type",
+            "query_label",
+        ),
     ),
 }
 
@@ -391,7 +479,9 @@ class PoiRepository:
 
         rating_levels = RATING_FALLBACKS if spec.rating_expr else (None,)
         budget_levels = BUDGET_FALLBACK_MULTIPLIERS if spec.price_expr else (None,)
-        radius_levels = RADIUS_FALLBACK_MULTIPLIERS if constraints and constraints.has_origin else (1.0,)
+        radius_levels = (
+            RADIUS_FALLBACK_MULTIPLIERS if constraints and constraints.has_origin else (1.0,)
+        )
 
         for radius_multiplier in radius_levels:
             for rating_threshold in rating_levels:
@@ -496,10 +586,13 @@ class PoiRepository:
             params["max_price"] = max_price
             # 价格缺失时不直接排除，留给 Skill/Verifier 降权；有价格且明显超预算才过滤。
             where.append(
-                f"(({spec.price_expr}) IS NULL OR ({spec.price_expr}) = 0 OR ({spec.price_expr}) <= %(max_price)s)"
+                f"(({spec.price_expr}) IS NULL OR ({spec.price_expr}) = 0 OR ({spec.price_expr}) <="
+                " %(max_price)s)"
             )
 
-        for index, term in enumerate(self._clean_terms(constraints.excluded_keywords if constraints else ()), start=1):
+        for index, term in enumerate(
+            self._clean_terms(constraints.excluded_keywords if constraints else ()), start=1
+        ):
             key = f"exclude_{index}"
             params[key] = f"%{term}%"
             where.append(f"{text_expr} NOT LIKE %({key})s COLLATE {SEARCH_COLLATION}")
@@ -537,7 +630,9 @@ class PoiRepository:
         """
         return sql, params
 
-    def _build_name_search_sql(self, spec: CategorySqlSpec, keyword: str) -> tuple[str, dict[str, Any]]:
+    def _build_name_search_sql(
+        self, spec: CategorySqlSpec, keyword: str
+    ) -> tuple[str, dict[str, Any]]:
         params = {
             "keyword": f"%{keyword}%",
             "exact_keyword": keyword,
@@ -545,7 +640,10 @@ class PoiRepository:
         }
         collated_name = self._collated_expr(spec.name_expr)
         order_parts = [
-            f"CASE WHEN {collated_name} = %(exact_keyword)s COLLATE {SEARCH_COLLATION} THEN 0 ELSE 1 END",
+            (
+                f"CASE WHEN {collated_name} = %(exact_keyword)s COLLATE {SEARCH_COLLATION} THEN 0"
+                " ELSE 1 END"
+            ),
         ]
         if spec.rating_expr:
             order_parts.append(f"COALESCE(({spec.rating_expr}), 0) DESC")
@@ -736,7 +834,7 @@ class PoiRepository:
             if text.startswith("[") or text.startswith("{"):
                 try:
                     parsed = json.loads(text)
-                except (TypeError, ValueError, json.JSONDecodeError):
+                except TypeError, ValueError, json.JSONDecodeError:
                     parsed = None
             if parsed is not None:
                 add_image(parsed)
@@ -770,7 +868,7 @@ class PoiRepository:
     def _safe_float(self, value: Any, *, default: float = 0.0) -> float:
         try:
             return float(value)
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             return default
 
     def _clean_terms(self, terms: Iterable[str]) -> list[str]:
@@ -782,4 +880,3 @@ class PoiRepository:
             if text not in cleaned:
                 cleaned.append(text)
         return cleaned
-

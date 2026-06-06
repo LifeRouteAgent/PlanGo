@@ -18,11 +18,15 @@ def intent_resolver_node(value: PlanningState | dict[str, Any]) -> dict[str, Any
         state.context.conversation_context.last_user_message,
         {"user_id": state.state_meta.user_id},
         state.context.current_plan_state.model_dump(mode="json"),
-        poi_knowledge=PoiCatalogService().background_knowledge(state.context.poi_logical_tag_catalog),
+        poi_knowledge=PoiCatalogService().background_knowledge(
+            state.context.poi_logical_tag_catalog
+        ),
     )
     return {
         "llm_understanding": understanding,
-        "debug": append_trace(state, "intent_resolver", f"请求类型={understanding.intent.request_type}"),
+        "debug": append_trace(
+            state, "intent_resolver", f"请求类型={understanding.intent.request_type}"
+        ),
     }
 
 
@@ -60,7 +64,10 @@ def async_event_emitter_node(value: PlanningState | dict[str, Any]) -> dict[str,
     events.planning_trace_event = AsyncEventInfo(
         enabled=True, event_id=f"trace_{uuid4().hex}", payload_summary="Planning Graph V2"
     )
-    return {"async_events": events, "debug": append_trace(state, "async_event_emitter", "异步事件已投递")}
+    return {
+        "async_events": events,
+        "debug": append_trace(state, "async_event_emitter", "异步事件已投递"),
+    }
 
 
 def request_router_node(value: PlanningState | dict[str, Any]) -> dict[str, Any]:
@@ -70,4 +77,8 @@ def request_router_node(value: PlanningState | dict[str, Any]) -> dict[str, Any]
 
 def request_route(value: PlanningState | dict[str, Any]) -> str:
     state = ensure_state(value)
-    return state.llm_understanding.intent.request_type if state.llm_understanding else "full_itinerary_plan"
+    return (
+        state.llm_understanding.intent.request_type
+        if state.llm_understanding
+        else "full_itinerary_plan"
+    )

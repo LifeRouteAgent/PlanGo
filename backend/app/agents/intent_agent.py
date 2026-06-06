@@ -18,7 +18,6 @@ from app.domain.poi import (
     POI_SHOPPING,
 )
 
-
 ALLOWED_INTENTS = {
     "capability",
     "simple_qa",
@@ -291,13 +290,11 @@ def _clean_must_pois(value: Any) -> list[dict[str, Any]]:
         if not name:
             continue
         category = str(item.get("category") or "").strip()
-        result.append(
-            {
-                "name": name,
-                "category": category if category in ALLOWED_CATEGORIES else "",
-                "must_include": bool(item.get("must_include", True)),
-            }
-        )
+        result.append({
+            "name": name,
+            "category": category if category in ALLOWED_CATEGORIES else "",
+            "must_include": bool(item.get("must_include", True)),
+        })
     return result[:5]
 
 
@@ -311,14 +308,12 @@ def _clean_activity_intents(value: Any) -> list[dict[str, Any]]:
         semantic_type = _clean_optional_string(item.get("semantic_type"))
         if not semantic_type:
             continue
-        result.append(
-            {
-                "slot": _clean_optional_string(item.get("slot")) or "",
-                "semantic_type": semantic_type,
-                "must_match": bool(item.get("must_match")),
-                "keywords": _clean_string_list(item.get("keywords"))[:8],
-            }
-        )
+        result.append({
+            "slot": _clean_optional_string(item.get("slot")) or "",
+            "semantic_type": semantic_type,
+            "must_match": bool(item.get("must_match")),
+            "keywords": _clean_string_list(item.get("keywords"))[:8],
+        })
     return result[:8]
 
 
@@ -332,14 +327,12 @@ def _clean_category_tag_requirements(value: Any) -> list[dict[str, Any]]:
         category = _clean_optional_string(item.get("logical_category"))
         if not category:
             continue
-        result.append(
-            {
-                "logical_category": category,
-                "target_slot": _clean_optional_string(item.get("target_slot")) or category,
-                "positive_logic_tags": _clean_string_list(item.get("positive_logic_tags"))[:12],
-                "negative_logic_tags": _clean_string_list(item.get("negative_logic_tags"))[:12],
-            }
-        )
+        result.append({
+            "logical_category": category,
+            "target_slot": _clean_optional_string(item.get("target_slot")) or category,
+            "positive_logic_tags": _clean_string_list(item.get("positive_logic_tags"))[:12],
+            "negative_logic_tags": _clean_string_list(item.get("negative_logic_tags"))[:12],
+        })
     return result[:12]
 
 
@@ -415,7 +408,7 @@ def _clean_int(value: Any) -> int | None:
         if value is None or value == "":
             return None
         return int(float(value))
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return None
 
 
@@ -424,5 +417,5 @@ def _clean_number(value: Any) -> float | None:
         if value is None or value == "":
             return None
         return float(value)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return None

@@ -1,5 +1,6 @@
 from app.planning.state.base import *  # noqa: F403
 
+
 class SlotRecallRequirement(StateModel):
     slot_id: str
     logical_categories: list[str] = Field(default_factory=list)
@@ -126,4 +127,3 @@ class CandidateState(StateModel):
     raw_candidates: dict[str, list[SafePOICandidate]] = Field(default_factory=dict)
     scored_candidates: dict[str, list[ScoredPOICandidate]] = Field(default_factory=dict)
     balanced_candidates: dict[str, list[ScoredPOICandidate]] = Field(default_factory=dict)
-

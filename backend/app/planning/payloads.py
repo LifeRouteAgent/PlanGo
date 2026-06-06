@@ -12,7 +12,6 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-
 RAW_TAG_MARKERS = (
     "sub_category_id",
     "leaf_category_id",
@@ -233,8 +232,17 @@ class PlanningResponsePayload(PayloadModel):
             if isinstance(self.selected_plan, PlanCardPayload):
                 selected_id = self.selected_plan.id
             elif isinstance(self.selected_plan, dict):
-                selected_id = str(self.selected_plan.get("id") or self.selected_plan.get("plan_id") or "")
-            self.selected_plan = next((plan for plan in self.plans if plan.id == selected_id or plan.plan_id == selected_id), self.plans[0])
+                selected_id = str(
+                    self.selected_plan.get("id") or self.selected_plan.get("plan_id") or ""
+                )
+            self.selected_plan = next(
+                (
+                    plan
+                    for plan in self.plans
+                    if plan.id == selected_id or plan.plan_id == selected_id
+                ),
+                self.plans[0],
+            )
         else:
             self.selected_plan = {}
         return self
@@ -273,11 +281,9 @@ def clean_display_tags(
             break
     if result:
         return result
-    return [
-        text
-        for item in fallback
-        if (text := clean_display_text(item, max_chars=max_chars))
-    ][:limit]
+    return [text for item in fallback if (text := clean_display_text(item, max_chars=max_chars))][
+        :limit
+    ]
 
 
 def clean_display_text(value: Any, *, max_chars: int = 15) -> str:

@@ -96,7 +96,11 @@ class AmapRouteService:
             fallback_distance_km,
         )
         self.call_log.extend(harness.call_log)
-        return _route_result_data(result) if result.get("success") else _fallback_estimate(fallback_distance_km)
+        return (
+            _route_result_data(result)
+            if result.get("success")
+            else _fallback_estimate(fallback_distance_km)
+        )
 
     def _estimate_segment_live(
         self,

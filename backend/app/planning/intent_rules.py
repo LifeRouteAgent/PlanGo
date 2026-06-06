@@ -10,7 +10,6 @@ from app.domain.poi import (
     POI_SHOPPING,
 )
 
-
 CATEGORY_KEYWORDS: tuple[tuple[str, tuple[str, ...]], ...] = (
     (
         POI_RESTAURANT,

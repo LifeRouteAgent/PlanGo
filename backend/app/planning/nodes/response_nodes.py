@@ -55,7 +55,9 @@ def response_generator_node(value: PlanningState | dict[str, Any]) -> dict[str, 
         response.final_text = str(payload.get("summary") or "暂时没有找到满足条件的方案。")
     return {
         "response": response,
-        "debug": append_trace(state, "response_generator", "generated final text from response payload"),
+        "debug": append_trace(
+            state, "response_generator", "generated final text from response payload"
+        ),
     }
 
 
@@ -72,21 +74,38 @@ def _fallback_plan_text(payload: dict[str, Any], plans: list[dict[str, Any]]) ->
 
 def _sanitize_display_payload(payload: dict[str, Any]) -> dict[str, Any]:
     result = dict(payload)
-    plans = [_sanitize_plan(plan, index) for index, plan in enumerate(result.get("plans", []), start=1) if isinstance(plan, dict)]
+    plans = [
+        _sanitize_plan(plan, index)
+        for index, plan in enumerate(result.get("plans", []), start=1)
+        if isinstance(plan, dict)
+    ]
     result["plans"] = plans
     if plans:
-        selected_id = str((result.get("selected_plan") or {}).get("id") or (result.get("selected_plan") or {}).get("plan_id") or "")
-        result["selected_plan"] = next((plan for plan in plans if str(plan.get("id") or plan.get("plan_id")) == selected_id), plans[0])
+        selected_id = str(
+            (result.get("selected_plan") or {}).get("id")
+            or (result.get("selected_plan") or {}).get("plan_id")
+            or ""
+        )
+        result["selected_plan"] = next(
+            (plan for plan in plans if str(plan.get("id") or plan.get("plan_id")) == selected_id),
+            plans[0],
+        )
     if isinstance(result.get("poi_list"), list):
-        result["poi_list"] = [_sanitize_item(item) for item in result["poi_list"] if isinstance(item, dict)]
+        result["poi_list"] = [
+            _sanitize_item(item) for item in result["poi_list"] if isinstance(item, dict)
+        ]
     return result
 
 
 def _sanitize_plan(plan: dict[str, Any], index: int) -> dict[str, Any]:
     clean = dict(plan)
-    clean["items"] = [_sanitize_item(item) for item in clean.get("items", []) if isinstance(item, dict)]
+    clean["items"] = [
+        _sanitize_item(item) for item in clean.get("items", []) if isinstance(item, dict)
+    ]
     clean["title"] = _display_title(clean, index)
-    clean["highlight_tags"] = _short_list(clean.get("highlight_tags") or clean.get("tags"), _fallback_highlights(clean), 4, 6)
+    clean["highlight_tags"] = _short_list(
+        clean.get("highlight_tags") or clean.get("tags"), _fallback_highlights(clean), 4, 6
+    )
     clean["tags"] = clean["highlight_tags"]
     clean["pros"] = _short_list(clean.get("pros"), _fallback_pros(clean), 3, 15)
     clean["cons"] = _short_list(clean.get("cons"), _fallback_cons(clean), 3, 15)
@@ -95,7 +114,12 @@ def _sanitize_plan(plan: dict[str, Any], index: int) -> dict[str, Any]:
 
 def _sanitize_item(item: dict[str, Any]) -> dict[str, Any]:
     clean = dict(item)
-    clean["tags"] = _short_list(clean.get("tags"), [clean.get("display_category") or _category_label(clean.get("logical_category"))], 6, 15)
+    clean["tags"] = _short_list(
+        clean.get("tags"),
+        [clean.get("display_category") or _category_label(clean.get("logical_category"))],
+        6,
+        15,
+    )
     if not clean.get("display_category"):
         clean["display_category"] = _category_label(clean.get("logical_category"))
     return clean
@@ -116,7 +140,10 @@ def _display_title(plan: dict[str, Any], index: int) -> str:
 
 
 def _fallback_highlights(plan: dict[str, Any]) -> list[str]:
-    labels = [str(item.get("display_category") or _category_label(item.get("logical_category"))) for item in plan.get("items", [])]
+    labels = [
+        str(item.get("display_category") or _category_label(item.get("logical_category")))
+        for item in plan.get("items", [])
+    ]
     return [*labels, "路线清晰", "节奏轻松"]
 
 
@@ -160,7 +187,8 @@ def _looks_like_raw_text(text: str) -> bool:
         or "，" in text
         or "sub_category_id" in lowered
         or "leaf_category_id" in lowered
-        or lowered in {"activity", "attraction", "restaurant", "shopping", "entertainment", "cinema", "mixed"}
+        or lowered
+        in {"activity", "attraction", "restaurant", "shopping", "entertainment", "cinema", "mixed"}
     )
 
 

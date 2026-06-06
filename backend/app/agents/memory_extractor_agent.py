@@ -13,7 +13,9 @@ from app.llm.prompt_registry import load_prompt_template
 from app.observability.trace_recorder import record_trace_event
 
 
-def extract_memory_updates(query: str, *, user_profile: dict[str, Any] | None = None) -> dict[str, Any] | None:
+def extract_memory_updates(
+    query: str, *, user_profile: dict[str, Any] | None = None
+) -> dict[str, Any] | None:
     """用 LLM 判断用户输入是否应该沉淀为长期偏好。
 
     规则只能判断显式关键词，无法区分“今天太热”这种本轮临时约束和长期偏好。
@@ -203,4 +205,3 @@ def _prompt_name_for_tool(tool_name: str) -> str:
     if "followup" in tool_name:
         return "followup_context"
     return "revision_parser"
-

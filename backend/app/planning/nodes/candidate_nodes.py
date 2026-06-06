@@ -24,8 +24,13 @@ def poi_scorer_node(value: PlanningState | dict[str, Any]) -> dict[str, Any]:
             for tag in cluster.core_tags
         ],
     ]
-    candidates.scored_candidates = score_candidates(candidates.raw_candidates, state.constraints, memory_tags)
-    return {"candidates": candidates, "debug": append_trace(state, "poi_scorer", "候选单点评分已完成")}
+    candidates.scored_candidates = score_candidates(
+        candidates.raw_candidates, state.constraints, memory_tags
+    )
+    return {
+        "candidates": candidates,
+        "debug": append_trace(state, "poi_scorer", "候选单点评分已完成"),
+    }
 
 
 def candidate_pool_balancer_node(value: PlanningState | dict[str, Any]) -> dict[str, Any]:

@@ -153,7 +153,9 @@ def test_background_plan_progress_stream_receives_key_events(monkeypatch) -> Non
 
     async def collect() -> list[dict]:
         items: list[dict] = []
-        async for item in trip_services.stream_manager.listen(created["request_id"], heartbeat_seconds=0.05):
+        async for item in trip_services.stream_manager.listen(
+            created["request_id"], heartbeat_seconds=0.05
+        ):
             items.append(item)
         return items
 

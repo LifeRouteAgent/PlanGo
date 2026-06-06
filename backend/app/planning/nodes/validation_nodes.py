@@ -25,7 +25,9 @@ def pre_ranker_node(value: PlanningState | dict[str, Any]) -> dict[str, Any]:
     plans.ranked_plans = ranked
     return {
         "plans": plans,
-        "debug": append_trace(state, "pre_ranker", f"kept {len(kept)} plans for availability check"),
+        "debug": append_trace(
+            state, "pre_ranker", f"kept {len(kept)} plans for availability check"
+        ),
     }
 
 
@@ -47,7 +49,9 @@ def availability_checker_node(value: PlanningState | dict[str, Any]) -> dict[str
 def post_check_filter_node(value: PlanningState | dict[str, Any]) -> dict[str, Any]:
     state = ensure_state(value)
     return {
-        "debug": append_trace(state, "post_check_filter", f"post-check plan count: {len(state.plans.candidate_plans)}"),
+        "debug": append_trace(
+            state, "post_check_filter", f"post-check plan count: {len(state.plans.candidate_plans)}"
+        ),
     }
 
 
@@ -71,8 +75,12 @@ def fallback_relaxation_node(value: PlanningState | dict[str, Any]) -> dict[str,
     state = ensure_state(value)
     reason = str(state.debug.recall_debug.get("failure_reason") or "unknown")
     iteration = int(state.debug.recall_debug.get("fallback_iteration") or 0) + 1
-    constraints, recall = relax_constraints_for_failure(state.constraints, state.recall_plan, reason, iteration)
-    debug = append_trace(state, "fallback_relaxation", f"relaxed constraints: {reason}, iteration {iteration}")
+    constraints, recall = relax_constraints_for_failure(
+        state.constraints, state.recall_plan, reason, iteration
+    )
+    debug = append_trace(
+        state, "fallback_relaxation", f"relaxed constraints: {reason}, iteration {iteration}"
+    )
     debug.recall_debug["fallback_iteration"] = iteration
     debug.recall_debug["needs_fallback"] = False
     return {"constraints": constraints, "recall_plan": recall, "debug": debug}
@@ -103,4 +111,6 @@ def post_check_route(value: PlanningState | dict[str, Any]) -> str:
 
 def failure_route(value: PlanningState | dict[str, Any]) -> str:
     state = ensure_state(value)
-    return "fallback_relaxation" if state.debug.recall_debug.get("needs_fallback") else "final_ranker"
+    return (
+        "fallback_relaxation" if state.debug.recall_debug.get("needs_fallback") else "final_ranker"
+    )

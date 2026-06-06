@@ -55,7 +55,13 @@ from app.planning.scoring_service import score_candidates as score_poi_candidate
 from app.planning.payloads import normalize_response_payload
 
 from app.planning.services.common import *
-from app.planning.services.intent_service import _normalize_restaurant_categories, _normalize_restaurant_slots, _resolve_route_origin, _restaurant_allowed_for_understanding
+from app.planning.services.intent_service import (
+    _normalize_restaurant_categories,
+    _normalize_restaurant_slots,
+    _resolve_route_origin,
+    _restaurant_allowed_for_understanding,
+)
+
 
 def build_constraints(
     understanding: LLMUnderstanding,
@@ -86,7 +92,9 @@ def build_constraints(
         hour=14, minute=0, second=0, microsecond=0
     )
     restaurant_allowed = _restaurant_allowed_for_understanding(understanding)
-    required_slots = understanding.slots.required_slots or SCENE_SLOTS.get(scene, SCENE_SLOTS["unknown"])[0]
+    required_slots = (
+        understanding.slots.required_slots or SCENE_SLOTS.get(scene, SCENE_SLOTS["unknown"])[0]
+    )
     required_slots = _normalize_restaurant_slots(required_slots, restaurant_allowed)
     preferred_categories = understanding.poi_recall_intent.target_logical_categories
     preferred_categories = _normalize_restaurant_categories(
@@ -122,12 +130,10 @@ def build_constraints(
         *understanding.poi_keyword_intent.avoid_poi_keywords,
         *negative_logic_tags,
     ])
-    preferences = _dedupe(
-        [
-            *previous.get("preference_keywords", []),
-            *understanding.poi_keyword_intent.preference_poi_keywords,
-        ]
-    )
+    preferences = _dedupe([
+        *previous.get("preference_keywords", []),
+        *understanding.poi_keyword_intent.preference_poi_keywords,
+    ])
     if session_preference:
         preferred_categories = _dedupe([
             *preferred_categories,
@@ -207,10 +213,11 @@ def build_constraints(
     requirements: list[SlotRecallRequirement] = []
     restaurant_query_count = 0
     for slot in required_slots:
-        logical_categories = (
-            [category for category in SLOT_CATEGORIES.get(slot, preferred_categories) if category in preferred_categories]
-            or SLOT_CATEGORIES.get(slot, preferred_categories)
-        )
+        logical_categories = [
+            category
+            for category in SLOT_CATEGORIES.get(slot, preferred_categories)
+            if category in preferred_categories
+        ] or SLOT_CATEGORIES.get(slot, preferred_categories)
         logical_categories = _normalize_restaurant_categories(
             logical_categories,
             restaurant_allowed,
@@ -219,7 +226,9 @@ def build_constraints(
         if "restaurant" in logical_categories:
             restaurant_query_count += 1
             if restaurant_query_count > 2:
-                logical_categories = [category for category in logical_categories if category != "restaurant"]
+                logical_categories = [
+                    category for category in logical_categories if category != "restaurant"
+                ]
         if not logical_categories:
             continue
         relevant_tags = [
@@ -251,4 +260,3 @@ def build_constraints(
         ),
     )
     return constraints, recall
-

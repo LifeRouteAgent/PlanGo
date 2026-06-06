@@ -1,5 +1,6 @@
 from app.planning.state.base import *  # noqa: F403
 
+
 class GeoLocation(StateModel):
     lat: float = Field(description="纬度")
     lng: float = Field(description="经度")
@@ -124,7 +125,17 @@ class POITableTagInfo(StateModel):
 
 
 def default_tag_tables() -> dict[str, POITableTagInfo]:
-    fields = ["poi_id", "name", "subcategory", "logic_tags", "address", "lat", "lng", "rating", "avg_price"]
+    fields = [
+        "poi_id",
+        "name",
+        "subcategory",
+        "logic_tags",
+        "address",
+        "lat",
+        "lng",
+        "rating",
+        "avg_price",
+    ]
     return {
         category: POITableTagInfo(
             physical_table=table,
@@ -150,6 +161,7 @@ class ContextState(StateModel):
     conversation_context: ConversationContext = Field(default_factory=ConversationContext)
     current_plan_state: CurrentPlanContext = Field(default_factory=CurrentPlanContext)
     user_preference_profile: UserPreferenceProfile = Field(default_factory=UserPreferenceProfile)
-    session_preference_profile: SessionPreferenceProfile = Field(default_factory=SessionPreferenceProfile)
+    session_preference_profile: SessionPreferenceProfile = Field(
+        default_factory=SessionPreferenceProfile
+    )
     poi_logical_tag_catalog: POILogicalTagCatalog = Field(default_factory=POILogicalTagCatalog)
-

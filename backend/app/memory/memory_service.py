@@ -83,12 +83,12 @@ class MemoryService:
                     if isinstance(legacy_data, dict):
                         self._write_profile(legacy_data, user_id=user_id)
                         return legacy_data
-                except (OSError, json.JSONDecodeError):
+                except OSError, json.JSONDecodeError:
                     pass
         try:
             data = json.loads(profile_path.read_text(encoding="utf-8"))
             return data if isinstance(data, dict) else _empty_profile()
-        except (OSError, json.JSONDecodeError):
+        except OSError, json.JSONDecodeError:
             return _empty_profile()
 
     def observe_user_query(self, query: str, *, user_id: str = "default") -> None:
@@ -117,8 +117,18 @@ class MemoryService:
             VectorMemoryRecord(
                 user_id=user_id,
                 memory_type="user_query",
-                text=(str(extracted.get("memory_text")) if extracted and extracted.get("memory_text") else f"用户输入：{query}"),
-                tags=_extract_tags(query) if not extracted else _dedupe([*_extract_tags(query), *[str(tag) for tag in extracted.get("tags", [])]]),
+                text=(
+                    str(extracted.get("memory_text"))
+                    if extracted and extracted.get("memory_text")
+                    else f"用户输入：{query}"
+                ),
+                tags=(
+                    _extract_tags(query)
+                    if not extracted
+                    else _dedupe(
+                        [*_extract_tags(query), *[str(tag) for tag in extracted.get("tags", [])]]
+                    )
+                ),
                 category="query",
                 source_event="user_query",
                 metadata={
@@ -230,7 +240,8 @@ class MemoryService:
         }
         self._write_profile(profile, user_id=user_id)
         self._append_memory(
-            f"plan feedback({stage}, weight={weight}): {plan.get('title') or plan.get('id') or plan.get('plan_id')}",
+            f"plan feedback({stage}, weight={weight}):"
+            f" {plan.get('title') or plan.get('id') or plan.get('plan_id')}",
             user_id=user_id,
         )
         self._append_history(
@@ -506,7 +517,9 @@ def _empty_profile() -> dict[str, Any]:
     }
 
 
-def _apply_llm_memory_updates(profile: dict[str, Any], extracted: dict[str, Any] | None) -> list[str]:
+def _apply_llm_memory_updates(
+    profile: dict[str, Any], extracted: dict[str, Any] | None
+) -> list[str]:
     """把 LLM 记忆抽取结果写入画像，低置信度或临时约束不写长期画像。"""
 
     if not extracted:
@@ -527,8 +540,12 @@ def _apply_llm_memory_updates(profile: dict[str, Any], extracted: dict[str, Any]
     if budget_level in {"low", "medium", "high"}:
         profile["budget_level"] = budget_level
         changed.append(f"预算等级 {budget_level}")
-    _extend_profile_list(profile, "preferred_areas", updates.get("preferred_areas"), changed, "常去区域")
-    _extend_profile_list(profile, "disliked_keywords", updates.get("disliked_keywords"), changed, "不喜欢")
+    _extend_profile_list(
+        profile, "preferred_areas", updates.get("preferred_areas"), changed, "常去区域"
+    )
+    _extend_profile_list(
+        profile, "disliked_keywords", updates.get("disliked_keywords"), changed, "不喜欢"
+    )
     favorite_categories = updates.get("favorite_categories")
     if isinstance(favorite_categories, list):
         categories = profile.get("favorite_categories", {})
@@ -589,7 +606,7 @@ def _extend_profile_list(
 def _safe_float(value: Any, fallback: float) -> float:
     try:
         return float(value)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return fallback
 
 
@@ -611,7 +628,9 @@ def _safe_profile_metadata(profile: dict[str, Any]) -> dict[str, Any]:
     if isinstance(favorite_categories, dict):
         top_categories = [
             str(category)
-            for category in sorted(favorite_categories, key=favorite_categories.get, reverse=True)[:8]
+            for category in sorted(favorite_categories, key=favorite_categories.get, reverse=True)[
+                :8
+            ]
         ]
     return {
         "preferred_city": profile.get("preferred_city"),
@@ -680,7 +699,9 @@ def _similar_profile_tags(profile: dict[str, Any]) -> list[str]:
     if isinstance(favorite_categories, dict):
         tags.extend(
             str(category)
-            for category in sorted(favorite_categories, key=favorite_categories.get, reverse=True)[:8]
+            for category in sorted(favorite_categories, key=favorite_categories.get, reverse=True)[
+                :8
+            ]
         )
     tags.extend(str(item) for item in profile.get("preferred_areas", [])[:5])
     tags.extend(str(item) for item in profile.get("disliked_keywords", [])[:5])

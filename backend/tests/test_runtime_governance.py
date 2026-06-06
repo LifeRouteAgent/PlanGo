@@ -120,17 +120,46 @@ def test_eval_runner_scores_five_layers() -> None:
 
     runner = EvalRunner()
     cases = [
-        EvalCase("intent_1", "intent", "两个人唱歌", expected={"intent_type": "full_trip_plan", "people_count": 2}),
-        EvalCase("plan_1", "planning_quality", "安排一下", expected={"min_plan_count": 1, "requires_route": True}),
-        EvalCase("tool_1", "tool_calling", "预订", expected={"required_events": ["tool_started"], "no_duplicate_tool_calls": True}),
+        EvalCase(
+            "intent_1",
+            "intent",
+            "两个人唱歌",
+            expected={"intent_type": "full_trip_plan", "people_count": 2},
+        ),
+        EvalCase(
+            "plan_1",
+            "planning_quality",
+            "安排一下",
+            expected={"min_plan_count": 1, "requires_route": True},
+        ),
+        EvalCase(
+            "tool_1",
+            "tool_calling",
+            "预订",
+            expected={"required_events": ["tool_started"], "no_duplicate_tool_calls": True},
+        ),
         EvalCase("safe_1", "fulfillment_safety", "购票", expected={}),
         EvalCase("biz_1", "business_effect", "分享", expected={"share_rate": 0.1}),
     ]
     outcomes = {
         "intent_1": {"intent_type": "full_trip_plan", "people_count": 2},
-        "plan_1": {"ranked_plans": [{"id": "p1", "route_segments": [{"duration_minutes": 10}], "items": [{"id": "a"}]}]},
-        "tool_1": {"trace_events": [{"event": "tool_started", "tool_name": "route", "request_hash": "1"}]},
-        "safe_1": {"booking_actions": [{"action_id": "a", "risk_level": 3, "idempotency_key": "idem", "status": "success", "confirmed": True}]},
+        "plan_1": {
+            "ranked_plans": [
+                {"id": "p1", "route_segments": [{"duration_minutes": 10}], "items": [{"id": "a"}]}
+            ]
+        },
+        "tool_1": {
+            "trace_events": [{"event": "tool_started", "tool_name": "route", "request_hash": "1"}]
+        },
+        "safe_1": {
+            "booking_actions": [{
+                "action_id": "a",
+                "risk_level": 3,
+                "idempotency_key": "idem",
+                "status": "success",
+                "confirmed": True,
+            }]
+        },
         "biz_1": {"business_metrics": {"share_rate": 0.2}},
     }
 

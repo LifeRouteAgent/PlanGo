@@ -111,7 +111,7 @@ def _weather_result_data(result: dict[str, Any]) -> dict[str, Any] | None:
 def _safe_int(value: Any) -> int | None:
     try:
         return int(float(value))
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return None
 
 

@@ -43,9 +43,16 @@ class TripPlanningService:
         trace_id = request.trace_id or new_id("trace")
         run_id = request.run_id or new_id("run")
         set_trace_context(trace_id=trace_id, run_id=run_id, session_id=session_id)
-        task = self.checkpoint.create(session_id=session_id, user_id=request.user_id or session_id, trace_id=trace_id)
+        task = self.checkpoint.create(
+            session_id=session_id, user_id=request.user_id or session_id, trace_id=trace_id
+        )
         result = run_v2_request_to_legacy(request, session_id=session_id)
-        result.update({"task_id": str(task["task_id"]), "trace_id": trace_id, "run_id": run_id, "session_id": session_id})
+        result.update({
+            "task_id": str(task["task_id"]),
+            "trace_id": trace_id,
+            "run_id": run_id,
+            "session_id": session_id,
+        })
         self.checkpoint.save_from_plan_state(
             result,
             status=checkpoint_status_from_state(result),
@@ -171,7 +178,9 @@ def run_v2_state_to_legacy(initial: PlanningState) -> dict[str, Any]:
     _publish_run_event(initial, "run_started", status="running")
     try:
         result = planning_graph_v2.invoke(initial)
-        state = result if isinstance(result, PlanningState) else PlanningState.model_validate(result)
+        state = (
+            result if isinstance(result, PlanningState) else PlanningState.model_validate(result)
+        )
         legacy = planning_state_to_legacy(state)
         _publish_run_event(
             state,
@@ -220,12 +229,17 @@ def _run_v2_progress_job(initial: PlanningState) -> None:
         response = build_trip_response(legacy)
         import asyncio
 
-        asyncio.run(stream_manager.send(initial.state_meta.request_id, {
-            "type": "final_result",
-            "request_id": initial.state_meta.request_id,
-            "run_id": initial.state_meta.state_id,
-            "response": response.model_dump(mode="json"),
-        }))
+        asyncio.run(
+            stream_manager.send(
+                initial.state_meta.request_id,
+                {
+                    "type": "final_result",
+                    "request_id": initial.state_meta.request_id,
+                    "run_id": initial.state_meta.state_id,
+                    "response": response.model_dump(mode="json"),
+                },
+            )
+        )
     finally:
         import asyncio
 
@@ -266,7 +280,10 @@ def stream_v2_request(request: TripPlanRequest) -> Iterator[str]:
         manual_origin=request.manual_origin,
     )
     current = initial
-    yield sse_event("status", {"stage": "planning_v2", "session_id": session_id, "message": "Planning Graph V2 已启动。"})
+    yield sse_event(
+        "status",
+        {"stage": "planning_v2", "session_id": session_id, "message": "Planning Graph V2 已启动。"},
+    )
     for update in planning_graph_v2.stream(initial, stream_mode="updates"):
         for node_name, patch in update.items():
             payload = current.model_dump(mode="python")
@@ -276,7 +293,10 @@ def stream_v2_request(request: TripPlanRequest) -> Iterator[str]:
                 "agent_thinking",
                 build_agent_thinking_payload(node_name, patch, current.model_dump(mode="json")),
             )
-            yield sse_event("node_update", {"node": node_name, "message": f"{node_name} completed", "duration_ms": 0})
+            yield sse_event(
+                "node_update",
+                {"node": node_name, "message": f"{node_name} completed", "duration_ms": 0},
+            )
     legacy = planning_state_to_legacy(current)
     legacy["session_id"] = session_id
     response = build_trip_response(legacy, include_debug=request.debug)
@@ -326,10 +346,19 @@ def attach_frontend_compatibility(result: dict[str, Any]) -> dict[str, Any]:
     if selected:
         selected["weather"] = weather
     routes = [
-        {"plan_id": plan.get("id") or plan.get("plan_id"), "segments": plan.get("route_segments", [])}
+        {
+            "plan_id": plan.get("id") or plan.get("plan_id"),
+            "segments": plan.get("route_segments", []),
+        }
         for plan in ranked
     ]
-    return {**result, "ranked_plans": ranked, "selected_plan": selected, "weather": weather, "routes": routes}
+    return {
+        **result,
+        "ranked_plans": ranked,
+        "selected_plan": selected,
+        "weather": weather,
+        "routes": routes,
+    }
 
 
 def checkpoint_status_from_state(state: dict[str, Any]) -> TaskStatus:

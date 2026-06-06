@@ -1,6 +1,7 @@
 from app.planning.state.base import *  # noqa: F403
 from app.planning.state.context import PreferenceTag
 
+
 class IntentResult(StateModel):
     request_type: RequestType = "full_itinerary_plan"
     is_followup: bool = False
@@ -94,10 +95,11 @@ class LLMUnderstanding(StateModel):
     slots: SlotUnderstanding = Field(default_factory=SlotUnderstanding)
     poi_recall_intent: POIRecallIntent = Field(default_factory=POIRecallIntent)
     poi_keyword_intent: POIKeywordIntent = Field(default_factory=POIKeywordIntent)
-    preference_tags_from_message: MessagePreferenceTags = Field(default_factory=MessagePreferenceTags)
+    preference_tags_from_message: MessagePreferenceTags = Field(
+        default_factory=MessagePreferenceTags
+    )
     budget: BudgetUnderstanding = Field(default_factory=BudgetUnderstanding)
     distance: DistanceUnderstanding = Field(default_factory=DistanceUnderstanding)
     time: TimeUnderstanding = Field(default_factory=TimeUnderstanding)
     rating: RatingUnderstanding = Field(default_factory=RatingUnderstanding)
     defaults_used: DefaultsUsed = Field(default_factory=DefaultsUsed)
-

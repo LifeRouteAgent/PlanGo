@@ -169,13 +169,13 @@ def _validate_common_params(params: dict[str, Any]) -> list[dict[str, Any]]:
             count = int(params["people_count"])
             if count <= 0 or count > 50:
                 issues.append(_issue("validation_failed", "人数必须在 1-50 之间。"))
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             issues.append(_issue("validation_failed", "人数必须是数字。"))
     if "budget" in params:
         try:
             if float(params["budget"]) < 0:
                 issues.append(_issue("validation_failed", "预算不能为负数。"))
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             issues.append(_issue("validation_failed", "预算必须是数字。"))
     for lat_key, lon_key in (("lat", "lon"), ("origin_lat", "origin_lon")):
         if lat_key in params or lon_key in params:
@@ -184,7 +184,7 @@ def _validate_common_params(params: dict[str, Any]) -> list[dict[str, Any]]:
                 lon = float(params[lon_key])
                 if not (-90 <= lat <= 90 and -180 <= lon <= 180):
                     issues.append(_issue("validation_failed", "经纬度超出合法范围。"))
-            except (KeyError, TypeError, ValueError):
+            except KeyError, TypeError, ValueError:
                 issues.append(_issue("validation_failed", "经纬度必须成对提供且为数字。"))
     return issues
 

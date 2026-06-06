@@ -206,6 +206,3 @@ def create_initial_state(
         "tool_evidence": [],
         "booking_actions": [],
     }
-
-
-

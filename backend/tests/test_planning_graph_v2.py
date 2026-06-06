@@ -230,46 +230,42 @@ def test_frontend_plan_card_keeps_route_timeline_and_display_fields() -> None:
     payload = normalize_response_payload({
         "response_type": "plan_cards",
         "summary": "已生成可用方案。",
-        "plans": [
-            {
-                "id": "plan_1",
-                "plan_id": "plan_1",
-                "title": "测试方案",
+        "plans": [{
+            "id": "plan_1",
+            "plan_id": "plan_1",
+            "title": "测试方案",
+            "tags": ["室内"],
+            "highlight_tags": ["室内"],
+            "items": [{
+                "id": "poi_1",
+                "name": "测试地点",
+                "category": "poi_activity",
+                "logical_category": "activity",
+                "lat": 39.9,
+                "lon": 116.4,
+                "address": "测试地址",
+                "rating": 4.8,
                 "tags": ["室内"],
-                "highlight_tags": ["室内"],
-                "items": [
-                    {
-                        "id": "poi_1",
-                        "name": "测试地点",
-                        "category": "poi_activity",
-                        "logical_category": "activity",
-                        "lat": 39.9,
-                        "lon": 116.4,
-                        "address": "测试地址",
-                        "rating": 4.8,
-                        "tags": ["室内"],
-                        "reason": "距离合适",
-                    }
-                ],
-                "timeline": [{"type": "poi", "poi_id": "poi_1", "title": "测试地点", "time_text": "14:00-15:30"}],
-                "route_segments": [
-                    {
-                        "from": "出发地",
-                        "to": "测试地点",
-                        "distance_km": 2.1,
-                        "duration_minutes": 12,
-                        "transport_mode": "taxi",
-                        "source": "amap",
-                    }
-                ],
-                "total_distance_km": 2.1,
-                "route_minutes": 12,
-                "total_duration_minutes": 90,
-                "estimated_budget": 120,
-                "plan_score": 88,
-                "fit_summary": {"summary": "动线紧凑"},
-            }
-        ],
+                "reason": "距离合适",
+            }],
+            "timeline": [
+                {"type": "poi", "poi_id": "poi_1", "title": "测试地点", "time_text": "14:00-15:30"}
+            ],
+            "route_segments": [{
+                "from": "出发地",
+                "to": "测试地点",
+                "distance_km": 2.1,
+                "duration_minutes": 12,
+                "transport_mode": "taxi",
+                "source": "amap",
+            }],
+            "total_distance_km": 2.1,
+            "route_minutes": 12,
+            "total_duration_minutes": 90,
+            "estimated_budget": 120,
+            "plan_score": 88,
+            "fit_summary": {"summary": "动线紧凑"},
+        }],
         "selected_plan": {"id": "plan_1"},
     })
 
@@ -309,14 +305,12 @@ def test_intent_tag_mapping_only_accepts_database_catalog_tags(monkeypatch) -> N
             "intent_type": "category_recommend",
             "target_categories": ["poi_entertainment"],
             "required_slots": ["entertainment"],
-            "category_tag_requirements": [
-                {
-                    "logical_category": "entertainment",
-                    "target_slot": "entertainment",
-                    "positive_logic_tags": ["KTV", "不存在的标签"],
-                    "negative_logic_tags": ["电影院"],
-                }
-            ],
+            "category_tag_requirements": [{
+                "logical_category": "entertainment",
+                "target_slot": "entertainment",
+                "positive_logic_tags": ["KTV", "不存在的标签"],
+                "negative_logic_tags": ["电影院"],
+            }],
         },
     )
 
@@ -374,6 +368,8 @@ def test_catalog_rule_fallback_recognizes_tag_recommendation(monkeypatch) -> Non
     requirement = understanding.poi_recall_intent.category_tag_requirements[0]
     assert "KTV" in requirement.positive_logic_tags
     assert "电影院" in requirement.negative_logic_tags
+
+
 def test_full_plan_graph_uses_v2_rank_check_loop_without_removed_nodes() -> None:
     result = run_planning_request("周末和朋友出去玩四个小时，想唱歌吃饭，预算600元")
     nodes = [trace.node for trace in result.debug.node_trace]
@@ -420,7 +416,9 @@ def test_indoor_quick_start_does_not_force_restaurant() -> None:
 
     assert "restaurant" not in understanding.slots.required_slots
     assert "restaurant" not in understanding.poi_recall_intent.target_logical_categories
-    assert all("restaurant" not in item.logical_categories for item in recall.slot_recall_requirements)
+    assert all(
+        "restaurant" not in item.logical_categories for item in recall.slot_recall_requirements
+    )
     assert "restaurant" not in constraints.hard_constraints.required_slots
 
 
@@ -456,7 +454,9 @@ def test_explicit_time_crossing_meal_time_allows_restaurant() -> None:
 def test_inspiration_prompt_becomes_must_poi() -> None:
     understanding = resolve_intent("我想去 天安门广场-国旗，帮我搭配一个本地生活方案。", {}, {})
     constraints, recall = build_constraints(understanding, city="北京", origin=None)
-    compiled = compile_recall_plan(recall, constraints, create_planning_state("x").context.poi_logical_tag_catalog)
+    compiled = compile_recall_plan(
+        recall, constraints, create_planning_state("x").context.poi_logical_tag_catalog
+    )
 
     assert understanding.intent.request_type == "full_itinerary_plan"
     assert "天安门广场-国旗" in understanding.poi_keyword_intent.must_poi_keywords
@@ -469,8 +469,14 @@ def test_inspiration_prompt_becomes_must_poi() -> None:
 
 
 def test_inspiration_prompt_infers_must_poi_category() -> None:
-    drama = resolve_intent("我想去 北京 · 开心麻花首部惊悚爆笑戏剧《开心聊斋·三生沉浸版》，帮我搭配一个本地生活方案。", {}, {})
-    shopping = resolve_intent("我想去 Piaget伯爵（北京SKP专卖店），帮我搭配一个本地生活方案。", {}, {})
+    drama = resolve_intent(
+        "我想去 北京 · 开心麻花首部惊悚爆笑戏剧《开心聊斋·三生沉浸版》，帮我搭配一个本地生活方案。",
+        {},
+        {},
+    )
+    shopping = resolve_intent(
+        "我想去 Piaget伯爵（北京SKP专卖店），帮我搭配一个本地生活方案。", {}, {}
+    )
 
     drama_constraints, drama_recall = build_constraints(drama, city="北京", origin=None)
     shopping_constraints, shopping_recall = build_constraints(shopping, city="北京", origin=None)
@@ -478,15 +484,27 @@ def test_inspiration_prompt_infers_must_poi_category() -> None:
     drama_compiled = compile_recall_plan(drama_recall, drama_constraints, catalog)
     shopping_compiled = compile_recall_plan(shopping_recall, shopping_constraints, catalog)
 
-    assert drama_constraints.hard_constraints.required_slots == ["activity_or_entertainment", "shopping"]
+    assert drama_constraints.hard_constraints.required_slots == [
+        "activity_or_entertainment",
+        "shopping",
+    ]
     assert "activity" in drama.poi_recall_intent.target_logical_categories
-    assert {query.logical_category for query in drama_compiled.queries if query.slot_id == "activity_or_entertainment"} >= {
+    assert {
+        query.logical_category
+        for query in drama_compiled.queries
+        if query.slot_id == "activity_or_entertainment"
+    } >= {
         "activity",
         "entertainment",
     }
-    assert shopping_constraints.hard_constraints.required_slots == ["shopping", "activity_or_entertainment"]
+    assert shopping_constraints.hard_constraints.required_slots == [
+        "shopping",
+        "activity_or_entertainment",
+    ]
     assert "shopping" in shopping.poi_recall_intent.target_logical_categories
-    assert {query.logical_category for query in shopping_compiled.queries if query.slot_id == "shopping"} == {"shopping"}
+    assert {
+        query.logical_category for query in shopping_compiled.queries if query.slot_id == "shopping"
+    } == {"shopping"}
 
 
 def test_unresolved_inspiration_must_poi_gets_safe_fallback_candidate(monkeypatch) -> None:
@@ -495,12 +513,14 @@ def test_unresolved_inspiration_must_poi_gets_safe_fallback_candidate(monkeypatc
     monkeypatch.setattr(
         recall_services.PoiRepository,
         "fetch_by_name_keywords",
-        lambda self, keywords, categories=None: {category: [] for category in (categories or [])},
+        lambda self, keywords, categories=None: {category: [] for category in categories or []},
     )
 
     understanding = resolve_intent("我想去 天安门广场-国旗，帮我搭配一个本地生活方案。", {}, {})
     constraints, recall = build_constraints(understanding, city="北京", origin=None)
-    compiled = compile_recall_plan(recall, constraints, create_planning_state("x").context.poi_logical_tag_catalog)
+    compiled = compile_recall_plan(
+        recall, constraints, create_planning_state("x").context.poi_logical_tag_catalog
+    )
     raw, _stats = collect_candidates(compiled, constraints)
 
     must_items = [item for items in raw.values() for item in items if item.must_include]
@@ -516,7 +536,9 @@ def test_quick_start_hotspots_and_budget_templates() -> None:
     assert hotspots.intent.request_type == "single_category_recommend"
     assert "restaurant" in hotspots.poi_recall_intent.target_logical_categories
     assert budget.intent.request_type == "full_itinerary_plan"
-    assert {"activity", "entertainment", "restaurant"} & set(budget.poi_recall_intent.target_logical_categories)
+    assert {"activity", "entertainment", "restaurant"} & set(
+        budget.poi_recall_intent.target_logical_categories
+    )
 
 
 def test_message_origin_overrides_current_geo_location(monkeypatch) -> None:
@@ -526,15 +548,13 @@ def test_message_origin_overrides_current_geo_location(monkeypatch) -> None:
         intent_services.PoiRepository,
         "fetch_by_name_keywords",
         lambda self, keywords, categories=None: {
-            "poi_attractions": [
-                {
-                    "id": "origin_sanlitun",
-                    "name": "三里屯",
-                    "lat": 39.9365,
-                    "lon": 116.4551,
-                    "address": "北京市朝阳区三里屯",
-                }
-            ]
+            "poi_attractions": [{
+                "id": "origin_sanlitun",
+                "name": "三里屯",
+                "lat": 39.9365,
+                "lon": 116.4551,
+                "address": "北京市朝阳区三里屯",
+            }]
         },
     )
 
@@ -555,7 +575,7 @@ def test_current_geo_location_used_when_message_origin_unresolved(monkeypatch) -
     monkeypatch.setattr(
         intent_services.PoiRepository,
         "fetch_by_name_keywords",
-        lambda self, keywords, categories=None: {category: [] for category in (categories or [])},
+        lambda self, keywords, categories=None: {category: [] for category in categories or []},
     )
 
     understanding = resolve_intent("从不存在的起点出发，帮我安排两个室内活动。", {}, {})
@@ -628,61 +648,57 @@ def test_route_planner_filters_adjacent_pois_under_one_km() -> None:
         lng=116.4300,
     )
 
-    no_plan = create_route_plans({"activity": [close_activity], "shopping": [close_shopping]}, constraints)
-    valid_plan = create_route_plans({"activity": [close_activity], "shopping": [far_shopping]}, constraints)
+    no_plan = create_route_plans(
+        {"activity": [close_activity], "shopping": [close_shopping]}, constraints
+    )
+    valid_plan = create_route_plans(
+        {"activity": [close_activity], "shopping": [far_shopping]}, constraints
+    )
 
     assert no_plan == []
     assert valid_plan
 
 
 def test_response_payload_contract_sanitizes_tags_images_and_transport() -> None:
-    payload = normalize_response_payload(
-        {
-            "response_type": "plan_cards",
-            "summary": "ok",
-            "plans": [
-                {
-                    "id": "plan_1",
-                    "plan_id": "plan_1",
-                    "title": "activity + cinema",
-                    "tags": ["activity", '{"sub_category_id": 2}', "ktv", "室内"],
-                    "highlight_tags": ["cinema", "路线清晰"],
-                    "pros": ["地点匹配", '{"raw": true}'],
-                    "cons": ["mixed", "出发前确认"],
-                    "timeline": [
-                        {"time_text": "14:00", "title": "三里屯", "type": "origin"},
-                        {"time_text": "14:10-15:30", "title": "测试POI", "poi_id": "poi_1"},
-                    ],
-                    "route_segments": [
-                        {
-                            "from": "三里屯",
-                            "to": "测试POI",
-                            "from_id": "origin",
-                            "to_id": "poi_1",
-                            "from_type": "origin",
-                            "to_type": "poi",
-                            "transport_mode": "mixed",
-                            "source": "haversine_fallback",
-                            "polyline": [{"lat": 39.9, "lng": 116.4}, {"lat": 39.91, "lng": 116.41}],
-                        }
-                    ],
-                    "items": [
-                        {
-                            "id": "poi_1",
-                            "name": "测试POI",
-                            "category": "poi_entertainment",
-                            "logical_category": "entertainment",
-                            "tags": ['{"leaf_category_id": 154}', "ktv", "量贩式KTV"],
-                            "reason": "匹配",
-                            "image_url": "http://example.com/a.jpg",
-                            "images": [],
-                        }
-                    ],
-                }
+    payload = normalize_response_payload({
+        "response_type": "plan_cards",
+        "summary": "ok",
+        "plans": [{
+            "id": "plan_1",
+            "plan_id": "plan_1",
+            "title": "activity + cinema",
+            "tags": ["activity", '{"sub_category_id": 2}', "ktv", "室内"],
+            "highlight_tags": ["cinema", "路线清晰"],
+            "pros": ["地点匹配", '{"raw": true}'],
+            "cons": ["mixed", "出发前确认"],
+            "timeline": [
+                {"time_text": "14:00", "title": "三里屯", "type": "origin"},
+                {"time_text": "14:10-15:30", "title": "测试POI", "poi_id": "poi_1"},
             ],
-            "selected_plan": {"id": "plan_1"},
-        }
-    )
+            "route_segments": [{
+                "from": "三里屯",
+                "to": "测试POI",
+                "from_id": "origin",
+                "to_id": "poi_1",
+                "from_type": "origin",
+                "to_type": "poi",
+                "transport_mode": "mixed",
+                "source": "haversine_fallback",
+                "polyline": [{"lat": 39.9, "lng": 116.4}, {"lat": 39.91, "lng": 116.41}],
+            }],
+            "items": [{
+                "id": "poi_1",
+                "name": "测试POI",
+                "category": "poi_entertainment",
+                "logical_category": "entertainment",
+                "tags": ['{"leaf_category_id": 154}', "ktv", "量贩式KTV"],
+                "reason": "匹配",
+                "image_url": "http://example.com/a.jpg",
+                "images": [],
+            }],
+        }],
+        "selected_plan": {"id": "plan_1"},
+    })
 
     plan = payload["selected_plan"]
     item = plan["items"][0]
@@ -701,26 +717,20 @@ def test_response_payload_contract_sanitizes_tags_images_and_transport() -> None
 
 def test_response_payload_contract_rejects_origin_location_leak() -> None:
     with pytest.raises(ValidationError):
-        normalize_response_payload(
-            {
-                "response_type": "plan_cards",
-                "plans": [
-                    {
-                        "id": "plan_1",
-                        "plan_id": "plan_1",
-                        "title": "方案",
-                        "timeline": [
-                            {
-                                "time_text": "14:00",
-                                "title": "三里屯",
-                                "type": "origin",
-                                "lat": 39.9,
-                            }
-                        ],
-                        "items": [],
-                        "route_segments": [],
-                    }
-                ],
-                "selected_plan": {"id": "plan_1"},
-            }
-        )
+        normalize_response_payload({
+            "response_type": "plan_cards",
+            "plans": [{
+                "id": "plan_1",
+                "plan_id": "plan_1",
+                "title": "方案",
+                "timeline": [{
+                    "time_text": "14:00",
+                    "title": "三里屯",
+                    "type": "origin",
+                    "lat": 39.9,
+                }],
+                "items": [],
+                "route_segments": [],
+            }],
+            "selected_plan": {"id": "plan_1"},
+        })

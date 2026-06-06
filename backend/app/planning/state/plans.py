@@ -1,6 +1,7 @@
 from app.planning.state.base import *  # noqa: F403
 from app.planning.state.recall import *  # noqa: F403
 
+
 class PlanSlot(StateModel):
     slot_id: str
     poi_id: str
@@ -96,4 +97,3 @@ class PlanResultsState(StateModel):
     availability_results: AvailabilityResults = Field(default_factory=AvailabilityResults)
     verified_plans: list[VerifiedPlan] = Field(default_factory=list)
     ranked_plans: list[RankedPlan] = Field(default_factory=list)
-

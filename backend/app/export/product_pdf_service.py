@@ -48,7 +48,9 @@ def build_product_plan_pdf(plan: dict[str, Any]) -> bytes:
     tags = _highlight_tags(plan)
     title = _title(plan)
     total_minutes = int(plan.get("total_duration_min") or plan.get("total_duration_minutes") or 0)
-    route_minutes = sum(int(seg.get("duration_min") or seg.get("duration_minutes") or 0) for seg in _segments(plan))
+    route_minutes = sum(
+        int(seg.get("duration_min") or seg.get("duration_minutes") or 0) for seg in _segments(plan)
+    )
     distance_km = _distance_km(plan)
     budget = int(plan.get("total_cost") or plan.get("estimated_budget") or 0)
     modes = _transport_modes(plan)
@@ -64,9 +66,21 @@ def build_product_plan_pdf(plan: dict[str, Any]) -> bytes:
         c,
         [
             ("总时长", _minute_text(total_minutes), _time_range(plan)),
-            ("预算", f"约 ¥{budget}" if budget else "待确认", "以现场为准" if not budget else "预算可控"),
-            ("总距离", f"{distance_km:.1f} 公里" if distance_km else "待确认", "路线待确认" if not distance_km else "轻松不赶路"),
-            ("出行方式", " / ".join(modes) if modes else "待确认", f"交通约 {route_minutes} 分钟" if route_minutes else "交通待确认"),
+            (
+                "预算",
+                f"约 ¥{budget}" if budget else "待确认",
+                "以现场为准" if not budget else "预算可控",
+            ),
+            (
+                "总距离",
+                f"{distance_km:.1f} 公里" if distance_km else "待确认",
+                "路线待确认" if not distance_km else "轻松不赶路",
+            ),
+            (
+                "出行方式",
+                " / ".join(modes) if modes else "待确认",
+                f"交通约 {route_minutes} 分钟" if route_minutes else "交通待确认",
+            ),
         ],
         x=34,
         y=height - 238,
@@ -114,10 +128,14 @@ def _draw_logo(c: Any, x: float, y: float, theme: dict[str, Any]) -> None:
 def _draw_generated_at(c: Any, width: float, height: float, theme: dict[str, Any]) -> None:
     c.setFillColor(theme["muted"])
     c.setFont("STSong-Light", 8)
-    c.drawRightString(width - 34, height - 42, f"生成时间：{datetime.now().strftime('%Y年%m月%d日')}")
+    c.drawRightString(
+        width - 34, height - 42, f"生成时间：{datetime.now().strftime('%Y年%m月%d日')}"
+    )
 
 
-def _metric_cards(c: Any, metrics: list[tuple[str, str, str]], x: float, y: float, theme: dict[str, Any]) -> None:
+def _metric_cards(
+    c: Any, metrics: list[tuple[str, str, str]], x: float, y: float, theme: dict[str, Any]
+) -> None:
     for index, (label, value, hint) in enumerate(metrics):
         card_x = x + index * 116
         _card(c, card_x, y, 102, 68, theme)
@@ -132,7 +150,16 @@ def _metric_cards(c: Any, metrics: list[tuple[str, str, str]], x: float, y: floa
         c.drawString(card_x + 12, y + 10, hint[:16])
 
 
-def _draw_image_card(c: Any, image_url: str | None, x: float, y: float, w: float, h: float, theme: dict[str, Any], image_reader: Any) -> None:
+def _draw_image_card(
+    c: Any,
+    image_url: str | None,
+    x: float,
+    y: float,
+    w: float,
+    h: float,
+    theme: dict[str, Any],
+    image_reader: Any,
+) -> None:
     _card(c, x, y, w, h, theme)
     image = _load_image(image_url, image_reader)
     if image:
@@ -148,7 +175,9 @@ def _draw_image_card(c: Any, image_url: str | None, x: float, y: float, w: float
     c.drawCentredString(x + w / 2, y + h / 2 - 16, "图片待确认，方案内容不受影响")
 
 
-def _draw_tags_card(c: Any, x: float, y: float, w: float, h: float, tags: list[str], theme: dict[str, Any]) -> None:
+def _draw_tags_card(
+    c: Any, x: float, y: float, w: float, h: float, tags: list[str], theme: dict[str, Any]
+) -> None:
     _card(c, x, y, w, h, theme)
     _draw_text(c, "方案亮点", x + 16, y + h - 24, 11, theme["ink"], max_width=160)
     for index, tag in enumerate(tags[:4]):
@@ -161,22 +190,60 @@ def _draw_tags_card(c: Any, x: float, y: float, w: float, h: float, tags: list[s
         c.drawCentredString(px + 46, py + 10, tag[:8])
 
 
-def _draw_reason_card(c: Any, x: float, y: float, w: float, h: float, plan: dict[str, Any], steps: list[dict[str, Any]], theme: dict[str, Any]) -> None:
+def _draw_reason_card(
+    c: Any,
+    x: float,
+    y: float,
+    w: float,
+    h: float,
+    plan: dict[str, Any],
+    steps: list[dict[str, Any]],
+    theme: dict[str, Any],
+) -> None:
     _card(c, x, y, w, h, theme)
     _draw_text(c, "为什么推荐", x + 16, y + h - 26, 13, theme["ink"], max_width=160)
-    reason = _string_list(plan.get("rationale"))[:2] or [str(plan.get("recommendation_reason") or "该方案基于当前偏好、预算和时间窗口生成。")]
+    reason = _string_list(plan.get("rationale"))[:2] or [
+        str(plan.get("recommendation_reason") or "该方案基于当前偏好、预算和时间窗口生成。")
+    ]
     cursor = y + h - 58
     for item in reason:
-        _draw_text(c, f"• {_short(item, 42)}", x + 18, cursor, 9, theme["text"], max_width=w - 36, leading=13)
+        _draw_text(
+            c,
+            f"• {_short(item, 42)}",
+            x + 18,
+            cursor,
+            9,
+            theme["text"],
+            max_width=w - 36,
+            leading=13,
+        )
         cursor -= 44
     _draw_text(c, "关键节点", x + 16, cursor - 4, 12, theme["ink"], max_width=160)
     cursor -= 28
     for index, step in enumerate(steps[:4]):
-        _draw_text(c, f"{chr(65 + index)}  {_time_range_step(step)}  {_step_title(step)}", x + 18, cursor, 8, theme["text"], max_width=w - 36)
+        _draw_text(
+            c,
+            f"{chr(65 + index)}  {_time_range_step(step)}  {_step_title(step)}",
+            x + 18,
+            cursor,
+            8,
+            theme["text"],
+            max_width=w - 36,
+        )
         cursor -= 18
 
 
-def _draw_timeline(c: Any, x: float, y: float, w: float, h: float, steps: list[dict[str, Any]], segments: list[dict[str, Any]], theme: dict[str, Any], image_reader: Any) -> None:
+def _draw_timeline(
+    c: Any,
+    x: float,
+    y: float,
+    w: float,
+    h: float,
+    steps: list[dict[str, Any]],
+    segments: list[dict[str, Any]],
+    theme: dict[str, Any],
+    image_reader: Any,
+) -> None:
     c.setStrokeColor(theme["line"])
     c.setLineWidth(1)
     c.line(x + 18, y + 10, x + 18, y + h - 16)
@@ -192,7 +259,9 @@ def _draw_timeline(c: Any, x: float, y: float, w: float, h: float, steps: list[d
         _card(c, x + 42, cursor, w - 42, 86, theme)
         image = _load_image(_step_image(step), image_reader)
         if image:
-            c.drawImage(image, x + w - 108, cursor + 12, 78, 62, preserveAspectRatio=True, mask="auto")
+            c.drawImage(
+                image, x + w - 108, cursor + 12, 78, 62, preserveAspectRatio=True, mask="auto"
+            )
         c.setFillColor(theme["blue"])
         c.setFont("STSong-Light", 8)
         c.drawString(x + 60, cursor + 64, _time_range_step(step))
@@ -203,7 +272,16 @@ def _draw_timeline(c: Any, x: float, y: float, w: float, h: float, steps: list[d
             c.setFillColor(theme["text"])
             c.setFont("STSong-Light", 8)
             c.drawRightString(x + w - 118, cursor + 64, f"¥{_step_cost(step)}/人")
-        _draw_text(c, _step_reason(step), x + 60, cursor + 27, 8, theme["text"], max_width=w - 206, leading=11)
+        _draw_text(
+            c,
+            _step_reason(step),
+            x + 60,
+            cursor + 27,
+            8,
+            theme["text"],
+            max_width=w - 206,
+            leading=11,
+        )
 
         if index < len(segments):
             segment = segments[index]
@@ -221,7 +299,9 @@ def _draw_timeline(c: Any, x: float, y: float, w: float, h: float, steps: list[d
         cursor -= 116
 
 
-def _draw_analysis_panel(c: Any, x: float, y: float, w: float, h: float, plan: dict[str, Any], theme: dict[str, Any]) -> None:
+def _draw_analysis_panel(
+    c: Any, x: float, y: float, w: float, h: float, plan: dict[str, Any], theme: dict[str, Any]
+) -> None:
     _card(c, x, y, w, h, theme)
     _draw_text(c, "优缺点分析", x + 14, y + h - 24, 12, theme["ink"], max_width=160)
     pros = _string_list(plan.get("pros")) or _string_list(plan.get("rationale"))[:2]
@@ -232,18 +312,38 @@ def _draw_analysis_panel(c: Any, x: float, y: float, w: float, h: float, plan: d
     c.drawString(x + 16, cursor, "优势")
     cursor -= 16
     for item in pros[:3]:
-        _draw_text(c, f"✓ {_short(item, 34)}", x + 18, cursor, 8, theme["text"], max_width=w - 32, leading=10)
+        _draw_text(
+            c,
+            f"✓ {_short(item, 34)}",
+            x + 18,
+            cursor,
+            8,
+            theme["text"],
+            max_width=w - 32,
+            leading=10,
+        )
         cursor -= 18
     c.setFillColor(theme["warn"])
     c.setFont("STSong-Light", 9)
     c.drawString(x + 16, cursor - 2, "注意事项")
     cursor -= 20
     for item in cons[:3]:
-        _draw_text(c, f"• {_short(item, 34)}", x + 18, cursor, 8, theme["text"], max_width=w - 32, leading=10)
+        _draw_text(
+            c,
+            f"• {_short(item, 34)}",
+            x + 18,
+            cursor,
+            8,
+            theme["text"],
+            max_width=w - 32,
+            leading=10,
+        )
         cursor -= 18
 
 
-def _draw_pack_list(c: Any, x: float, y: float, w: float, h: float, tags: list[str], theme: dict[str, Any]) -> None:
+def _draw_pack_list(
+    c: Any, x: float, y: float, w: float, h: float, tags: list[str], theme: dict[str, Any]
+) -> None:
     _card(c, x, y, w, h, theme)
     _draw_text(c, "推荐物品清单", x + 14, y + h - 24, 12, theme["ink"], max_width=160)
     items = ["身份证", "充电宝", "少量现金", "纸巾湿巾"]
@@ -277,7 +377,17 @@ def _card(c: Any, x: float, y: float, w: float, h: float, theme: dict[str, Any])
     c.roundRect(x, y, w, h, 22, stroke=1, fill=1)
 
 
-def _draw_text(c: Any, text: str, x: float, y: float, size: float, color: Any, *, max_width: float = 240, leading: float | None = None) -> None:
+def _draw_text(
+    c: Any,
+    text: str,
+    x: float,
+    y: float,
+    size: float,
+    color: Any,
+    *,
+    max_width: float = 240,
+    leading: float | None = None,
+) -> None:
     c.setFillColor(color)
     c.setFont("STSong-Light", size)
     line_height = leading or size * 1.35
@@ -303,7 +413,11 @@ def _load_image(url: str | None, image_reader: Any) -> Any | None:
 
 
 def _title(plan: dict[str, Any]) -> str:
-    return str(plan.get("title") or (plan.get("recommendation") or {}).get("title") or "PlanGo 本地生活方案")
+    return str(
+        plan.get("title")
+        or (plan.get("recommendation") or {}).get("title")
+        or "PlanGo 本地生活方案"
+    )
 
 
 def _steps(plan: dict[str, Any]) -> list[dict[str, Any]]:
@@ -327,11 +441,20 @@ def _highlight_tags(plan: dict[str, Any]) -> list[str]:
     tags = _string_list(plan.get("highlight_tags"))
     if not tags:
         tags = _string_list((plan.get("recommendation") or {}).get("tags"))
-    return _unique([_short(item, 8) for item in tags if item])[:4] or ["节奏轻松", "路线清晰", "预算可控", "适合分享"]
+    return _unique([_short(item, 8) for item in tags if item])[:4] or [
+        "节奏轻松",
+        "路线清晰",
+        "预算可控",
+        "适合分享",
+    ]
 
 
 def _string_list(value: Any) -> list[str]:
-    return [str(item).strip() for item in value if str(item).strip()] if isinstance(value, list) else []
+    return (
+        [str(item).strip() for item in value if str(item).strip()]
+        if isinstance(value, list)
+        else []
+    )
 
 
 def _unique(values: list[str]) -> list[str]:
@@ -358,7 +481,9 @@ def _distance_km(plan: dict[str, Any]) -> float:
     route_distance = sum(float(seg.get("distance_km") or 0) for seg in _segments(plan))
     if route_distance:
         return route_distance
-    return float((plan.get("recommendation") or {}).get("distance_km") or plan.get("total_distance_km") or 0)
+    return float(
+        (plan.get("recommendation") or {}).get("distance_km") or plan.get("total_distance_km") or 0
+    )
 
 
 def _transport_modes(plan: dict[str, Any]) -> list[str]:
@@ -369,24 +494,44 @@ def _transport_modes(plan: dict[str, Any]) -> list[str]:
 def _time_range(plan: dict[str, Any]) -> str:
     start = plan.get("start_time")
     end = plan.get("end_time")
-    return f"{start} - {end}" if start and end and start != "--:--" and end != "--:--" else "时间待确认"
+    return (
+        f"{start} - {end}"
+        if start and end and start != "--:--" and end != "--:--"
+        else "时间待确认"
+    )
 
 
 def _time_range_step(step: dict[str, Any]) -> str:
     start = step.get("start_time")
     end = step.get("end_time")
-    return f"{start} - {end}" if start and end and start != "--:--" and end != "--:--" else "时间待确认"
+    return (
+        f"{start} - {end}"
+        if start and end and start != "--:--" and end != "--:--"
+        else "时间待确认"
+    )
 
 
 def _first_image(plan: dict[str, Any], steps: list[dict[str, Any]]) -> str | None:
-    recommendation = plan.get("recommendation") if isinstance(plan.get("recommendation"), dict) else {}
-    return str(recommendation.get("cover_image") or next((_step_image(step) for step in steps if _step_image(step)), "") or "") or None
+    recommendation = (
+        plan.get("recommendation") if isinstance(plan.get("recommendation"), dict) else {}
+    )
+    return (
+        str(
+            recommendation.get("cover_image")
+            or next((_step_image(step) for step in steps if _step_image(step)), "")
+            or ""
+        )
+        or None
+    )
 
 
 def _step_image(step: dict[str, Any]) -> str | None:
     detail = step.get("detail") if isinstance(step.get("detail"), dict) else {}
     images = detail.get("images") if isinstance(detail.get("images"), list) else []
-    return str(detail.get("image_url") or (images[0] if images else "") or step.get("image_url") or "") or None
+    return (
+        str(detail.get("image_url") or (images[0] if images else "") or step.get("image_url") or "")
+        or None
+    )
 
 
 def _step_title(step: dict[str, Any]) -> str:
@@ -395,7 +540,12 @@ def _step_title(step: dict[str, Any]) -> str:
 
 def _step_reason(step: dict[str, Any]) -> str:
     detail = step.get("detail") if isinstance(step.get("detail"), dict) else {}
-    return str(step.get("reason") or step.get("recommendation_reason") or detail.get("description") or "符合当前偏好与路线安排。")
+    return str(
+        step.get("reason")
+        or step.get("recommendation_reason")
+        or detail.get("description")
+        or "符合当前偏好与路线安排。"
+    )
 
 
 def _step_cost(step: dict[str, Any]) -> int:

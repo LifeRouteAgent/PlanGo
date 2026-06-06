@@ -77,7 +77,10 @@ def test_context_snapshot_preserves_hard_constraints_and_clips_pois() -> None:
     assert snapshot["user_constraints"]["hard_constraints"]["budget"] == 1000
     assert snapshot["user_constraints"]["negative_constraints"]["excluded_keywords"] == ["火锅"]
     assert len(snapshot["tool_evidence"]) == 1
-    assert snapshot["tool_evidence"][0]["result_summary"]["candidate_counts"]["poi_entertainment"] == 12
+    assert (
+        snapshot["tool_evidence"][0]["result_summary"]["candidate_counts"]["poi_entertainment"]
+        == 12
+    )
     assert "llm_understanding" not in snapshot["user_constraints"]["hard_constraints"]
 
 

@@ -19,10 +19,18 @@ class PromptSpec:
 
 
 PROMPT_SPECS: dict[str, PromptSpec] = {
-    "intent_understanding": PromptSpec("intent_understanding", "2026-05-31.1", "IntentUnderstandingOutput", "1"),
-    "revision_parser": PromptSpec("revision_parser", "2026-05-31.1", "RevisionConstraintOutput", "1"),
-    "memory_extractor": PromptSpec("memory_extractor", "2026-05-31.1", "MemoryExtractionOutput", "1"),
-    "response_generation_package": PromptSpec("response_generation_package", "2026-06-03.1", "ResponseGenerationOutput", "1"),
+    "intent_understanding": PromptSpec(
+        "intent_understanding", "2026-05-31.1", "IntentUnderstandingOutput", "1"
+    ),
+    "revision_parser": PromptSpec(
+        "revision_parser", "2026-05-31.1", "RevisionConstraintOutput", "1"
+    ),
+    "memory_extractor": PromptSpec(
+        "memory_extractor", "2026-05-31.1", "MemoryExtractionOutput", "1"
+    ),
+    "response_generation_package": PromptSpec(
+        "response_generation_package", "2026-06-03.1", "ResponseGenerationOutput", "1"
+    ),
 }
 
 
@@ -45,9 +53,8 @@ def load_prompt_template(prompt_name: str, fallback: str = "") -> str:
 
     path = PROMPT_DIR / f"{prompt_name}.md"
     if not path.exists():
-        record_trace_event("prompt_template_missing", {"prompt_name": prompt_name, "path": str(path)})
+        record_trace_event(
+            "prompt_template_missing", {"prompt_name": prompt_name, "path": str(path)}
+        )
         return fallback
     return path.read_text(encoding="utf-8").strip()
-
-
-

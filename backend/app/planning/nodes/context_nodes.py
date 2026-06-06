@@ -32,13 +32,17 @@ def request_context_loader_node(value: PlanningState | dict[str, Any]) -> dict[s
     return {
         "user_info": user,
         "context": context,
-        "debug": append_trace(state, "request_context_loader", "请求上下文和 POI 标签背景知识已标准化"),
+        "debug": append_trace(
+            state, "request_context_loader", "请求上下文和 POI 标签背景知识已标准化"
+        ),
     }
 
 
 def session_state_loader_node(value: PlanningState | dict[str, Any]) -> dict[str, Any]:
     state = ensure_state(value)
-    saved = SessionStore().load(state.state_meta.session_id) if state.state_meta.session_id else None
+    saved = (
+        SessionStore().load(state.state_meta.session_id) if state.state_meta.session_id else None
+    )
     context = state.context.model_copy(deep=True)
     if saved:
         latest = saved.get("latest_planning_state") or saved.get("latest_state") or {}
@@ -54,7 +58,10 @@ def session_state_loader_node(value: PlanningState | dict[str, Any]) -> dict[str
             last_request_type=last_intent or None,
             last_constraints_snapshot=latest.get("constraints") or None,
             last_ranked_plans=ranked[:3],
-            selected_or_referenced_plan_id=str((response.get("selected_plan") or {}).get("id") or "") or None,
+            selected_or_referenced_plan_id=str(
+                (response.get("selected_plan") or {}).get("id") or ""
+            )
+            or None,
         )
         turns = saved.get("turns") or []
         context.conversation_context.recent_turns = [
@@ -62,7 +69,10 @@ def session_state_loader_node(value: PlanningState | dict[str, Any]) -> dict[str
             for turn in turns[-5:]
             if turn.get("user_query")
         ]
-    return {"context": context, "debug": append_trace(state, "session_state_loader", "会话摘要已读取")}
+    return {
+        "context": context,
+        "debug": append_trace(state, "session_state_loader", "会话摘要已读取"),
+    }
 
 
 def memory_reader_node(value: PlanningState | dict[str, Any]) -> dict[str, Any]:
@@ -75,8 +85,16 @@ def memory_reader_node(value: PlanningState | dict[str, Any]) -> dict[str, Any]:
         limit=3,
     )
     context = state.context.model_copy(deep=True)
-    favorite = profile.get("favorite_categories") if isinstance(profile.get("favorite_categories"), dict) else {}
-    disliked = profile.get("disliked_keywords") if isinstance(profile.get("disliked_keywords"), list) else []
+    favorite = (
+        profile.get("favorite_categories")
+        if isinstance(profile.get("favorite_categories"), dict)
+        else {}
+    )
+    disliked = (
+        profile.get("disliked_keywords")
+        if isinstance(profile.get("disliked_keywords"), list)
+        else []
+    )
     context.user_preference_profile = UserPreferenceProfile(
         positive_tags=[
             PreferenceTag(

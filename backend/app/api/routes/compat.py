@@ -53,7 +53,9 @@ def get_user_profile(user_id: str = Query(default="default")) -> dict[str, Any]:
 
 
 @router.get("/home/inspirations")
-def home_inspirations(limit: int = Query(default=8, ge=1, le=20)) -> dict[str, list[dict[str, Any]]]:
+def home_inspirations(
+    limit: int = Query(default=8, ge=1, le=20)
+) -> dict[str, list[dict[str, Any]]]:
     """首页灵感推荐。
 
     不写死 POI，而是从本地数据库按类别混合取带图片的地点，用于首页右侧灵感卡片。
@@ -74,20 +76,21 @@ def home_inspirations(limit: int = Query(default=8, ge=1, le=20)) -> dict[str, l
             image_url = poi.get("image_url") or (poi.get("images") or [None])[0]
             if not image_url:
                 continue
-            tag = (poi.get("tags") or [poi.get("subcategory") or _home_category_label(str(poi.get("category") or ""))])[0]
+            tag = (
+                poi.get("tags")
+                or [poi.get("subcategory") or _home_category_label(str(poi.get("category") or ""))]
+            )[0]
             if not tag:
                 tag = _home_category_label(str(poi.get("category") or ""))
-            items.append(
-                {
-                    "id": poi.get("id"),
-                    "name": poi.get("name"),
-                    "category": poi.get("category"),
-                    "tag": tag,
-                    "tags": poi.get("tags") or [],
-                    "image_url": image_url,
-                    "duration_text": _home_duration_text(str(poi.get("category") or "")),
-                }
-            )
+            items.append({
+                "id": poi.get("id"),
+                "name": poi.get("name"),
+                "category": poi.get("category"),
+                "tag": tag,
+                "tags": poi.get("tags") or [],
+                "image_url": image_url,
+                "duration_text": _home_duration_text(str(poi.get("category") or "")),
+            })
             if len(items) >= limit:
                 return {"items": items}
     return {"items": items}
@@ -164,7 +167,9 @@ def compat_plan_stream(payload: dict[str, Any] = Body(default_factory=dict)) -> 
 
     user_query = _extract_user_query(payload)
     if not user_query:
-        raise HTTPException(status_code=400, detail="请求体缺少用户输入，请传 user_query、query、input 或 message。")
+        raise HTTPException(
+            status_code=400, detail="请求体缺少用户输入，请传 user_query、query、input 或 message。"
+        )
 
     user_profile = payload.get("user_profile") or payload.get("profile") or {}
     if not isinstance(user_profile, dict):
@@ -173,7 +178,7 @@ def compat_plan_stream(payload: dict[str, Any] = Body(default_factory=dict)) -> 
     max_replanning_count = payload.get("max_replanning_count", payload.get("maxReplanningCount", 2))
     try:
         max_replanning_count = int(max_replanning_count)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         max_replanning_count = 2
 
     request = TripPlanRequest(
@@ -250,21 +255,17 @@ def compat_plan_action(plan_id: str, action: str) -> dict[str, Any]:
     return {
         "plan": {
             **base_plan,
-            "actions": [
-                {
-                    "id": f"mock-book-{plan_id}",
-                    "type": "mock_booking",
-                    "status": "confirmed",
-                    "order_id": f"MOCK-{plan_id}",
-                }
-            ],
-        },
-        "actions": [
-            {
+            "actions": [{
                 "id": f"mock-book-{plan_id}",
                 "type": "mock_booking",
                 "status": "confirmed",
                 "order_id": f"MOCK-{plan_id}",
-            }
-        ],
+            }],
+        },
+        "actions": [{
+            "id": f"mock-book-{plan_id}",
+            "type": "mock_booking",
+            "status": "confirmed",
+            "order_id": f"MOCK-{plan_id}",
+        }],
     }
