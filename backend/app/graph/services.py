@@ -6,12 +6,8 @@ from math import asin, cos, radians, sin, sqrt
 from datetime import datetime, timedelta
 from typing import Any
 
-from app.agents.availability_checker import availability_checker_node as legacy_availability
-from app.agents.intent_router import _detect_intent_type, _detect_target_categories
-from app.agents.llm_understanding import build_llm_understanding
-from app.agents.ranker import ranker_node as legacy_ranker
-from app.agents.route_planner import route_time_planner_node as legacy_route_planner
-from app.agents.verifier import verifier_node as legacy_verifier
+from app.graph.intent_rules import detect_intent_type, detect_target_categories
+from app.llm_agents.intent_understanding_agent import build_llm_understanding
 from app.graph.state import (
     AvailabilityResults,
     BudgetPolicy,
@@ -51,12 +47,12 @@ from app.graph.state import (
     SoftPreferences,
     TimePolicy,
     TimelineItem,
-    VerifiedPlan,
-    VerificationIssue,
 )
 from app.services.poi_repository import PoiRecallConstraints, PoiRepository
 from app.services.poi_catalog_service import PoiCatalogService
 from app.services.amap_route_service import AmapRouteService
+from app.services.scoring_service import score_candidates as score_poi_candidates
+from app.graph.payloads import normalize_response_payload
 
 LEGACY_TO_LOGICAL = {f"poi_{name}": name for name in PHYSICAL_TABLES}
 SLOT_CATEGORIES = {
@@ -113,7 +109,7 @@ def resolve_intent(
     raw = _merge_rule_understanding(raw, _rule_understanding(message))
     catalog = _catalog_from_knowledge(poi_knowledge or {})
     rule_tag_matches = PoiCatalogService().match_query_tags(message, catalog)
-    legacy_intent = str(raw.get("intent_type") or _detect_intent_type(message))
+    legacy_intent = str(raw.get("intent_type") or detect_intent_type(message))
     request_type = {
         "capability": "simple_qa",
         "simple_qa": "simple_qa",
@@ -125,7 +121,7 @@ def resolve_intent(
         request_type = "plan_adjustment"
     categories = [
         LEGACY_TO_LOGICAL.get(item, item)
-        for item in (raw.get("target_categories") or _detect_target_categories(message))
+        for item in (raw.get("target_categories") or detect_target_categories(message))
         if LEGACY_TO_LOGICAL.get(item, item) in PHYSICAL_TABLES
     ]
     if rule_tag_matches:
@@ -259,11 +255,15 @@ def _rule_understanding(message: str) -> dict[str, Any]:
 
     must_keywords = _must_poi_keywords_from_message(message)
     if must_keywords:
+        must_category = _infer_inspiration_must_category(must_keywords[0])
         return {
             "intent_type": "full_trip_plan",
-            "target_categories": ["poi_attraction", "poi_activity", "poi_entertainment", "poi_shopping"],
-            "required_slots": ["attraction", "activity_or_entertainment"],
-            "must_pois": [{"name": keyword, "category": "poi_attraction", "must_include": True} for keyword in must_keywords],
+            "target_categories": _inspiration_target_categories(must_category),
+            "required_slots": _inspiration_required_slots(must_category),
+            "must_pois": [
+                {"name": keyword, "category": must_category, "must_include": True}
+                for keyword in must_keywords
+            ],
             "preference_keywords": [keyword for keyword in must_keywords if keyword],
             "scenario": "inspiration_must_poi",
         }
@@ -308,6 +308,16 @@ def _merge_rule_understanding(raw: dict[str, Any], rule: dict[str, Any]) -> dict
     if not rule:
         return raw
     merged = dict(raw)
+    if rule.get("scenario") == "inspiration_must_poi":
+        # 首页灵感卡片的“我想去 X”语义已经足够明确：
+        # X 是必去点，槽位数量应保持可组合，避免 LLM 额外补槽导致路线组合被过滤到 0。
+        for key in ("intent_type", "target_categories", "required_slots", "must_pois", "scenario"):
+            merged[key] = rule[key]
+        merged["preference_keywords"] = _dedupe([
+            *list(rule.get("preference_keywords") or []),
+            *list(raw.get("preference_keywords") or []),
+        ])
+        return merged
     for key, value in rule.items():
         if isinstance(value, list):
             if any(isinstance(item, dict) for item in value):
@@ -317,6 +327,51 @@ def _merge_rule_understanding(raw: dict[str, Any], rule: dict[str, Any]) -> dict
         elif value not in (None, "", {}):
             merged[key] = value
     return merged
+
+
+def _infer_inspiration_must_category(name: str) -> str:
+    """根据首页灵感卡片中的 POI 名称，推断必去点最可能所在的 POI 表。"""
+
+    text = str(name or "").lower()
+    if any(
+        token in text
+        for token in ("skp", "专卖店", "商场", "购物", "品牌", "门店", "旗舰店", "piaget", "伯爵")
+    ):
+        return "poi_shopping"
+    if any(
+        token in text
+        for token in ("开心麻花", "戏剧", "话剧", "音乐剧", "演出", "剧场", "沉浸", "聊斋", "展览", "活动")
+    ):
+        return "poi_activity"
+    if any(token in text for token in ("ktv", "影院", "电影", "密室", "桌游", "酒吧", "娱乐")):
+        return "poi_entertainment"
+    if any(token in text for token in ("美甲", "美容", "spa", "按摩", "护理")):
+        return "poi_beauty"
+    if any(token in text for token in ("健身", "瑜伽", "运动", "球馆")):
+        return "poi_fitness"
+    return "poi_attraction"
+
+
+def _inspiration_target_categories(must_category: str) -> list[str]:
+    category_order = {
+        "poi_shopping": ["poi_shopping", "poi_activity", "poi_entertainment", "poi_attraction"],
+        "poi_activity": ["poi_activity", "poi_entertainment", "poi_shopping", "poi_attraction"],
+        "poi_entertainment": ["poi_entertainment", "poi_activity", "poi_shopping", "poi_attraction"],
+        "poi_beauty": ["poi_beauty", "poi_shopping", "poi_activity", "poi_entertainment"],
+        "poi_fitness": ["poi_fitness", "poi_activity", "poi_shopping", "poi_entertainment"],
+    }
+    return category_order.get(must_category, ["poi_attraction", "poi_activity", "poi_entertainment", "poi_shopping"])
+
+
+def _inspiration_required_slots(must_category: str) -> list[str]:
+    slot_order = {
+        "poi_shopping": ["shopping", "activity_or_entertainment"],
+        "poi_activity": ["activity_or_entertainment", "shopping"],
+        "poi_entertainment": ["activity_or_entertainment", "shopping"],
+        "poi_beauty": ["beauty", "shopping"],
+        "poi_fitness": ["fitness", "activity_or_entertainment"],
+    }
+    return slot_order.get(must_category, ["attraction", "activity_or_entertainment"])
 
 
 def _dedupe_dict_list(values: list[Any]) -> list[Any]:
@@ -837,6 +892,8 @@ def collect_candidates(
 def score_candidates(
     raw: dict[str, list[SafePOICandidate]], constraints: FinalConstraints, memory_tags: list[str]
 ) -> dict[str, list[ScoredPOICandidate]]:
+    # Graph 层保留旧函数名作为兼容入口，真实 POI 打分逻辑下沉到 scoring_service。
+    return score_poi_candidates(raw, constraints, memory_tags)
     result: dict[str, list[ScoredPOICandidate]] = {}
     preference_keywords = constraints.soft_preferences.preference_keywords
     liked_tags = constraints.soft_preferences.liked_logic_tags
@@ -912,113 +969,6 @@ def balance_candidates(scored: dict[str, list[ScoredPOICandidate]]) -> dict[str,
                     break
         result[slot] = selected
     return result
-
-
-def build_legacy_route_state(
-    balanced: dict[str, list[ScoredPOICandidate]], constraints: FinalConstraints, query: str
-) -> dict[str, Any]:
-    recommended: dict[str, list[dict[str, Any]]] = {}
-    for slot, items in balanced.items():
-        recommended[slot] = [_legacy_scored(item) for item in items]
-    start = constraints.time_policy.start_time or datetime.now()
-    return {
-        "user_query": query,
-        "user_profile": {},
-        "constraints": {
-            "start_time": start.strftime("%H:%M"),
-            "duration_hours": (constraints.time_policy.duration_minutes or 270) / 60,
-            "duration_is_hard": True,
-            "budget": constraints.budget_policy.total_budget or 600,
-            "budget_is_hard": bool(constraints.budget_policy.total_budget),
-            "max_route_minutes": constraints.hard_constraints.max_route_minutes or 90,
-            "route_limit_is_hard": False,
-        },
-        "recommended_pois": recommended,
-        "dag_plan": {
-            "required_slots": constraints.hard_constraints.required_slots,
-            "slot_sequence": constraints.hard_constraints.required_slots,
-            "planning_template": "v2_slot_plan",
-            "movement_policy": "balanced_local",
-            "candidate_strategy": "slot_balance",
-        },
-        "errors": [],
-        "candidate_plans": [],
-        "verified_plans": [],
-        "ranked_plans": [],
-        "routes": [],
-        "replanning_count": 1,
-        "max_replanning_count": 1,
-    }
-
-
-def create_itineraries(legacy_state: dict[str, Any]) -> tuple[list[CandidatePlan], dict[str, Any]]:
-    patch = legacy_route_planner(legacy_state)
-    legacy_state.update(patch)
-    plans = [_candidate_plan_from_legacy(plan) for plan in legacy_state.get("candidate_plans", [])]
-    return plans, legacy_state
-
-
-def check_availability(legacy_state: dict[str, Any]) -> tuple[AvailabilityResults, dict[str, Any]]:
-    legacy_state.update(legacy_availability(legacy_state))
-    by_poi: dict[str, POIAvailability] = {}
-    for plan in legacy_state.get("candidate_plans", []):
-        for item in plan.get("items", []):
-            by_poi[str(item.get("id"))] = POIAvailability(
-                open_status=str(item.get("open_status") or "unknown"),
-                reservation_required=item.get("reservation_required"),
-                queue_risk=item.get("crowd_risk"),
-                source="database_or_rule",
-            )
-    return AvailabilityResults(by_poi=by_poi), legacy_state
-
-
-def verify_plans(legacy_state: dict[str, Any]) -> tuple[list[VerifiedPlan], dict[str, Any]]:
-    legacy_state.update(legacy_verifier(legacy_state))
-    result: list[VerifiedPlan] = []
-    for plan in legacy_state.get("candidate_plans", []):
-        verified = next((x for x in legacy_state.get("verified_plans", []) if x.get("id") == plan.get("id")), None)
-        issues = list((verified or {}).get("issues", []))
-        blocks = [issue for issue in legacy_state.get("errors", []) if issue.get("severity") == "error"]
-        result.append(
-            VerifiedPlan(
-                plan_id=str(plan.get("id")),
-                passed=verified is not None,
-                blocking_issues=[_verification_issue(issue, "block") for issue in blocks],
-                warnings=[_verification_issue(issue, "warning") for issue in issues],
-            )
-        )
-    return result, legacy_state
-
-
-def rank_plans(legacy_state: dict[str, Any]) -> tuple[list[RankedPlan], dict[str, Any]]:
-    legacy_state.update(legacy_ranker(legacy_state))
-    result = [
-        RankedPlan(
-            plan_id=str(plan.get("id")),
-            rank=index,
-            plan_score=float(plan.get("plan_score", 0)),
-            rank_label="首选" if index == 1 else "备选",
-            rank_features=PlanRankFeatures(**{
-                key: value for key, value in (plan.get("score_breakdown") or {}).items()
-                if key in PlanRankFeatures.model_fields and isinstance(value, (int, float))
-            }),
-            why_ranked_high=["综合偏好、路线、时间和预算排序"],
-            tradeoffs=[str(issue.get("message")) for issue in plan.get("issues", []) if issue.get("message")],
-        )
-        for index, plan in enumerate(legacy_state.get("ranked_plans", [])[:3], start=1)
-    ]
-    return result, legacy_state
-
-
-def assemble_response(legacy_state: dict[str, Any], request_type: str) -> dict[str, Any]:
-    plans = [_frontend_plan_card(plan) for plan in legacy_state.get("ranked_plans", [])[:3]]
-    return {
-        "response_type": "poi_list" if request_type == "single_category_recommend" else "plan_adjustment_result" if request_type == "plan_adjustment" else "plan_cards",
-        "summary": "已根据你的需求生成推荐。" if plans else "暂时没有找到满足条件的方案。",
-        "plans": plans,
-        "selected_plan": plans[0] if plans else {},
-        "followup_suggestions": ["换一批地点", "缩短距离", "调整预算"] if plans else ["放宽条件后重试"],
-    }
 
 
 def _safe_candidates(rows: list[dict[str, Any]], query: CompiledRecallQuery, must: bool) -> list[SafePOICandidate]:
@@ -1134,134 +1084,6 @@ def _synthetic_must_candidate(name: str, query: CompiledRecallQuery) -> SafePOIC
         must_include=True,
         raw_extra={"open_status": "unknown"},
     )
-
-
-def _legacy_scored(item: ScoredPOICandidate) -> dict[str, Any]:
-    return {
-        "id": item.poi_id, "name": item.name, "category": f"poi_{item.logical_category}",
-        "subcategory": item.subcategory or item.logical_category, "lat": item.lat or 39.9042,
-        "lon": item.lng or 116.4074, "address": item.address or "", "rating": item.rating or 4.0,
-        "avg_price": item.avg_price, "price_level": "unknown", "open_status": "unknown",
-        "tags": item.logic_tags, "image_url": item.image_url, "images": item.images,
-        "score": item.final_poi_score / 20, "reason": "V2 Scorer 综合评分",
-        "risk_flags": item.warnings, "estimated_duration_minutes": 90,
-        "reservation_required": False, "crowd_risk": "unknown", "budget_fit": "unknown",
-        "scene_fit": item.score_breakdown.scene_score, "distance_sensitive": True,
-        "must_include": item.must_include,
-    }
-
-
-def _candidate_plan_from_legacy(plan: dict[str, Any]) -> CandidatePlan:
-    return CandidatePlan(
-        plan_id=str(plan.get("id")),
-        generation_strategy=str(plan.get("candidate_strategy") or "slot_based"),
-        slots=[
-            PlanSlot(slot_id=str(item.get("category")), poi_id=str(item.get("id")), poi_name=str(item.get("name")))
-            for item in plan.get("items", [])
-        ],
-        route_summary={
-            "total_distance_km": plan.get("total_distance_km"),
-            "total_route_minutes": plan.get("route_minutes"),
-            "max_pair_distance_km": max([segment.get("distance_km", 0) for segment in plan.get("route_segments", [])] or [0]),
-            "transport_mode": "mixed",
-        },
-        budget_summary=PlanBudgetSummary(
-            estimated_total_budget=plan.get("estimated_budget"),
-            budget_fit=str((plan.get("fit_summary") or {}).get("budget_fit") or "unknown"),
-        ),
-        estimated_timeline=[
-            TimelineItem(time_text=str(item.get("time") or item.get("start_time") or ""), title=str(item.get("title") or item.get("name") or ""), poi_id=str(item.get("poi_id") or "") or None)
-            for item in plan.get("timeline", [])
-        ],
-    )
-
-
-def _safe_plan_card(plan: dict[str, Any]) -> dict[str, Any]:
-    return {
-        "plan_id": plan.get("id"),
-        "title": plan.get("title"),
-        "tags": list(plan.get("highlight_tags", []))[:5],
-        "timeline": plan.get("timeline", []),
-        "route_text": f"总路程约 {plan.get('route_minutes', 0)} 分钟",
-        "budget_text": f"预计预算约 {plan.get('estimated_budget', 0)} 元",
-        "warnings": [issue.get("message") for issue in plan.get("issues", []) if issue.get("message")],
-        "why_recommend": [plan.get("recommendation_reason") or "综合偏好、距离、时间和预算排序"],
-        "items": [
-            {"id": item.get("id"), "name": item.get("name"), "category": item.get("category"), "reason": item.get("reason")}
-            for item in plan.get("items", [])
-        ],
-    }
-
-
-def _frontend_plan_card(plan: dict[str, Any]) -> dict[str, Any]:
-    items = [
-        {
-            key: item.get(key)
-            for key in (
-                "id", "name", "category", "subcategory", "lat", "lon", "address",
-                "rating", "avg_price", "tags", "reason", "recommendation_reason",
-                "reservation_required", "crowd_risk", "open_status", "risk_flags",
-                "start_time", "end_time", "estimated_cost",
-            )
-            if item.get(key) is not None
-        }
-        for item in plan.get("items", [])
-        if isinstance(item, dict)
-    ]
-    route_segments = [
-        {
-            key: segment.get(key)
-            for key in (
-                "from", "to", "from_id", "to_id", "from_item_id", "to_item_id",
-                "distance_km", "duration_minutes", "transport_mode", "source", "polyline",
-            )
-            if segment.get(key) is not None
-        }
-        for segment in plan.get("route_segments", [])
-        if isinstance(segment, dict)
-    ]
-    issues = [
-        {
-            key: issue.get(key)
-            for key in ("code", "severity", "message", "suggestion", "source")
-            if issue.get(key) is not None
-        }
-        for issue in plan.get("issues", [])
-        if isinstance(issue, dict)
-    ]
-    return {
-        "id": plan.get("id"),
-        "plan_id": plan.get("id"),
-        "title": plan.get("title"),
-        "tags": list(plan.get("highlight_tags", []))[:5],
-        "highlight_tags": list(plan.get("highlight_tags", []))[:5],
-        "timeline": plan.get("timeline", []),
-        "route_segments": route_segments,
-        "total_distance_km": plan.get("total_distance_km"),
-        "route_minutes": plan.get("route_minutes"),
-        "total_duration_minutes": plan.get("total_duration_minutes"),
-        "estimated_budget": plan.get("estimated_budget"),
-        "fit_summary": plan.get("fit_summary", {}),
-        "plan_score": plan.get("plan_score"),
-        "score": plan.get("plan_score"),
-        "score_breakdown": plan.get("score_breakdown", {}),
-        "planning_template": plan.get("planning_template"),
-        "movement_policy": plan.get("movement_policy"),
-        "candidate_strategy": plan.get("candidate_strategy"),
-        "route_text": f"总路程约 {plan.get('route_minutes', 0)} 分钟",
-        "budget_text": f"预计预算约 {plan.get('estimated_budget', 0)} 元",
-        "warnings": [issue.get("message") for issue in issues if issue.get("message")],
-        "issues": issues,
-        "recommendation_reason": plan.get("recommendation_reason") or "综合偏好、距离、时间和预算排序",
-        "why_recommend": [plan.get("recommendation_reason") or "综合偏好、距离、时间和预算排序"],
-        "pros": list(plan.get("pros", []))[:5],
-        "cons": list(plan.get("cons", []))[:5],
-        "items": items,
-    }
-
-
-def _verification_issue(issue: dict[str, Any], severity: str) -> VerificationIssue:
-    return VerificationIssue(code=str(issue.get("code") or "unknown"), severity=severity, message=str(issue.get("message") or issue.get("code") or ""))
 
 
 def create_route_plans(
@@ -1467,6 +1289,12 @@ def relax_constraints_for_failure(
 
 
 def assemble_state_response(state: Any) -> dict[str, Any]:
+    """把内部 PlanningState 转成前端 payload。
+
+    这里是业务结果到展示契约的边界：只读取已经排序好的方案和候选索引，
+    不在响应阶段重新计算路线、召回候选或改变方案顺序。
+    """
+
     request_type = state.llm_understanding.intent.request_type if state.llm_understanding else "full_itinerary_plan"
     item_index = _candidate_index(state.candidates.scored_candidates)
     ranked_by_id = {ranked.plan_id: ranked for ranked in state.plans.ranked_plans}
@@ -1482,7 +1310,7 @@ def assemble_state_response(state: Any) -> dict[str, Any]:
         for plan in ordered[:3]
     ]
     failure_reason = state.debug.recall_debug.get("failure_reason")
-    return {
+    payload = {
         "response_type": "plan_adjustment_result" if request_type == "plan_adjustment" else "plan_cards",
         "summary": "已生成可用方案。" if cards else "暂时没有足够可用方案。",
         "plans": cards,
@@ -1492,6 +1320,7 @@ def assemble_state_response(state: Any) -> dict[str, Any]:
         "warnings": [f"方案不足原因：{failure_reason}"] if failure_reason and len(cards) < 3 else [],
         "followup_suggestions": ["换一批地点", "放宽距离", "调整预算"] if cards else ["放宽距离或预算"],
     }
+    return normalize_response_payload(payload)
 
 
 def _preference_context_payload(state: Any) -> dict[str, Any]:

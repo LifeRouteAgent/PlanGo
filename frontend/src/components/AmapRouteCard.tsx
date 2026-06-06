@@ -2,7 +2,7 @@ import { MapPinned, Maximize2 } from "lucide-react";
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { loadAmap } from "../lib/amap";
-import type { Plan, RouteSegment } from "../types/agent";
+import type { Location, Plan, PlanStep, RouteSegment } from "../types/agent";
 
 interface AmapRouteCardProps {
   plan: Plan;
@@ -15,6 +15,17 @@ interface AmapRouteCardProps {
 
 type AMapAny = any;
 
+interface MarkerStopView {
+  id: string;
+  order: number;
+  label: string;
+  title: string;
+  startTime: string;
+  endTime: string;
+  location: Location;
+  origin: boolean;
+}
+
 function getSegments(plan: Plan): RouteSegment[] {
   if (plan.route?.segments?.length) {
     return plan.route.segments;
@@ -24,8 +35,8 @@ function getSegments(plan: Plan): RouteSegment[] {
       type: "travel",
       title: "完整路线",
       color: "#5BA8FF",
-      polyline: plan.route?.polyline ?? []
-    }
+      polyline: plan.route?.polyline ?? [],
+    },
   ];
 }
 
@@ -52,12 +63,78 @@ function markerTimeText(start?: string, end?: string) {
   return "时间待定";
 }
 
+function isOriginStep(step?: PlanStep) {
+  return step?.type === "buffer" || step?.target_id === "origin";
+}
+
+function originFallbackLocation(plan: Plan): Location | null {
+  const firstRoutePoint = plan.route?.segments?.flatMap((segment) => segment.polyline)[0] ?? plan.route?.polyline?.[0];
+  if (!firstRoutePoint) return null;
+  return {
+    name: "起点",
+    lat: firstRoutePoint.lat,
+    lng: firstRoutePoint.lng,
+    address: "起点",
+  };
+}
+
+function stepMarkerLocation(plan: Plan, step: PlanStep, index: number): Location | null {
+  if (step.location) return step.location;
+  if (index === 0 && isOriginStep(step)) return originFallbackLocation(plan);
+  return null;
+}
+
+function markerStops(plan: Plan): MarkerStopView[] {
+  const stopsFromSteps = plan.steps
+    .map((step, index) => {
+      const location = stepMarkerLocation(plan, step, index);
+      if (!location) return null;
+      const origin = isOriginStep(step);
+      const label = String.fromCharCode(65 + index);
+      return {
+        id: step.target_id || `${index}`,
+        order: index + 1,
+        label,
+        title: origin ? `起点 ${label}` : step.title,
+        startTime: step.start_time,
+        endTime: step.end_time,
+        location,
+        origin,
+      };
+    })
+    .filter((stop): stop is MarkerStopView => stop !== null);
+
+  if (stopsFromSteps.length) {
+    return stopsFromSteps;
+  }
+
+  return (plan.route?.stops ?? [])
+    .map((stop, index) => {
+      if (!stop.location) return null;
+      const sourceStep = plan.steps[index];
+      const origin = isOriginStep(sourceStep);
+      const label = String.fromCharCode(65 + index);
+      return {
+        id: sourceStep?.target_id || `${index}`,
+        order: stop.order || index + 1,
+        label,
+        title: origin ? `起点 ${label}` : stop.title,
+        startTime: stop.start_time,
+        endTime: stop.end_time,
+        location: stop.location,
+        origin,
+      };
+    })
+    .filter((stop): stop is MarkerStopView => stop !== null);
+}
+
 export function AmapRouteCard({ plan, large = false, activeStopId, onStopSelect, onOpenFullMap, footer }: AmapRouteCardProps) {
   const mapRef = useRef<HTMLDivElement | null>(null);
   const mapInstanceRef = useRef<AMapAny>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [configured, setConfigured] = useState<boolean | null>(null);
   const segments = useMemo(() => getSegments(plan), [plan]);
+  const stops = useMemo(() => markerStops(plan), [plan]);
 
   useEffect(() => {
     if (!mapRef.current) return;
@@ -72,9 +149,7 @@ export function AmapRouteCard({ plan, large = false, activeStopId, onStopSelect,
         setConfigured(true);
         mapInstanceRef.current?.destroy?.();
 
-        const firstPoint =
-          segments.flatMap((segment) => segment.polyline)[0] ??
-          plan.route?.stops.find((stop) => stop.location)?.location;
+        const firstPoint = segments.flatMap((segment) => segment.polyline)[0] ?? stops[0]?.location;
 
         const map = new AMap.Map(mapRef.current, {
           zoom: 13,
@@ -82,7 +157,7 @@ export function AmapRouteCard({ plan, large = false, activeStopId, onStopSelect,
           viewMode: "2D",
           mapStyle: "amap://styles/light",
           features: ["bg", "road", "building", "point"],
-          resizeEnable: true
+          resizeEnable: true,
         });
         mapInstanceRef.current = map;
 
@@ -99,7 +174,7 @@ export function AmapRouteCard({ plan, large = false, activeStopId, onStopSelect,
                 strokeWeight: large ? 8 : 6,
                 strokeOpacity: 0.88,
                 lineJoin: "round",
-                lineCap: "round"
+                lineCap: "round",
               })
             );
           }
@@ -107,43 +182,40 @@ export function AmapRouteCard({ plan, large = false, activeStopId, onStopSelect,
 
         const infoWindow = new AMap.InfoWindow({
           offset: new AMap.Pixel(0, -38),
-          closeWhenClickMap: true
+          closeWhenClickMap: true,
         });
 
-        plan.route?.stops.forEach((stop, index) => {
-          if (!stop.location) return;
-          const sourceStep = plan.steps[index];
-          const stopId = sourceStep?.target_id || `${index}`;
-          const label = String.fromCharCode(65 + index);
+        stops.forEach((stop) => {
           const safeTitle = escapeHtml(stop.title);
           const safeAddress = escapeHtml(stop.location.address ?? "");
-          const safeTime = escapeHtml(markerTimeText(stop.start_time, stop.end_time));
-          const activeClass = activeStopId === stopId ? " is-active" : "";
+          const safeTime = escapeHtml(markerTimeText(stop.startTime, stop.endTime));
+          const activeClass = activeStopId === stop.id ? " is-active" : "";
+          const originClass = stop.origin ? " is-origin" : "";
           const marker = new AMap.Marker({
             position: [stop.location.lng, stop.location.lat],
             title: stop.title,
             zIndex: 100 + stop.order,
             content: `
-              <div class="amap-stop-marker${activeClass}">
-                <div class="amap-stop-index">${label}</div>
+              <div class="amap-stop-marker${activeClass}${originClass}">
+                <div class="amap-stop-index">${stop.label}</div>
                 <div class="amap-stop-bubble">
                   <strong>${safeTitle}</strong>
-                  <span>${safeTime}</span>
+                  <span>${stop.origin ? "起点" : safeTime}</span>
                 </div>
               </div>
             `,
-            offset: new AMap.Pixel(-16, -42)
+            offset: new AMap.Pixel(-16, -42),
           });
           marker.on("click", () => {
-            onStopSelect?.(stopId);
+            onStopSelect?.(stop.id);
             infoWindow.setContent(`
               <div class="amap-info-window">
                 <strong>${safeTitle}</strong>
-                <span>${safeTime}</span>
+                <span>${stop.origin ? "起点" : safeTime}</span>
                 <small>${safeAddress}</small>
               </div>
             `);
-            infoWindow.open(map, [stop.location!.lng, stop.location!.lat]);
+            infoWindow.open(map, [stop.location.lng, stop.location.lat]);
           });
           map.add(marker);
           bounds.push([stop.location.lng, stop.location.lat]);
@@ -167,14 +239,13 @@ export function AmapRouteCard({ plan, large = false, activeStopId, onStopSelect,
       mapInstanceRef.current?.destroy?.();
       mapInstanceRef.current = null;
     };
-  }, [activeStopId, large, onStopSelect, plan, segments]);
+  }, [activeStopId, large, onStopSelect, segments, stops]);
 
   return (
     <article className={`amap-route-card ${large ? "is-large" : ""}`}>
       <div className="map-card-head">
         <div>
           <span>地图路线</span>
-          {/* <h2>真实地图与节点时间</h2> */}
         </div>
         {onOpenFullMap && (
           <button type="button" className="apple-button apple-button-ghost apple-button-sm" onClick={onOpenFullMap}>

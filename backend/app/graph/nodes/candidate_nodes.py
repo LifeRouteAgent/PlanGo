@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from app.graph.nodes.common import append_trace, ensure_state
+from app.graph.payloads import normalize_response_payload
 from app.graph.services import balance_candidates, score_candidates
 from app.graph.state import PlanningState
 
@@ -41,7 +42,7 @@ def single_category_ranker_node(value: PlanningState | dict[str, Any]) -> dict[s
     state = ensure_state(value)
     items = [item for group in state.candidates.scored_candidates.values() for item in group]
     items.sort(key=lambda item: item.final_poi_score, reverse=True)
-    payload = {
+    payload = normalize_response_payload({
         "response_type": "poi_list",
         "summary": "为你筛选了匹配地点。",
         "poi_list": [
@@ -68,7 +69,7 @@ def single_category_ranker_node(value: PlanningState | dict[str, Any]) -> dict[s
         ],
         "plans": [],
         "selected_plan": {},
-    }
+    })
     response = state.response.model_copy(deep=True)
     response.response_type = "poi_list"
     response.response_payload = payload

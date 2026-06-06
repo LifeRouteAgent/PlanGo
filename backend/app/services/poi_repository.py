@@ -266,6 +266,7 @@ NAME_SEARCH_LIMIT = 10
 RATING_FALLBACKS: tuple[float | None, ...] = (4.2, 4.0, 3.8, None)
 BUDGET_FALLBACK_MULTIPLIERS: tuple[float | None, ...] = (1.0, 1.25, 1.6, None)
 RADIUS_FALLBACK_MULTIPLIERS: tuple[float, ...] = (1.0, 1.4, 2.0, 2.6)
+SEARCH_COLLATION = "utf8mb4_unicode_ci"
 
 
 class PoiRepository:
@@ -501,7 +502,7 @@ class PoiRepository:
         for index, term in enumerate(self._clean_terms(constraints.excluded_keywords if constraints else ()), start=1):
             key = f"exclude_{index}"
             params[key] = f"%{term}%"
-            where.append(f"{text_expr} NOT LIKE %({key})s")
+            where.append(f"{text_expr} NOT LIKE %({key})s COLLATE {SEARCH_COLLATION}")
 
         order_parts: list[str] = []
         preference_order = self._preference_order_expr(spec, constraints, params)
@@ -542,8 +543,9 @@ class PoiRepository:
             "exact_keyword": keyword,
             "limit": max(3, min(self._limit_per_category, NAME_SEARCH_LIMIT)),
         }
+        collated_name = self._collated_expr(spec.name_expr)
         order_parts = [
-            f"CASE WHEN {spec.name_expr} = %(exact_keyword)s THEN 0 ELSE 1 END",
+            f"CASE WHEN {collated_name} = %(exact_keyword)s COLLATE {SEARCH_COLLATION} THEN 0 ELSE 1 END",
         ]
         if spec.rating_expr:
             order_parts.append(f"COALESCE(({spec.rating_expr}), 0) DESC")
@@ -565,7 +567,8 @@ class PoiRepository:
                 {spec.images_expr} AS images,
                 NULL AS distance_km
             FROM {spec.table}
-            WHERE {spec.base_where} AND {spec.name_expr} LIKE %(keyword)s
+            WHERE {spec.base_where}
+                AND {collated_name} LIKE %(keyword)s COLLATE {SEARCH_COLLATION}
             ORDER BY {', '.join(order_parts)}
             LIMIT %(limit)s
         """
@@ -601,7 +604,7 @@ class PoiRepository:
         return f"(6371 * ACOS(LEAST(1, GREATEST(-1, {inner}))))"
 
     def _text_expr(self, spec: CategorySqlSpec) -> str:
-        return (
+        text = (
             "CONCAT_WS(' ', "
             f"COALESCE({spec.name_expr}, ''), "
             f"COALESCE({spec.subcategory_expr}, ''), "
@@ -609,6 +612,12 @@ class PoiRepository:
             f"COALESCE({spec.tag_expr}, '')"
             ")"
         )
+        # 各 POI 表来自不同数据源，字符集/排序规则可能不一致。
+        # 所有 LIKE 检索统一转成同一 collation，避免中文关键词触发 MySQL collation mismatch。
+        return self._collated_expr(text)
+
+    def _collated_expr(self, expression: str) -> str:
+        return f"(CAST(({expression}) AS CHAR CHARACTER SET utf8mb4) COLLATE {SEARCH_COLLATION})"
 
     def _preference_order_expr(
         self,
@@ -624,7 +633,7 @@ class PoiRepository:
         for index, term in enumerate(terms, start=1):
             key = f"pref_{index}"
             params[key] = f"%{term}%"
-            likes.append(f"{text_expr} LIKE %({key})s")
+            likes.append(f"{text_expr} LIKE %({key})s COLLATE {SEARCH_COLLATION}")
         return f"CASE WHEN {' OR '.join(likes)} THEN 0 ELSE 1 END"
 
     def _max_price(

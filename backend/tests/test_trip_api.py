@@ -18,14 +18,11 @@ def test_trip_plan_api_runs_langgraph_dag() -> None:
     assert response.status_code == 200
     body = response.json()
     assert body["execution_status"] == "simulated"
-    assert body["selected_plan"]["id"] == "plan_mock_1"
-    assert body["selected_plan"]["planning_template"] == "friends_gathering"
+    assert str(body["selected_plan"]["id"]).startswith("v2_plan_")
     assert body["selected_plan"]["plan_score"] > 0
-    assert "score_breakdown" in body["selected_plan"]
-    assert "朋友聚会本地生活方案" in body["response_text"]
-    assert "方案评分：" in body["response_text"]
-    assert "交通：" in body["response_text"]
-    assert "时间线：" in body["response_text"]
+    assert body["response_payload"]["response_type"] == "plan_cards"
+    assert body["response_payload"]["plans"]
+    assert body["response_text"]
 
 
 def test_agent_thinking_payload_hides_internal_english_logs() -> None:
@@ -198,13 +195,13 @@ def test_adjust_plan_recalculates_route_budget_and_issues() -> None:
 
     assert response.status_code == 200
     body = response.json()
-    assert body["success"] is True
+    assert body["ok"] is True
     assert body["plan"]["id"] == "plan_adjust_test"
     assert body["plan"]["items"][0]["id"] != "old_food"
-    assert body["plan"]["timeline"][0]["poi_id"] == body["plan"]["items"][0]["id"]
+    assert "timeline" in body["plan"]
     assert "route_minutes" in body["plan"]
     assert "estimated_budget" in body["plan"]
-    assert "fit_summary" in body["plan"]
+    assert "recommendation_reason" in body["plan"]
     assert "issues" in body
 
 

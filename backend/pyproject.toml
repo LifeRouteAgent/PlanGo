@@ -7,3 +7,25 @@ enable-unstable-feature = ["string_processing", "wrap_long_dict_values_in_parens
 
 [tool.isort]
 line_length = 100
+
+[tool.ruff]
+line-length = 100
+target-version = "py314"
+src = ["app", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+ignore = [
+  "E501",  # black/formatter 负责换行；中文 prompt 和测试文案不强行拆行。
+]
+
+[tool.mypy]
+python_version = "3.14"
+ignore_missing_imports = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+check_untyped_defs = false
+files = ["app/core", "app/graph", "app/llm_agents"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

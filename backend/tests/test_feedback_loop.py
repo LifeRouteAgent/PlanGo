@@ -1,41 +1,16 @@
 from __future__ import annotations
 
-import pytest
-
-from app.agents.issue_utils import issue_codes
-from app.dag.langgraph_dag_config import life_route_graph
-from app.state.plan_state import create_initial_state
+from app.graph.graph_builder import run_planning_request
 
 
-@pytest.mark.parametrize(
-    "force_flag,expected_error",
-    [
-        ("force_empty_candidates", "candidate_empty"),
-        ("force_restaurant_unavailable", "restaurant_unavailable"),
-        ("force_route_timeout", "route_timeout"),
-        ("force_duration_exceeded", "total_duration_exceeded"),
-    ],
-)
-def test_verifier_feedback_loop_recovers_after_one_replan(
-    force_flag: str,
-    expected_error: str,
-) -> None:
-    """Verifier 失败后应回退 Planner，并在第二轮生成可执行方案。
+def test_v2_records_retry_or_failure_context_without_v1_replan_loop() -> None:
+    """V2 不再依赖 V1 的 verifier -> planner 回环，失败原因只进入 debug 和响应 warnings。"""
 
-    这些 force_* 开关只用于测试异常分支：第一轮强制制造失败，
-    第二轮关闭失败条件，验证 DAG 反馈循环是否真的生效。
-    """
+    state = run_planning_request("周末和朋友出去玩 4 个小时，想吃饭看电影，预算 600 元")
+    nodes = [trace.node for trace in state.debug.node_trace]
 
-    state = create_initial_state(
-        "周末和朋友出去玩 4 个小时，想吃饭看电影，预算 600 元",
-        user_profile={force_flag: True},
-        max_replanning_count=2,
-    )
-
-    result = life_route_graph.invoke(state)
-
-    assert expected_error not in issue_codes(result["errors"])
-    assert result["execution_status"] == "simulated"
-    assert result["selected_plan"]["verified"] is True
-    assert result["replanning_count"] == 2
-    assert any("retry_policy" in log for log in result["logs"])
+    assert "availability_checker" in nodes
+    assert "final_ranker" in nodes
+    assert state.response.response_payload["response_type"] in {"plan_cards", "plan_adjustment_result"}
+    assert state.response.response_payload.get("plans") is not None
+    assert "raw_candidates" not in state.response.response_payload

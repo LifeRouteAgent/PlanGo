@@ -12,9 +12,12 @@ interface TimelineNodeProps {
   onModify: (stop: PlanStopView) => void;
 }
 
+function isOriginStop(stop: PlanStopView) {
+  return stop.raw.type === "buffer" || stop.raw.target_id === "origin";
+}
+
 export function TimelineNode({ stop, selected = false, onHover, onOpen, onModify }: TimelineNodeProps) {
-  const isOrigin = stop.raw.type === "buffer" && stop.title === "起点";
-  const originLike = isOrigin || stop.raw.type === "buffer" || stop.raw.target_id === "origin";
+  const originLike = isOriginStop(stop);
   const openFromKeyboard = (event: KeyboardEvent<HTMLDivElement>) => {
     if (originLike) return;
     if (event.key === "Enter" || event.key === " ") {
@@ -22,6 +25,23 @@ export function TimelineNode({ stop, selected = false, onHover, onOpen, onModify
       onOpen(stop);
     }
   };
+
+  if (originLike) {
+    return (
+      <article
+        className={`timeline-node timeline-node-v2 timeline-node-origin ${selected ? "is-selected" : ""}`}
+        onMouseEnter={() => onHover(stop.id)}
+        onMouseLeave={() => onHover(null)}
+      >
+        <div className="timeline-node-pin" aria-hidden="true">
+          <span>{stop.label}</span>
+        </div>
+        <div className="timeline-node-main timeline-origin-main" aria-label={`${stop.label} 起点`}>
+          <strong>起点</strong>
+        </div>
+      </article>
+    );
+  }
 
   return (
     <article
@@ -36,35 +56,31 @@ export function TimelineNode({ stop, selected = false, onHover, onOpen, onModify
         className="timeline-node-main"
         role="button"
         tabIndex={0}
-        onClick={() => {
-          if (!originLike) onOpen(stop);
-        }}
+        onClick={() => onOpen(stop)}
         onKeyDown={openFromKeyboard}
       >
         <div className="timeline-node-time">
           <Clock3 size={15} />
           <time>{stop.time}</time>
         </div>
-        {!originLike ? (
-          <AppleButton
-            type="button"
-            variant="secondary"
-            size="sm"
-            className="timeline-node-replace"
-            onClick={(event) => {
-              event.stopPropagation();
-              onModify(stop);
-            }}
-          >
-            <RefreshCw size={14} />
-            替换
-          </AppleButton>
-        ) : null}
+        <AppleButton
+          type="button"
+          variant="secondary"
+          size="sm"
+          className="timeline-node-replace"
+          onClick={(event) => {
+            event.stopPropagation();
+            onModify(stop);
+          }}
+        >
+          <RefreshCw size={14} />
+          替换
+        </AppleButton>
         <div className="timeline-node-body">
           {stop.imageUrl ? <img src={stop.imageUrl} alt={stop.title} loading="lazy" /> : null}
           <div className="timeline-node-content">
             <div className="timeline-node-title-row">
-              <h3>{originLike ? "起点" : stop.title}</h3>
+              <h3>{stop.title}</h3>
               {stop.cost ? (
                 <span className="timeline-node-cost">
                   <WalletCards size={14} />
@@ -99,16 +115,6 @@ export function TimelineNode({ stop, selected = false, onHover, onOpen, onModify
           </div>
         </div>
       </div>
-        {/* <div className="timeline-node-actions">
-          <AppleButton type="button" variant="ghost" size="sm" onClick={() => onOpen(stop)}>
-            <Eye size={15} />
-            详情
-          </AppleButton>
-          <AppleButton type="button" variant="secondary" size="sm" onClick={() => onModify(stop)}>
-            <RefreshCw size={15} />
-            替换
-          </AppleButton>
-        </div> */}
     </article>
   );
 }

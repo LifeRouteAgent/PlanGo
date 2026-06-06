@@ -56,7 +56,7 @@ def _expand_env_placeholders(value: Any) -> Any:
 def _get(config: dict[str, Any], key: str, default: Any) -> Any:
     """读取单个配置项，并把空字符串视为未配置。"""
 
-    value = config.get(key, default)
+    value = os.environ.get(key, config.get(key, default))
     return default if value == "" or value is None else value
 
 
@@ -64,7 +64,7 @@ def _get_alias(config: dict[str, Any], keys: tuple[str, ...], default: Any) -> A
     """按顺序读取多个兼容配置名，便于从 MiMo 平滑迁移到 DeepSeek。"""
 
     for key in keys:
-        value = config.get(key)
+        value = os.environ.get(key, config.get(key))
         if value != "" and value is not None:
             return value
     return default
@@ -73,7 +73,7 @@ def _get_alias(config: dict[str, Any], keys: tuple[str, ...], default: Any) -> A
 def _get_bool(config: dict[str, Any], key: str, default: bool) -> bool:
     """读取 bool 配置，兼容 JSON bool 和字符串形式。"""
 
-    value = config.get(key, default)
+    value = os.environ.get(key, config.get(key, default))
     if isinstance(value, bool):
         return value
     return str(value).strip().lower() in {"1", "true", "yes", "on"}
@@ -83,7 +83,7 @@ def _get_int(config: dict[str, Any], key: str, default: int) -> int:
     """读取 int 配置，配置异常时回退默认值。"""
 
     try:
-        return int(config.get(key, default))
+        return int(os.environ.get(key, config.get(key, default)))
     except (TypeError, ValueError):
         return default
 
@@ -94,7 +94,22 @@ _CONFIG = _load_config()
 @dataclass(frozen=True)
 class Settings:
     app_env: str = _get(_CONFIG, "APP_ENV", "local")
+    debug: bool = _get_bool(_CONFIG, "DEBUG", False)
+    database_url: str = _get(_CONFIG, "DATABASE_URL", "")
+    redis_url: str = _get(_CONFIG, "REDIS_URL", "")
+    es_url: str = _get(_CONFIG, "ES_URL", "")
     llm_provider: str = _get(_CONFIG, "LLM_PROVIDER", "deepseek")
+    llm_model: str = _get_alias(_CONFIG, ("LLM_MODEL", "DEEPSEEK_MODEL", "MIMO_MODEL"), "deepseek-v4-pro")
+    llm_timeout: int = _get_int(_CONFIG, "LLM_TIMEOUT", 60)
+    max_recent_turns: int = _get_int(_CONFIG, "MAX_RECENT_TURNS", 8)
+    max_memory_items: int = _get_int(_CONFIG, "MAX_MEMORY_ITEMS", 20)
+    default_city: str = _get(_CONFIG, "DEFAULT_CITY", "北京")
+    default_distance_km: int = _get_int(_CONFIG, "DEFAULT_DISTANCE_KM", 8)
+    default_budget_level: str = _get(_CONFIG, "DEFAULT_BUDGET_LEVEL", "medium")
+    route_provider: str = _get(_CONFIG, "ROUTE_PROVIDER", "amap")
+    enable_memory: bool = _get_bool(_CONFIG, "ENABLE_MEMORY", True)
+    enable_verification: bool = _get_bool(_CONFIG, "ENABLE_VERIFICATION", True)
+    enable_trace: bool = _get_bool(_CONFIG, "ENABLE_TRACE", True)
     deepseek_api_key: str = _get(_CONFIG, "DEEPSEEK_API_KEY", "")
     deepseek_base_url: str = _get(_CONFIG, "DEEPSEEK_BASE_URL", "https://api.deepseek.com")
     deepseek_model: str = _get(_CONFIG, "DEEPSEEK_MODEL", "deepseek-v4-pro")

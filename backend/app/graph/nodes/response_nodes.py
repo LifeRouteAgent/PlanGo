@@ -3,14 +3,20 @@ from __future__ import annotations
 from typing import Any
 
 from app.graph.nodes.common import append_trace, ensure_state
+from app.graph.payloads import normalize_response_payload
 from app.graph.services import assemble_state_response
 from app.graph.state import PlanningState
+from app.llm_agents.response_generation_agent import (
+    apply_response_generation,
+    generate_response_package,
+)
 
 
 def response_assembler_node(value: PlanningState | dict[str, Any]) -> dict[str, Any]:
     state = ensure_state(value)
     response = state.response.model_copy(deep=True)
     if not response.response_payload:
+        # 结构化响应只在这里统一组装，避免上游节点各自拼前端字段导致契约漂移。
         response.response_payload = assemble_state_response(state)
         response.response_type = str(response.response_payload.get("response_type") or "plan_cards")
     return {
@@ -23,18 +29,20 @@ def response_generator_node(value: PlanningState | dict[str, Any]) -> dict[str, 
     state = ensure_state(value)
     response = state.response.model_copy(deep=True)
     payload = response.response_payload or {}
+    # Response Generator 只做展示清洗和文案生成，不重新召回、不改排序、不替换 POI。
     payload = _sanitize_display_payload(payload)
+    if payload.get("response_type") in {"plan_cards", "plan_adjustment_result", "poi_list"}:
+        generation = generate_response_package(payload)
+        payload = apply_response_generation(payload, generation)
+        llm_final_text = str(payload.pop("_llm_final_text", "") or "")
+        # 最后一关用 DTO 校验，保证 SSE、普通响应和 Session 中的 payload 形态一致。
+        payload = normalize_response_payload(payload)
+    else:
+        llm_final_text = ""
     response.response_payload = payload
     plans = [plan for plan in payload.get("plans", []) if isinstance(plan, dict)]
     if plans:
-        lines = ["我按你的需求筛出这些方案："]
-        for index, plan in enumerate(plans[:3], start=1):
-            pros = "、".join(plan.get("pros", [])[:2]) or "匹配需求"
-            cons = "、".join(plan.get("cons", [])[:1]) or "需确认状态"
-            lines.append(f"{index}. {plan.get('title', '方案')}：{pros}；注意 {cons}。")
-        if payload.get("warnings"):
-            lines.append("补充：" + "；".join(str(item) for item in payload["warnings"][:2]))
-        response.final_text = "\n".join(lines)
+        response.final_text = llm_final_text or _fallback_plan_text(payload, plans)
     elif payload.get("poi_list"):
         response.final_text = "\n".join(
             ["为你推荐这些地点："]
@@ -49,6 +57,17 @@ def response_generator_node(value: PlanningState | dict[str, Any]) -> dict[str, 
         "response": response,
         "debug": append_trace(state, "response_generator", "generated final text from response payload"),
     }
+
+
+def _fallback_plan_text(payload: dict[str, Any], plans: list[dict[str, Any]]) -> str:
+    lines = ["我按你的需求筛出这些方案："]
+    for index, plan in enumerate(plans[:3], start=1):
+        pros = "、".join(plan.get("pros", [])[:2]) or "匹配需求"
+        cons = "、".join(plan.get("cons", [])[:1]) or "需确认状态"
+        lines.append(f"{index}. {plan.get('title', '方案')}：{pros}；注意 {cons}。")
+    if payload.get("warnings"):
+        lines.append("补充：" + "；".join(str(item) for item in payload["warnings"][:2]))
+    return "\n".join(lines)
 
 
 def _sanitize_display_payload(payload: dict[str, Any]) -> dict[str, Any]:

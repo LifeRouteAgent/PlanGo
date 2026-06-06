@@ -1519,6 +1519,15 @@ img {
   filter: drop-shadow(0 14px 24px rgba(35, 126, 232, 0.28));
 }
 
+.amap-stop-marker.is-origin .amap-stop-bubble strong {
+  color: #24405c;
+}
+
+.amap-stop-marker.is-origin .amap-stop-bubble span {
+  color: var(--pg-blue-strong);
+  font-weight: 850;
+}
+
 .amap-stop-index {
   display: grid;
   flex: 0 0 auto;
@@ -3738,6 +3747,10 @@ img {
   z-index: 1;
 }
 
+.timeline-node-origin .timeline-node-pin {
+  padding-top: 15px;
+}
+
 .timeline-node-v2 .timeline-node-main {
   position: relative;
   gap: 12px;
@@ -3768,6 +3781,33 @@ img {
   transform: translateY(-3px);
   border-color: rgba(91, 168, 255, 0.78);
   box-shadow: var(--pg-shadow-hover);
+}
+
+.timeline-node-origin:hover .timeline-node-main,
+.timeline-node-origin.is-selected .timeline-node-main {
+  transform: none;
+  border-color: rgba(218, 235, 247, 0.88);
+  box-shadow: 0 12px 28px rgba(60, 106, 150, 0.08);
+}
+
+.timeline-node-origin .timeline-origin-main {
+  display: flex;
+  align-items: center;
+  min-height: 64px;
+  padding: 14px 18px;
+  color: #36516c;
+  background: rgba(255, 255, 255, 0.62);
+  border: 1px solid rgba(218, 235, 247, 0.88);
+  border-radius: 22px;
+  box-shadow: 0 12px 28px rgba(60, 106, 150, 0.08);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+
+.timeline-origin-main strong {
+  color: #24405c;
+  font-size: 15px;
+  font-weight: 900;
 }
 
 .timeline-node-time {

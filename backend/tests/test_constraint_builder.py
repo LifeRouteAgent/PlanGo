@@ -1,30 +1,23 @@
 from __future__ import annotations
 
-from app.agents.constraint_builder import constraint_builder_node
-from app.state.plan_state import create_initial_state
+from app.graph.services import build_constraints, resolve_intent
 
 
-def test_constraint_builder_parses_afternoon_time_range() -> None:
-    """本地生活规划应把“下午 2 点到 6 点”识别为 14:00 开始、4 小时窗口。"""
+def test_v2_constraint_builder_parses_budget_and_uses_defaults() -> None:
+    understanding = resolve_intent("周六下午 2 点到 6 点，4 个朋友，想吃饭看电影，预算 600", {}, {})
 
-    state = create_initial_state("周六下午 2 点到 6 点，4 个朋友，想吃饭看电影，预算 600")
+    constraints, recall = build_constraints(understanding, city="北京", origin=None)
 
-    patch = constraint_builder_node(state)
-    constraints = patch["constraints"]
-
-    assert constraints["start_time"] == "14:00"
-    assert constraints["duration_hours"] == 4
-    assert constraints["budget"] == 600
+    assert constraints.budget_policy.total_budget == 600
+    assert constraints.time_policy.duration_minutes == 270
+    assert constraints.rating_policy.min_rating_initial == 4.0
+    assert recall.target_slots
 
 
-def test_constraint_builder_keeps_route_limit_soft() -> None:
-    """路线偏好只影响排序，不应该阻断方案生成。"""
+def test_v2_constraint_builder_keeps_route_limit_as_policy_not_clarification() -> None:
+    understanding = resolve_intent("周末下午和朋友出去玩，想吃饭唱歌，预算适中，别太远", {}, {})
 
-    state = create_initial_state("周末下午和朋友出去玩，想吃饭唱歌，预算适中，别太远")
-    state["constraints"] = {"route_limit_is_hard": True}
+    constraints, _ = build_constraints(understanding, city="北京", origin=None)
 
-    patch = constraint_builder_node(state)
-    constraints = patch["constraints"]
-
-    assert constraints["max_route_minutes"] >= 30
-    assert constraints["route_limit_is_hard"] is False
+    assert constraints.hard_constraints.max_route_minutes >= 30
+    assert understanding.intent.request_type == "full_itinerary_plan"
