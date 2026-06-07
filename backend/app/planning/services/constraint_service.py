@@ -4,8 +4,12 @@ from datetime import datetime, timedelta
 
 from app.planning.policy_config import policy_config
 from app.planning.services.common import *
-from app.planning.services.intent_service import _normalize_restaurant_categories, _normalize_restaurant_slots, \
-    _resolve_route_origin, _restaurant_allowed_for_understanding
+from app.planning.services.intent_service import (
+    _normalize_restaurant_categories,
+    _normalize_restaurant_slots,
+    _resolve_route_origin,
+    _restaurant_allowed_for_understanding,
+)
 from app.planning.state import (
     BudgetPolicy,
     DistancePolicy,
@@ -20,7 +24,8 @@ from app.planning.state import (
     SessionPreferenceProfile,
     SlotRecallRequirement,
     SoftPreferences,
-    TimePolicy, SlotDetail,
+    TimePolicy,
+    SlotDetail,
 )
 
 
@@ -62,9 +67,7 @@ def build_constraints(
         ]
     slot_duration_minutes = _slot_duration_minutes(slot_details, rules)
     explicit_duration_minutes = (
-        round(understanding.time.duration_hours * 60)
-        if understanding.time.duration_hours
-        else None
+        round(understanding.time.duration_hours * 60) if understanding.time.duration_hours else None
     )
     duration_minutes = _total_duration_minutes(
         slot_duration_minutes,
@@ -95,9 +98,7 @@ def build_constraints(
     if not preferred_categories:
         preferred_categories = list(
             dict.fromkeys(
-                category
-                for slot in slot_details
-                for category in slot.candidate_logical_categories
+                category for slot in slot_details for category in slot.candidate_logical_categories
             )
         )
         preferred_categories = _normalize_restaurant_categories(
@@ -335,4 +336,3 @@ def _fit_slot_durations_to_total(
 
 def _clamp_minutes(value: int | float, minimum: int, maximum: int) -> int:
     return max(minimum, min(maximum, int(round(value))))
-

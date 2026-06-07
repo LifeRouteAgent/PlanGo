@@ -23,13 +23,22 @@ class FakeVectorStore:
         self.memories.append(record)
         return True
 
-    def upsert_user_profile(self, user_id: str, profile_text: str, metadata: dict[str, Any]) -> bool:
+    def upsert_user_profile(
+        self, user_id: str, profile_text: str, metadata: dict[str, Any]
+    ) -> bool:
         self.profiles.append((user_id, profile_text, metadata))
         return True
 
-    def search_memory(self, query: str, *, limit: int = 5, user_id: str | None = None) -> list[dict[str, Any]]:
+    def search_memory(
+        self, query: str, *, limit: int = 5, user_id: str | None = None
+    ) -> list[dict[str, Any]]:
         return [
-            {"text": record.text, "user_id": record.user_id, "metadata": record.metadata, "score": 0.9}
+            {
+                "text": record.text,
+                "user_id": record.user_id,
+                "metadata": record.metadata,
+                "score": 0.9,
+            }
             for record in self.memories
             if user_id in (None, record.user_id)
         ][:limit]
@@ -115,19 +124,17 @@ def test_memory_event_processor_delegates_plan_feedback() -> None:
     user_id = "memory_event_user"
     writer.clear(user_id=user_id)
 
-    MemoryEventProcessor(writer).process(
-        {
-            "event_type": "plan_feedback_observed",
-            "user_id": user_id,
-            "stage": "plan_executed",
-            "plan": {
-                "id": "p1",
-                "title": "KTV plan",
-                "items": [{"category": "poi_entertainment", "tags": ["KTV"]}],
-            },
-            "feedback": {"source": "unit_test"},
-        }
-    )
+    MemoryEventProcessor(writer).process({
+        "event_type": "plan_feedback_observed",
+        "user_id": user_id,
+        "stage": "plan_executed",
+        "plan": {
+            "id": "p1",
+            "title": "KTV plan",
+            "items": [{"category": "poi_entertainment", "tags": ["KTV"]}],
+        },
+        "feedback": {"source": "unit_test"},
+    })
 
     profile = memory.read_profile(user_id=user_id)
     assert profile["favorite_categories"]["poi_entertainment"] == 2.2

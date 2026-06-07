@@ -2,8 +2,14 @@ from __future__ import annotations
 
 from app.planning.services.common import *
 from app.planning.services.ranking_service import _candidate_index
-from app.planning.state import CandidatePlan, ScoredPOICandidate, AvailabilityResults, POIAvailability, \
-    FinalConstraints, LogicalRecallPlan
+from app.planning.state import (
+    CandidatePlan,
+    ScoredPOICandidate,
+    AvailabilityResults,
+    POIAvailability,
+    FinalConstraints,
+    LogicalRecallPlan,
+)
 
 
 def check_plan_availability(
@@ -100,7 +106,9 @@ def relax_constraints_for_failure(
             if iteration >= 1:
                 requirement.positive_logic_tags = requirement.positive_logic_tags[:1]
     if reason == "route_infeasible":
-        relaxed.hard_constraints.max_route_minutes = int((relaxed.hard_constraints.max_route_minutes or 90) * 1.25)
+        relaxed.hard_constraints.max_route_minutes = int(
+            (relaxed.hard_constraints.max_route_minutes or 90) * 1.25
+        )
         max_total = policy_config.planning_rules.max_total_duration_minutes
         relaxed.hard_constraints.max_total_duration_minutes = min(
             max_total,

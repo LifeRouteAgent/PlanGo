@@ -367,18 +367,16 @@ def _clean_dynamic_slots(value: Any) -> list[dict[str, Any]]:
         if slot_id in seen:
             slot_id = f"{slot_id}_{index}"
         seen.add(slot_id)
-        result.append(
-            {
-                "slot_id": slot_id,
-                "slot_type": slot_type or categories[0],
-                "slot_name": _clean_optional_string(item.get("slot_name")) or slot_id,
-                "required": bool(item.get("required", True)),
-                "candidate_logical_categories": _dedupe(categories)[:4],
-                "max_duration_minutes": _clean_int(item.get("max_duration_minutes")),
-                "keywords": _clean_string_list(item.get("keywords"))[:8],
-                "reason": _clean_optional_string(item.get("reason")) or "",
-            }
-        )
+        result.append({
+            "slot_id": slot_id,
+            "slot_type": slot_type or categories[0],
+            "slot_name": _clean_optional_string(item.get("slot_name")) or slot_id,
+            "required": bool(item.get("required", True)),
+            "candidate_logical_categories": _dedupe(categories)[:4],
+            "max_duration_minutes": _clean_int(item.get("max_duration_minutes")),
+            "keywords": _clean_string_list(item.get("keywords"))[:8],
+            "reason": _clean_optional_string(item.get("reason")) or "",
+        })
     return result[:8]
 
 
@@ -432,8 +430,8 @@ def _clean_dag_plan(
         "planning_template": template,
         "slot_sequence": slot_sequence[:8],
         "required_slots": slot_sequence[:8],
-        "dynamic_slots": _clean_dynamic_slots(value.get("dynamic_slots")) or list(
-            fallback_dynamic_slots or []
+        "dynamic_slots": (
+            _clean_dynamic_slots(value.get("dynamic_slots")) or list(fallback_dynamic_slots or [])
         ),
         "movement_policy": movement_policy,
         "candidate_strategy": candidate_strategy,

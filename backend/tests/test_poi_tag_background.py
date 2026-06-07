@@ -13,9 +13,7 @@ def test_static_poi_tag_background_splits_compound_labels() -> None:
 
     data = load_static_poi_tag_background()
     shopping_tags = {
-        item["name"]
-        for item in data["tables"]["poi_shoppings"]["tags"]
-        if isinstance(item, dict)
+        item["name"] for item in data["tables"]["poi_shoppings"]["tags"] if isinstance(item, dict)
     }
 
     assert {"二手店", "市场", "食品", "时装"}.issubset(shopping_tags)

@@ -53,9 +53,7 @@ def resolve_intent(
     raw_slots = [slot.slot_id for slot in slot_details if slot.required]
     if not categories:
         categories = _dedupe(
-            category
-            for slot in slot_details
-            for category in slot.candidate_logical_categories
+            category for slot in slot_details for category in slot.candidate_logical_categories
         )
     must_keywords = _dedupe([
         *[item.get("name") for item in raw.get("must_pois", []) if item.get("name")],
@@ -260,7 +258,9 @@ def _slot_details_from_dynamic_slots(
                 required=bool(item.get("required", True)),
                 expected_duration_minutes=_positive_int(item.get("max_duration_minutes")),
                 candidate_logical_categories=categories[:4],
-                keywords=[str(keyword) for keyword in item.get("keywords", []) if str(keyword).strip()][:8],
+                keywords=[
+                    str(keyword) for keyword in item.get("keywords", []) if str(keyword).strip()
+                ][:8],
                 reason=str(item.get("reason") or ""),
             )
         )
@@ -318,10 +318,9 @@ def _slot_id_for_category(category: str, index: int) -> str:
 def _positive_int(value: Any) -> int | None:
     try:
         number = int(float(value))
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return None
     return number if number > 0 else None
-
 
 
 def _rule_understanding(message: str) -> dict[str, Any]:
@@ -402,7 +401,14 @@ def _merge_rule_understanding(raw: dict[str, Any], rule: dict[str, Any]) -> dict
     if rule.get("scenario") == "inspiration_must_poi":
         # 首页灵感卡片的“我想去 X”语义已经足够明确：
         # X 是必去点，槽位数量应保持可组合，避免 LLM 额外补槽导致路线组合被过滤到 0。
-        for key in ("intent_type", "target_categories", "required_slots", "dynamic_slots", "must_pois", "scenario"):
+        for key in (
+            "intent_type",
+            "target_categories",
+            "required_slots",
+            "dynamic_slots",
+            "must_pois",
+            "scenario",
+        ):
             merged[key] = rule[key]
         merged["preference_keywords"] = _dedupe([
             *list(rule.get("preference_keywords") or []),

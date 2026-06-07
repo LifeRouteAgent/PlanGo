@@ -15,7 +15,6 @@ from fastapi.middleware.cors import CORSMiddleware
 # trip：行程规划主接口
 from app.api.routes import compat, export, plans, trip
 
-
 # 创建 FastAPI 应用实例
 # title 会显示在接口文档页面中
 # version 表示当前 API 版本
@@ -26,21 +25,17 @@ app = FastAPI(title="LifeRouteAgent API", version="0.1.0")
 # 作用：允许前端开发服务器访问后端接口
 app.add_middleware(
     CORSMiddleware,
-
     # 允许访问后端的前端地址列表
     # Vite 默认开发端口通常是 5173
     allow_origins=[
         "http://127.0.0.1:5173",  # 允许 127.0.0.1:5173 访问
         "http://localhost:5173",  # 允许 localhost:5173 访问
     ],
-
     # 是否允许携带 Cookie、Authorization 等凭证信息
     allow_credentials=True,
-
     # 允许所有 HTTP 方法
     # 例如 GET、POST、PUT、DELETE、OPTIONS 等
     allow_methods=["*"],
-
     # 允许所有请求头
     # 例如 Content-Type、Authorization 等
     allow_headers=["*"],

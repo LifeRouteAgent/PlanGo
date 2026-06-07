@@ -14,7 +14,9 @@ class MemoryReadService:
     def read_profile(self, *, user_id: str = "default") -> dict[str, Any]:
         return self.memory.read_profile(user_id=user_id)
 
-    def build_memory_context(self, *, query: str, user_id: str = "default", limit: int = 5) -> dict[str, Any]:
+    def build_memory_context(
+        self, *, query: str, user_id: str = "default", limit: int = 5
+    ) -> dict[str, Any]:
         return self.memory.build_memory_context(query=query, user_id=user_id, limit=limit)
 
     def similar_user_preferences(
@@ -29,7 +31,9 @@ class MemoryReadService:
     def profile_payload(self, *, user_id: str = "default") -> dict[str, Any]:
         return self.memory.profile_payload(user_id=user_id)
 
-    def semantic_search(self, query: str, *, limit: int = 5, user_id: str = "default") -> list[dict[str, Any]]:
+    def semantic_search(
+        self, query: str, *, limit: int = 5, user_id: str = "default"
+    ) -> list[dict[str, Any]]:
         return self.memory.semantic_search(query, limit=limit, user_id=user_id)
 
     def clusters(self) -> list[dict[str, Any]]:

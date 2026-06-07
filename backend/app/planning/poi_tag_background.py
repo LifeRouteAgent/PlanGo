@@ -5,7 +5,6 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
-
 BACKGROUND_PATH = Path(__file__).with_name("poi_tag_background.json")
 
 
@@ -22,7 +21,7 @@ def load_static_poi_tag_background() -> dict[str, Any]:
         return {"tables": {}}
     try:
         data = json.loads(BACKGROUND_PATH.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
+    except OSError, json.JSONDecodeError:
         return {"tables": {}}
     return data if isinstance(data, dict) else {"tables": {}}
 
@@ -58,7 +57,9 @@ def static_tag_fields_by_table() -> dict[str, list[str]]:
     for table, info in (data.get("tables") or {}).items():
         if not isinstance(info, dict):
             continue
-        fields = [str(field).strip() for field in info.get("tag_fields") or [] if str(field).strip()]
+        fields = [
+            str(field).strip() for field in info.get("tag_fields") or [] if str(field).strip()
+        ]
         if fields:
             result[str(table)] = list(dict.fromkeys(fields))
     return result

@@ -232,6 +232,7 @@ def _haversine_km(a: tuple[float, float], b: tuple[float, float]) -> float:
     value = sin(d_lat / 2) ** 2 + cos(start_lat) * cos(end_lat) * sin(d_lon / 2) ** 2
     return 6371 * 2 * asin(sqrt(value))
 
+
 def _duration_for_slot(
     slot: str,
     item: ScoredPOICandidate,

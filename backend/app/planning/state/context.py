@@ -177,4 +177,3 @@ class ContextState(StateModel):
     )
     poi_logical_tag_catalog: POILogicalTagCatalog = Field(default_factory=POILogicalTagCatalog)
     prompt_context_pack: dict[str, Any] = Field(default_factory=dict)
-

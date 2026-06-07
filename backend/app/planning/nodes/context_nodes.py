@@ -46,7 +46,10 @@ def session_state_loader_node(value: PlanningState | dict[str, Any]) -> dict[str
     )
     context = state.context.model_copy(deep=True)
     context = ContextManager().apply_session_payload(context, saved)
-    return {"context": context, "debug": append_trace(state, "session_state_loader", "会话摘要已读取")}
+    return {
+        "context": context,
+        "debug": append_trace(state, "session_state_loader", "会话摘要已读取"),
+    }
 
 
 def memory_reader_node(value: PlanningState | dict[str, Any]) -> dict[str, Any]:

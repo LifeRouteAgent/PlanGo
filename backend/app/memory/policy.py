@@ -3,7 +3,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-
 LONG_TERM_CONFIDENCE_THRESHOLD = 0.65
 
 TEMPORARY_SCOPE = "temporary"
@@ -43,7 +42,9 @@ class MemoryPolicy:
             "plan_executed": 2.2,
         }.get(stage, 1.2)
 
-    def decide_extracted_profile_update(self, extracted: dict[str, Any] | None) -> MemoryWriteDecision:
+    def decide_extracted_profile_update(
+        self, extracted: dict[str, Any] | None
+    ) -> MemoryWriteDecision:
         if not extracted:
             return MemoryWriteDecision(False, TEMPORARY_SCOPE, 0.0, "no_extraction")
         confidence = _safe_float(extracted.get("confidence"), 0.0)
@@ -73,7 +74,7 @@ class MemoryPolicy:
 def _safe_float(value: Any, fallback: float) -> float:
     try:
         return float(value)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return fallback
 
 

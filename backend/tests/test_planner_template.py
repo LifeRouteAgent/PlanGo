@@ -45,9 +45,7 @@ def test_unspecified_total_duration_comes_from_dynamic_slots() -> None:
                 ),
             ],
         ),
-        poi_recall_intent=POIRecallIntent(
-            target_logical_categories=["activity", "entertainment"]
-        ),
+        poi_recall_intent=POIRecallIntent(target_logical_categories=["activity", "entertainment"]),
     )
 
     constraints, recall = build_constraints(understanding, city="北京", origin=None)

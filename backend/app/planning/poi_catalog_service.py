@@ -95,7 +95,11 @@ class PoiCatalogService:
             prompt_tags = self._prompt_tags(query, all_tags)
             tag_fields = _merge_field_lists(
                 [field for field in spec.tag_fields if field in physical_fields],
-                [field for field in STATIC_TAG_FIELDS.get(spec.table, []) if field in physical_fields],
+                [
+                    field
+                    for field in STATIC_TAG_FIELDS.get(spec.table, [])
+                    if field in physical_fields
+                ],
             )
             tables[logical] = POITableTagInfo(
                 physical_table=spec.table,

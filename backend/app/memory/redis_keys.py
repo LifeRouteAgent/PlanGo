@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-
 DEFAULT_SESSION_TTL_SECONDS = 24 * 60 * 60
 DEFAULT_PLAN_STATE_TTL_SECONDS = 2 * 60 * 60
 DEFAULT_IDEMPOTENCY_TTL_SECONDS = 7 * 24 * 60 * 60

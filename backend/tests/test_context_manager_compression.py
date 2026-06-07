@@ -38,10 +38,7 @@ def test_context_manager_uses_llm_summary_when_triggered(monkeypatch) -> None:
 def test_context_manager_trims_prompt_pack_over_budget() -> None:
     raw_pack = {
         "session_summary": {},
-        "recent_turns": [
-            {"role": "user", "content": "long-context" * 800}
-            for _ in range(10)
-        ],
+        "recent_turns": [{"role": "user", "content": "long-context" * 800} for _ in range(10)],
         "last_plan_snapshot": {"last_plan_ids": ["p1", "p2", "p3", "p4"]},
         "memory_context": {
             "positive_tags": [

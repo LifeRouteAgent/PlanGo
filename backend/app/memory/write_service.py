@@ -27,10 +27,14 @@ class MemoryWriteService:
     def observe_selected_plan(self, plan: dict[str, Any], *, user_id: str = "default") -> None:
         self.memory.observe_selected_plan(plan, user_id=user_id)
 
-    def observe_rejected_plan(self, plan_id: str, *, reason: str = "", user_id: str = "default") -> None:
+    def observe_rejected_plan(
+        self, plan_id: str, *, reason: str = "", user_id: str = "default"
+    ) -> None:
         self.memory.observe_rejected_plan(plan_id, reason=reason, user_id=user_id)
 
-    def observe_revision(self, query: str, parsed_patch: dict[str, Any], *, user_id: str = "default") -> None:
+    def observe_revision(
+        self, query: str, parsed_patch: dict[str, Any], *, user_id: str = "default"
+    ) -> None:
         self.memory.observe_revision(query, parsed_patch, user_id=user_id)
 
     def clear(self, *, user_id: str | None = None) -> None:

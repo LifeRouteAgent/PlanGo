@@ -17,9 +17,7 @@ def test_context_manager_builds_structured_session_summary() -> None:
             },
         },
         "latest_planning_response": {
-            "response_payload": {
-                "plans": [{"id": "plan_1"}, {"id": "plan_2"}, {"id": "plan_3"}]
-            },
+            "response_payload": {"plans": [{"id": "plan_1"}, {"id": "plan_2"}, {"id": "plan_3"}]},
             "selected_plan": {"id": "plan_2"},
         },
         "turns": [{"user_query": "餐厅换便宜点"}],
@@ -43,7 +41,12 @@ def test_context_manager_applies_session_payload_without_planning_decisions() ->
             "constraints": {"city": "北京", "avoid_keywords": ["火锅"]},
         },
         "latest_planning_response": {
-            "ranked_plans": [{"id": "plan_1"}, {"id": "plan_2"}, {"id": "plan_3"}, {"id": "plan_4"}],
+            "ranked_plans": [
+                {"id": "plan_1"},
+                {"id": "plan_2"},
+                {"id": "plan_3"},
+                {"id": "plan_4"},
+            ],
             "selected_plan": {"id": "plan_1"},
         },
         "turns": [{"user_query": f"turn-{index}"} for index in range(8)],

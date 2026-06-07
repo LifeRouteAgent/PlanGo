@@ -22,7 +22,9 @@ def intent_resolver_node(value: PlanningState | dict[str, Any]) -> dict[str, Any
         state.context.conversation_context.last_user_message,
         {"user_id": state.state_meta.user_id},
         conversation_context,
-        poi_knowledge=PoiCatalogService().background_knowledge(state.context.poi_logical_tag_catalog),
+        poi_knowledge=PoiCatalogService().background_knowledge(
+            state.context.poi_logical_tag_catalog
+        ),
     )
     return {
         "llm_understanding": understanding,

@@ -20,7 +20,9 @@ PROMPT_CONTEXT_TOKEN_BUDGET = 6000
 class ContextManager:
     """Assembles request context without making planning decisions."""
 
-    def apply_session_payload(self, context: ContextState, saved: dict[str, Any] | None) -> ContextState:
+    def apply_session_payload(
+        self, context: ContextState, saved: dict[str, Any] | None
+    ) -> ContextState:
         if not saved:
             context.prompt_context_pack = self.build_prompt_context_pack(context)
             return context
@@ -40,11 +42,16 @@ class ContextManager:
             last_request_type=last_intent or None,
             last_constraints_snapshot=latest.get("constraints") or None,
             last_ranked_plans=list(ranked or [])[:3],
-            selected_or_referenced_plan_id=str((response.get("selected_plan") or {}).get("id") or "") or None,
+            selected_or_referenced_plan_id=str(
+                (response.get("selected_plan") or {}).get("id") or ""
+            )
+            or None,
         )
         result.conversation_context.recent_turns = self.recent_turns(saved)
         result.conversation_context.session_summary = self.session_summary(saved)
-        result.conversation_context.history_summary = result.conversation_context.session_summary.summary or None
+        result.conversation_context.history_summary = (
+            result.conversation_context.session_summary.summary or None
+        )
         result.prompt_context_pack = self.build_prompt_context_pack(result)
         return result
 
@@ -80,14 +87,24 @@ class ContextManager:
                 pass
         return fallback
 
-    def should_update_session_summary(self, saved: dict[str, Any], *, is_revision: bool | None = None) -> bool:
+    def should_update_session_summary(
+        self, saved: dict[str, Any], *, is_revision: bool | None = None
+    ) -> bool:
         turns = saved.get("turns") if isinstance(saved.get("turns"), list) else []
         if len(turns) > SESSION_SUMMARY_RECENT_TURN_THRESHOLD:
             return True
         if is_revision is True:
             return True
-        latest = saved.get("latest_planning_state") if isinstance(saved.get("latest_planning_state"), dict) else {}
-        response = saved.get("latest_planning_response") if isinstance(saved.get("latest_planning_response"), dict) else {}
+        latest = (
+            saved.get("latest_planning_state")
+            if isinstance(saved.get("latest_planning_state"), dict)
+            else {}
+        )
+        response = (
+            saved.get("latest_planning_response")
+            if isinstance(saved.get("latest_planning_response"), dict)
+            else {}
+        )
         if _plans_from_response(response, latest):
             return True
         return not isinstance(saved.get("session_summary"), dict)
@@ -95,7 +112,9 @@ class ContextManager:
     def build_session_summary(self, saved: dict[str, Any]) -> SessionSummary:
         latest = saved.get("latest_planning_state") or saved.get("latest_state") or {}
         response = saved.get("latest_planning_response") or saved.get("latest_response") or {}
-        constraints = latest.get("constraints") if isinstance(latest.get("constraints"), dict) else {}
+        constraints = (
+            latest.get("constraints") if isinstance(latest.get("constraints"), dict) else {}
+        )
         plans = _plans_from_response(response, latest)
         active_constraints = _active_constraints(constraints)
         negative_constraints = _negative_constraints(constraints)
@@ -117,13 +136,14 @@ class ContextManager:
         pack = {
             "session_summary": summary.model_dump(mode="json"),
             "recent_turns": [
-                turn.model_dump(mode="json")
-                for turn in context.conversation_context.recent_turns
+                turn.model_dump(mode="json") for turn in context.conversation_context.recent_turns
             ],
             "last_plan_snapshot": {
                 "has_active_plan": context.current_plan_state.has_active_plan,
                 "last_request_type": context.current_plan_state.last_request_type,
-                "selected_or_referenced_plan_id": context.current_plan_state.selected_or_referenced_plan_id,
+                "selected_or_referenced_plan_id": (
+                    context.current_plan_state.selected_or_referenced_plan_id
+                ),
                 "last_plan_ids": [
                     str(plan.get("id") or plan.get("plan_id") or "")
                     for plan in context.current_plan_state.last_ranked_plans[:3]
@@ -153,11 +173,17 @@ class ContextManager:
         trimmed = json.loads(json.dumps(pack, ensure_ascii=False, default=str))
         if len(trimmed.get("recent_turns", [])) > 3:
             trimmed["recent_turns"] = trimmed["recent_turns"][-3:]
-        memory = trimmed.get("memory_context") if isinstance(trimmed.get("memory_context"), dict) else {}
+        memory = (
+            trimmed.get("memory_context") if isinstance(trimmed.get("memory_context"), dict) else {}
+        )
         memory["positive_tags"] = list(memory.get("positive_tags", []))[:6]
         memory["negative_tags"] = list(memory.get("negative_tags", []))[:6]
         memory["similar_profiles"] = list(memory.get("similar_profiles", []))[:2]
-        last_plan = trimmed.get("last_plan_snapshot") if isinstance(trimmed.get("last_plan_snapshot"), dict) else {}
+        last_plan = (
+            trimmed.get("last_plan_snapshot")
+            if isinstance(trimmed.get("last_plan_snapshot"), dict)
+            else {}
+        )
         last_plan["last_plan_ids"] = list(last_plan.get("last_plan_ids", []))[:3]
         trimmed["prompt_context_meta"] = {
             "trimmed": True,
@@ -169,7 +195,11 @@ class ContextManager:
 
 
 def _plans_from_response(response: dict[str, Any], latest: dict[str, Any]) -> list[dict[str, Any]]:
-    payload = response.get("response_payload") if isinstance(response.get("response_payload"), dict) else {}
+    payload = (
+        response.get("response_payload")
+        if isinstance(response.get("response_payload"), dict)
+        else {}
+    )
     plans = payload.get("plans") or response.get("ranked_plans") or latest.get("ranked_plans") or []
     return [plan for plan in plans if isinstance(plan, dict)]
 
@@ -180,11 +210,21 @@ def estimate_prompt_tokens(payload: Any) -> int:
 
 
 def _summary_llm_payload(saved: dict[str, Any], fallback: SessionSummary) -> dict[str, Any]:
-    latest = saved.get("latest_planning_state") if isinstance(saved.get("latest_planning_state"), dict) else {}
-    response = saved.get("latest_planning_response") if isinstance(saved.get("latest_planning_response"), dict) else {}
+    latest = (
+        saved.get("latest_planning_state")
+        if isinstance(saved.get("latest_planning_state"), dict)
+        else {}
+    )
+    response = (
+        saved.get("latest_planning_response")
+        if isinstance(saved.get("latest_planning_response"), dict)
+        else {}
+    )
     turns = saved.get("turns") if isinstance(saved.get("turns"), list) else []
     return {
-        "previous_summary": saved.get("session_summary") if isinstance(saved.get("session_summary"), dict) else {},
+        "previous_summary": (
+            saved.get("session_summary") if isinstance(saved.get("session_summary"), dict) else {}
+        ),
         "rule_summary": fallback.model_dump(mode="json"),
         "recent_turns": [
             {
@@ -284,7 +324,9 @@ def _current_focus(saved: dict[str, Any], constraints: dict[str, Any], has_plans
     turns = saved.get("turns") if isinstance(saved.get("turns"), list) else []
     latest_turn = turns[-1] if turns and isinstance(turns[-1], dict) else {}
     query = str(latest_turn.get("user_query") or saved.get("latest_planning_query") or "")
-    if any(token in query for token in ("换", "替换", "改成")) and any(token in query for token in ("餐厅", "吃饭", "美食")):
+    if any(token in query for token in ("换", "替换", "改成")) and any(
+        token in query for token in ("餐厅", "吃饭", "美食")
+    ):
         return "replace_restaurant"
     if any(token in query for token in ("预算", "便宜", "贵")):
         return "adjust_budget"
@@ -296,9 +338,13 @@ def _current_focus(saved: dict[str, Any], constraints: dict[str, Any], has_plans
 
 
 def _resolved_references(response: dict[str, Any], plans: list[dict[str, Any]]) -> dict[str, Any]:
-    selected = response.get("selected_plan") if isinstance(response.get("selected_plan"), dict) else {}
+    selected = (
+        response.get("selected_plan") if isinstance(response.get("selected_plan"), dict) else {}
+    )
     return {
-        "selected_plan_id": selected.get("id") or selected.get("plan_id") or (_plan_ids(plans)[0] if plans else ""),
+        "selected_plan_id": (
+            selected.get("id") or selected.get("plan_id") or (_plan_ids(plans)[0] if plans else "")
+        ),
         "plan_count": len(plans),
     }
 
@@ -314,7 +360,9 @@ def _summary_text(
         parts.append(f"scene={scene}")
     if budget := active_constraints.get("budget"):
         parts.append(f"budget={budget}")
-    if duration := active_constraints.get("duration_minutes") or active_constraints.get("duration_hours"):
+    if duration := active_constraints.get("duration_minutes") or active_constraints.get(
+        "duration_hours"
+    ):
         parts.append(f"duration={duration}")
     if categories := active_constraints.get("preferred_categories"):
         parts.append("categories=" + ",".join(str(item) for item in categories[:4]))
