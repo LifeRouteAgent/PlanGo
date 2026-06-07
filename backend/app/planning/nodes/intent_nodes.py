@@ -14,10 +14,14 @@ from app.observability.trace_recorder import record_trace_event
 
 def intent_resolver_node(value: PlanningState | dict[str, Any]) -> dict[str, Any]:
     state = ensure_state(value)
+    conversation_context = {
+        **state.context.current_plan_state.model_dump(mode="json"),
+        "prompt_context_pack": state.context.prompt_context_pack,
+    }
     understanding = resolve_intent(
         state.context.conversation_context.last_user_message,
         {"user_id": state.state_meta.user_id},
-        state.context.current_plan_state.model_dump(mode="json"),
+        conversation_context,
         poi_knowledge=PoiCatalogService().background_knowledge(state.context.poi_logical_tag_catalog),
     )
     return {

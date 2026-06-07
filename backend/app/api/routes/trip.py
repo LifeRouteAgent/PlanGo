@@ -25,8 +25,9 @@ from app.runtime.checkpoint_store import CheckpointStore, TaskStatus, make_idemp
 # 导入 Memory 事件队列，用于异步写入用户反馈、行为记录等
 from app.memory.memory_event_queue import MemoryEventQueue
 
-# 导入 Memory 服务，用于清空记忆、搜索记忆、获取用户画像等
-from app.memory.memory_service import MemoryService
+# 导入 Memory 读写服务，用于清空记忆、搜索记忆、获取用户画像等
+from app.memory.read_service import MemoryReadService
+from app.memory.write_service import MemoryWriteService
 
 # 导入 POI 仓库，用于查询数据库中的地点数据
 from app.repositories.poi_repository import PoiRepository
@@ -367,7 +368,7 @@ def get_runtime_health() -> dict[str, Any]:
 def clear_memory(user_id: str | None = Query(default=None)) -> dict[str, Any]:
     # 如果传入 user_id，则清空该用户的记忆
     # 如果没传，则默认清空 default 用户的记忆
-    MemoryService().clear(user_id=user_id or "default")
+    MemoryWriteService().clear(user_id=user_id or "default")
 
     # 返回清空成功
     return {"ok": True}
@@ -382,7 +383,7 @@ def search_memory(
     user_id: str = Query(default="default"),         # 用户 ID，默认 default
 ) -> dict[str, Any]:
     # 调用 MemoryService 进行语义搜索，并返回搜索结果
-    return {"items": MemoryService().semantic_search(query, limit=limit, user_id=user_id)}
+    return {"items": MemoryReadService().semantic_search(query, limit=limit, user_id=user_id)}
 
 
 # 定义 GET /trip/memory/profile 接口
@@ -390,7 +391,7 @@ def search_memory(
 @router.get("/memory/profile")
 def get_memory_profile(user_id: str = Query(default="default")) -> dict[str, Any]:
     # 返回指定用户的画像数据
-    return MemoryService().profile_payload(user_id=user_id)
+    return MemoryReadService().profile_payload(user_id=user_id)
 
 
 # 定义 POST /trip/memory/rebuild-index 接口
@@ -398,7 +399,7 @@ def get_memory_profile(user_id: str = Query(default="default")) -> dict[str, Any
 @router.post("/memory/rebuild-index")
 def rebuild_memory_index(user_id: str = Query(default="default")) -> dict[str, Any]:
     # 调用 MemoryService 重建向量索引
-    return MemoryService().rebuild_vector_index(user_id=user_id)
+    return MemoryWriteService().rebuild_vector_index(user_id=user_id)
 
 
 # 定义 GET /trip/memory/clusters 接口
@@ -406,7 +407,7 @@ def rebuild_memory_index(user_id: str = Query(default="default")) -> dict[str, A
 @router.get("/memory/clusters")
 def get_memory_clusters() -> dict[str, Any]:
     # 返回用户记忆聚类结果
-    return {"clusters": MemoryService().clusters()}
+    return {"clusters": MemoryReadService().clusters()}
 
 
 # 定义 GET /trip/data-source 接口

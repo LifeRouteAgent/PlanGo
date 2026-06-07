@@ -7,6 +7,7 @@ from typing import Any  # 导入 Any 类型，表示任意类型
 from app.runtime.runtime_paths import SESSIONS_DIR, ensure_runtime_dirs  # 导入会话文件目录和运行时目录初始化函数
 from app.runtime.runtime_store import get_runtime_store  # 导入运行时存储获取函数，统一读写 session/task/metric 等数据
 from app.observability.trace_recorder import new_id  # 导入 ID 生成函数，用于生成 session_id
+from app.context.context_manager import ContextManager
 
 
 class SessionStore:
@@ -83,6 +84,12 @@ class SessionStore:
             "latest_planning_query": latest_planning_query,  # 最近一次规划类 query
             "turns": turns[-30:],  # 只保留最近 30 轮，避免会话文件无限增长
         }
+        context_manager = ContextManager()
+        if context_manager.should_update_session_summary(payload, is_revision=is_revision):
+            session_summary = context_manager.update_session_summary(payload)
+        else:
+            session_summary = context_manager.session_summary(payload)
+        payload["session_summary"] = session_summary.model_dump(mode="json")
 
         get_runtime_store().save_session(session_id, payload)  # 将会话数据保存到 runtime_store
 

@@ -87,6 +87,16 @@ class FollowupContextOutput(BaseModel):
     reason: str = ""
 
 
+class SessionSummaryOutput(BaseModel):
+    summary: str = ""
+    active_constraints: dict[str, Any] = Field(default_factory=dict)
+    negative_constraints: list[str] = Field(default_factory=list)
+    resolved_references: dict[str, Any] = Field(default_factory=dict)
+    current_focus: str = ""
+    last_plan_ids: list[str] = Field(default_factory=list)
+    open_questions: list[str] = Field(default_factory=list)
+
+
 class DagPlanOutput(BaseModel):
     collector_categories: list[str] = Field(default_factory=list)
     planning_template: str = ""
