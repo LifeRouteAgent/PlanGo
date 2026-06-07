@@ -2,17 +2,18 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.context.context_manager import ContextManager
+from app.memory.read_service import MemoryReadService
+
+from app.context.session_store import SessionStore
 from app.planning.nodes.common import append_trace, ensure_state
+from app.planning.poi_catalog_service import PoiCatalogService
 from app.planning.state import (
-    CurrentPlanContext,
     PlanningState,
     PreferenceCluster,
     PreferenceTag,
     UserPreferenceProfile,
 )
-from app.memory.memory_service import MemoryService
-from app.planning.poi_catalog_service import PoiCatalogService
-from app.context.session_store import SessionStore
 
 
 def request_context_loader_node(value: PlanningState | dict[str, Any]) -> dict[str, Any]:
@@ -44,42 +45,15 @@ def session_state_loader_node(value: PlanningState | dict[str, Any]) -> dict[str
         SessionStore().load(state.state_meta.session_id) if state.state_meta.session_id else None
     )
     context = state.context.model_copy(deep=True)
-    if saved:
-        latest = saved.get("latest_planning_state") or saved.get("latest_state") or {}
-        response = saved.get("latest_planning_response") or saved.get("latest_response") or {}
-        ranked = response.get("ranked_plans") or latest.get("ranked_plans") or []
-        last_intent = str(latest.get("intent_type") or response.get("intent_type") or "")
-        context.current_plan_state = CurrentPlanContext(
-            has_active_plan=bool(
-                ranked
-                or response.get("response_payload")
-                or last_intent in {"full_trip_plan", "category_recommend", "poi_search"}
-            ),
-            last_request_type=last_intent or None,
-            last_constraints_snapshot=latest.get("constraints") or None,
-            last_ranked_plans=ranked[:3],
-            selected_or_referenced_plan_id=str(
-                (response.get("selected_plan") or {}).get("id") or ""
-            )
-            or None,
-        )
-        turns = saved.get("turns") or []
-        context.conversation_context.recent_turns = [
-            {"role": "user", "content": str(turn.get("user_query") or "")}
-            for turn in turns[-5:]
-            if turn.get("user_query")
-        ]
-    return {
-        "context": context,
-        "debug": append_trace(state, "session_state_loader", "会话摘要已读取"),
-    }
+    context = ContextManager().apply_session_payload(context, saved)
+    return {"context": context, "debug": append_trace(state, "session_state_loader", "会话摘要已读取")}
 
 
 def memory_reader_node(value: PlanningState | dict[str, Any]) -> dict[str, Any]:
     state = ensure_state(value)
-    memory = MemoryService()
+    memory = MemoryReadService()
     profile = memory.read_profile(user_id=state.state_meta.user_id or "default")
-    similar_profiles = memory.similar_user_preference_search(
+    similar_profiles = memory.similar_user_preferences(
         profile,
         user_id=state.state_meta.user_id or "default",
         limit=3,
@@ -125,4 +99,5 @@ def memory_reader_node(value: PlanningState | dict[str, Any]) -> dict[str, Any]:
             if isinstance(item, dict)
         ],
     )
+    context.prompt_context_pack = ContextManager().build_prompt_context_pack(context)
     return {"context": context, "debug": append_trace(state, "memory_reader", "长期偏好摘要已读取")}

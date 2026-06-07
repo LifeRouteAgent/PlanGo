@@ -530,6 +530,131 @@ export function bookPlan(planId: string) {
   return postPlanAction<{ plan: Plan; actions: Plan["actions"] }>(planId, "book");
 }
 
+export interface MockExecutionStep {
+  id: string;
+  label: string;
+  endpoint: "/api/mock/restaurant-booking" | "/api/mock/ticket-reservation" | "/api/mock/taxi-dispatch" | "/api/mock/calendar-event";
+  payload: Record<string, unknown>;
+}
+
+export interface MockExecutionResult {
+  step: MockExecutionStep;
+  ok: boolean;
+  status: string;
+  order_id: string;
+  message: string;
+}
+
+async function postMockExecutionStep(step: MockExecutionStep): Promise<MockExecutionResult> {
+  const response = await fetch(step.endpoint, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(step.payload)
+  });
+  await ensureOk(response, `${step.label}失败`);
+  const data = asRecord(await response.json());
+  return {
+    step,
+    ok: Boolean(data.ok),
+    status: asString(data.status, "confirmed"),
+    order_id: asString(data.order_id, ""),
+    message: asString(data.message, `${step.label}已完成`)
+  };
+}
+
+const MOCK_STEP_VISIBLE_MS = 1200;
+
+function wait(ms: number) {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, ms);
+  });
+}
+
+export function buildMockExecutionSteps(plan: Plan): MockExecutionStep[] {
+  const planId = plan.id ?? plan.trace_id ?? "plan";
+  const steps: MockExecutionStep[] = [];
+  const firstMeal = plan.steps.find((item) => item.type === "meal") ?? plan.steps[0];
+  const firstReservable = plan.steps.find((item) => item.booking_required) ?? plan.steps.find((item) => item.type === "activity") ?? plan.steps[1];
+  const firstRouteStop = plan.route?.stops?.[0] ?? null;
+
+  const restaurantAction = plan.actions.find((action) => action.action_type.includes("restaurant"));
+  if (restaurantAction || firstMeal) {
+    steps.push({
+      id: restaurantAction?.action_id ?? "mock-restaurant",
+      label: `预约餐厅：${restaurantAction?.target_name ?? firstMeal?.title ?? "餐厅"}`,
+      endpoint: "/api/mock/restaurant-booking",
+      payload: {
+        plan_id: planId,
+        action_id: restaurantAction?.action_id,
+        target_id: restaurantAction?.target_id ?? firstMeal?.target_id,
+        target_name: restaurantAction?.target_name ?? firstMeal?.title,
+        scheduled_time: restaurantAction?.scheduled_time ?? firstMeal?.start_time,
+        people_count: restaurantAction?.people_count ?? 2
+      }
+    });
+  }
+
+  const ticketAction = plan.actions.find((action) => action.action_type.includes("ticket") || action.action_type.includes("reservation"));
+  if (ticketAction || firstReservable) {
+    steps.push({
+      id: ticketAction?.action_id ?? "mock-ticket",
+      label: `锁定票务：${ticketAction?.target_name ?? firstReservable?.title ?? "活动"}`,
+      endpoint: "/api/mock/ticket-reservation",
+      payload: {
+        plan_id: planId,
+        action_id: ticketAction?.action_id,
+        target_id: ticketAction?.target_id ?? firstReservable?.target_id,
+        target_name: ticketAction?.target_name ?? firstReservable?.title,
+        scheduled_time: ticketAction?.scheduled_time ?? firstReservable?.start_time,
+        people_count: ticketAction?.people_count ?? 2
+      }
+    });
+  }
+
+  steps.push({
+    id: "mock-taxi",
+    label: `准备打车：${firstRouteStop?.title ?? plan.steps[0]?.title ?? "第一站"}`,
+    endpoint: "/api/mock/taxi-dispatch",
+    payload: {
+      plan_id: planId,
+      target_id: firstRouteStop?.order ?? plan.steps[0]?.target_id,
+      target_name: firstRouteStop?.title ?? plan.steps[0]?.title,
+      scheduled_time: plan.start_time,
+      route_provider: plan.route?.provider
+    }
+  });
+
+  steps.push({
+    id: "mock-calendar",
+    label: "生成日历提醒",
+    endpoint: "/api/mock/calendar-event",
+    payload: {
+      plan_id: planId,
+      title: plan.recommendation?.title ?? "本地生活方案",
+      start_time: plan.start_time,
+      end_time: plan.end_time
+    }
+  });
+
+  return steps.slice(0, 5);
+}
+
+export async function executeMockPlan(
+  plan: Plan,
+  onStepStart: (index: number, step: MockExecutionStep) => void,
+  onStepDone: (index: number, result: MockExecutionResult) => void
+) {
+  const steps = buildMockExecutionSteps(plan);
+  const results: MockExecutionResult[] = [];
+  for (const [index, step] of steps.entries()) {
+    onStepStart(index, step);
+    const [result] = await Promise.all([postMockExecutionStep(step), wait(MOCK_STEP_VISIBLE_MS)]);
+    results.push(result);
+    onStepDone(index, result);
+  }
+  return { steps, results };
+}
+
 export function addPlanToCalendar(planId: string) {
   return postPlanAction<{
     calendar_event_id: string;
@@ -562,13 +687,22 @@ export async function preparePlanPdf(plan: Plan) {
   return response.json() as Promise<{ ok: boolean; token: string; ready: boolean; cached: boolean }>;
 }
 
-export function downloadPreparedPlanPdf(token: string) {
+function downloadBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
-  link.href = `/export/plan/pdf/${encodeURIComponent(token)}`;
-  link.download = "PlanGo行程方案.pdf";
+  link.href = url;
+  link.download = filename;
   document.body.appendChild(link);
   link.click();
   link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 5 * 60 * 1000);
+}
+
+export async function downloadPreparedPlanPdf(token: string, filename = "PlanGo行程方案.pdf") {
+  const response = await fetch(`/export/plan/pdf/${encodeURIComponent(token)}`);
+  await ensureOk(response, "PDF 下载失败");
+  const blob = await response.blob();
+  downloadBlob(blob, filename);
 }
 
 export async function exportPlanPdf(plan: Plan) {
@@ -583,14 +717,7 @@ export async function exportPlanPdf(plan: Plan) {
   });
   await ensureOk(response, "PDF 导出失败");
   const blob = await response.blob();
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = `${plan.recommendation?.title || "PlanGo行程方案"}.pdf`;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  URL.revokeObjectURL(url);
+  downloadBlob(blob, `${plan.recommendation?.title || "PlanGo行程方案"}.pdf`);
   return { ok: true };
 }
 

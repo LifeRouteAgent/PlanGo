@@ -44,8 +44,19 @@ class ConversationTurn(StateModel):
     created_at: datetime | None = None
 
 
+class SessionSummary(StateModel):
+    summary: str = ""
+    active_constraints: dict[str, Any] = Field(default_factory=dict)
+    negative_constraints: list[str] = Field(default_factory=list)
+    resolved_references: dict[str, Any] = Field(default_factory=dict)
+    current_focus: str = ""
+    last_plan_ids: list[str] = Field(default_factory=list)
+    open_questions: list[str] = Field(default_factory=list)
+
+
 class ConversationContext(StateModel):
     history_summary: str | None = None
+    session_summary: SessionSummary = Field(default_factory=SessionSummary)
     recent_turns: list[ConversationTurn] = Field(default_factory=list)
     last_user_message: str = ""
 
@@ -165,3 +176,5 @@ class ContextState(StateModel):
         default_factory=SessionPreferenceProfile
     )
     poi_logical_tag_catalog: POILogicalTagCatalog = Field(default_factory=POILogicalTagCatalog)
+    prompt_context_pack: dict[str, Any] = Field(default_factory=dict)
+

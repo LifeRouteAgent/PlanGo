@@ -75,6 +75,114 @@ DDL = [
       INDEX idx_runtime_node_name (node_name)
     ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
     """,
+    """
+    CREATE TABLE IF NOT EXISTS memory_user_profiles (
+      user_id VARCHAR(128) PRIMARY KEY,
+      profile_payload LONGTEXT NOT NULL,
+      summary TEXT NULL,
+      version INT NOT NULL DEFAULT 1,
+      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS memory_preferences (
+      id BIGINT AUTO_INCREMENT PRIMARY KEY,
+      user_id VARCHAR(128) NOT NULL,
+      preference_key VARCHAR(128) NOT NULL,
+      preference_value VARCHAR(255) NOT NULL DEFAULT '',
+      category VARCHAR(128) NOT NULL DEFAULT '',
+      polarity VARCHAR(32) NOT NULL DEFAULT 'positive',
+      confidence DECIMAL(5,3) NOT NULL DEFAULT 0.000,
+      weight DECIMAL(8,3) NOT NULL DEFAULT 0.000,
+      source_stage VARCHAR(64) NOT NULL DEFAULT '',
+      source_event_id VARCHAR(128) NOT NULL DEFAULT '',
+      status VARCHAR(32) NOT NULL DEFAULT 'active',
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      UNIQUE KEY uk_memory_preference (user_id, preference_key, preference_value),
+      INDEX idx_memory_preferences_user (user_id, status, confidence),
+      INDEX idx_memory_preferences_category (category, polarity)
+    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS memory_evidence (
+      id BIGINT AUTO_INCREMENT PRIMARY KEY,
+      user_id VARCHAR(128) NOT NULL,
+      preference_id BIGINT NULL,
+      session_id VARCHAR(128) NOT NULL DEFAULT '',
+      plan_id VARCHAR(128) NOT NULL DEFAULT '',
+      event_stage VARCHAR(64) NOT NULL DEFAULT '',
+      evidence_type VARCHAR(64) NOT NULL DEFAULT '',
+      confidence_delta DECIMAL(5,3) NOT NULL DEFAULT 0.000,
+      weight DECIMAL(8,3) NOT NULL DEFAULT 0.000,
+      payload LONGTEXT NOT NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      INDEX idx_memory_evidence_user (user_id, created_at),
+      INDEX idx_memory_evidence_preference (preference_id),
+      INDEX idx_memory_evidence_plan (plan_id, event_stage)
+    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS memory_events (
+      id BIGINT AUTO_INCREMENT PRIMARY KEY,
+      event_id VARCHAR(128) NOT NULL,
+      user_id VARCHAR(128) NOT NULL DEFAULT '',
+      session_id VARCHAR(128) NOT NULL DEFAULT '',
+      event_type VARCHAR(128) NOT NULL DEFAULT '',
+      stage VARCHAR(64) NOT NULL DEFAULT '',
+      status VARCHAR(32) NOT NULL DEFAULT 'pending',
+      payload LONGTEXT NOT NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      processed_at TIMESTAMP NULL,
+      UNIQUE KEY uk_memory_events_event_id (event_id),
+      INDEX idx_memory_events_status (status, created_at),
+      INDEX idx_memory_events_user (user_id, created_at)
+    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS memory_plan_feedback (
+      id BIGINT AUTO_INCREMENT PRIMARY KEY,
+      user_id VARCHAR(128) NOT NULL,
+      session_id VARCHAR(128) NOT NULL DEFAULT '',
+      plan_id VARCHAR(128) NOT NULL DEFAULT '',
+      stage VARCHAR(64) NOT NULL DEFAULT '',
+      feedback_type VARCHAR(64) NOT NULL DEFAULT '',
+      reason TEXT NULL,
+      weight DECIMAL(8,3) NOT NULL DEFAULT 0.000,
+      payload LONGTEXT NOT NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      INDEX idx_memory_plan_feedback_user (user_id, created_at),
+      INDEX idx_memory_plan_feedback_plan (plan_id, stage)
+    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS memory_session_turns (
+      id BIGINT AUTO_INCREMENT PRIMARY KEY,
+      session_id VARCHAR(128) NOT NULL,
+      user_id VARCHAR(128) NOT NULL DEFAULT '',
+      turn_index INT NOT NULL DEFAULT 0,
+      query_summary TEXT NULL,
+      session_profile LONGTEXT NULL,
+      payload LONGTEXT NOT NULL,
+      expires_at DATETIME NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      INDEX idx_memory_session_turns_session (session_id, turn_index),
+      INDEX idx_memory_session_turns_expires (expires_at)
+    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS memory_rejected_plans (
+      id BIGINT AUTO_INCREMENT PRIMARY KEY,
+      user_id VARCHAR(128) NOT NULL,
+      session_id VARCHAR(128) NOT NULL DEFAULT '',
+      plan_id VARCHAR(128) NOT NULL DEFAULT '',
+      reason TEXT NULL,
+      payload LONGTEXT NOT NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      INDEX idx_memory_rejected_plans_session (session_id, created_at),
+      INDEX idx_memory_rejected_plans_user (user_id, created_at)
+    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
+    """,
 ]
 
 

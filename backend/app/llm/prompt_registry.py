@@ -19,18 +19,11 @@ class PromptSpec:
 
 
 PROMPT_SPECS: dict[str, PromptSpec] = {
-    "intent_understanding": PromptSpec(
-        "intent_understanding", "2026-05-31.1", "IntentUnderstandingOutput", "1"
-    ),
-    "revision_parser": PromptSpec(
-        "revision_parser", "2026-05-31.1", "RevisionConstraintOutput", "1"
-    ),
-    "memory_extractor": PromptSpec(
-        "memory_extractor", "2026-05-31.1", "MemoryExtractionOutput", "1"
-    ),
-    "response_generation_package": PromptSpec(
-        "response_generation_package", "2026-06-03.1", "ResponseGenerationOutput", "1"
-    ),
+    "intent_understanding": PromptSpec("intent_understanding", "2026-05-31.1", "IntentUnderstandingOutput", "1"),
+    "revision_parser": PromptSpec("revision_parser", "2026-05-31.1", "RevisionConstraintOutput", "1"),
+    "memory_extractor": PromptSpec("memory_extractor", "2026-05-31.1", "MemoryExtractionOutput", "1"),
+    "session_summary": PromptSpec("session_summary", "2026-06-07.1", "SessionSummaryOutput", "1"),
+    "response_generation_package": PromptSpec("response_generation_package", "2026-06-03.1", "ResponseGenerationOutput", "1"),
 }
 
 

@@ -1,6 +1,6 @@
-import { CheckCircle2, Download, Home, Loader2, PlayCircle, SlidersHorizontal, X } from "lucide-react";
+import { CheckCircle2, Download, Home, Loader2, PlayCircle, Share2, SlidersHorizontal, X } from "lucide-react";
 import { useMemo, useState } from "react";
-import { bookPlan, downloadPreparedPlanPdf, exportPlanPdf } from "../../api/streamClient";
+import { buildMockExecutionSteps, executeMockPlan, exportPlanPdf, type MockExecutionResult } from "../../api/streamClient";
 import type { PlanViewModel } from "../../utils/planViewModel";
 
 interface BottomActionBarProps {
@@ -13,38 +13,41 @@ interface BottomActionBarProps {
   onModify: () => void;
 }
 
-export function BottomActionBar({ plan, pdfToken = "", pdfPreparing = false, pdfPrepareError = "", onBackHome, onModify }: BottomActionBarProps) {
+export function BottomActionBar({
+  plan,
+  pdfPreparing = false,
+  pdfPrepareError = "",
+  onBackHome,
+  onShare,
+  onModify
+}: BottomActionBarProps) {
   const [executeOpen, setExecuteOpen] = useState(false);
   const [downloadOpen, setDownloadOpen] = useState(false);
   const [downloadFallbackRunning, setDownloadFallbackRunning] = useState(false);
   const [running, setRunning] = useState(false);
   const [done, setDone] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
+  const [executionResults, setExecutionResults] = useState<Record<number, MockExecutionResult>>({});
 
-  const executeSteps = useMemo(() => {
-    const actions = plan.raw.actions?.length
-      ? plan.raw.actions.map((action) => {
-          if (action.action_type.includes("restaurant")) return `预约餐厅：${action.target_name}`;
-          if (action.action_type.includes("ticket")) return `锁定票务：${action.target_name}`;
-          if (action.action_type.includes("taxi")) return `准备打车：${action.target_name}`;
-          return `执行动作：${action.target_name}`;
-        })
-      : [];
-    const fallbackSteps = actions.length ? [] : ["模拟预约餐厅", "模拟锁定票务", "准备打车路线"];
-    return [...actions, ...fallbackSteps, "生成日历文件"].slice(0, 5);
-  }, [plan.raw.actions]);
+  const executeSteps = useMemo(() => buildMockExecutionSteps(plan.raw), [plan.raw]);
 
   const startExecution = async () => {
     setRunning(true);
     setDone(false);
-    for (let index = 0; index < executeSteps.length; index += 1) {
-      setActiveIndex(index);
-      await new Promise((resolve) => window.setTimeout(resolve, 760));
+    setExecutionResults({});
+    try {
+      await executeMockPlan(
+        plan.raw,
+        (index) => setActiveIndex(index),
+        (index, result) => {
+          setExecutionResults((current) => ({ ...current, [index]: result }));
+          setActiveIndex(index + 1);
+        }
+      );
+      setDone(true);
+    } finally {
+      setRunning(false);
     }
-    await bookPlan(plan.id).catch(() => null);
-    setActiveIndex(executeSteps.length);
-    setDone(true);
-    setRunning(false);
   };
 
   const closeExecution = () => {
@@ -52,14 +55,10 @@ export function BottomActionBar({ plan, pdfToken = "", pdfPreparing = false, pdf
     setExecuteOpen(false);
     setDone(false);
     setActiveIndex(-1);
+    setExecutionResults({});
   };
 
   const confirmDownload = async () => {
-    if (pdfToken) {
-      downloadPreparedPlanPdf(pdfToken);
-      setDownloadOpen(false);
-      return;
-    }
     if (pdfPreparing) return;
     setDownloadFallbackRunning(true);
     try {
@@ -85,6 +84,10 @@ export function BottomActionBar({ plan, pdfToken = "", pdfPreparing = false, pdf
           <Download size={17} />
           导出 PDF
         </button>
+        <button type="button" onClick={onShare}>
+          <Share2 size={17} />
+          分享方案
+        </button>
         <button type="button" className="primary" onClick={() => setExecuteOpen(true)}>
           <PlayCircle size={17} />
           执行计划
@@ -106,18 +109,20 @@ export function BottomActionBar({ plan, pdfToken = "", pdfPreparing = false, pdf
             <h3 id="execute-plan-title">{done ? "执行完成" : "确定执行这个方案？"}</h3>
             <p>
               {done
-                ? "模拟预约、票务、打车和日历动作已完成。"
-                : "点击确认后，PlanGo 会按顺序调用 mock-api 演示预约、购票、打车和日历流程。"}
+                ? "餐厅预约、票务锁定、打车准备和日历提醒已通过 mock API 完成。"
+                : "点击确认后，PlanGo 会按顺序调用后端 mock API，返回订单号和执行状态。"}
             </p>
             <div className="execute-step-list">
               {executeSteps.map((step, index) => {
-                const finished = done || activeIndex > index;
+                const result = executionResults[index];
+                const finished = Boolean(result);
                 const active = running && activeIndex === index;
+                const statusText = finished ? "已完成" : active ? "执行中" : "等待中";
                 return (
-                  <div className={`execute-step ${finished ? "is-done" : ""} ${active ? "is-active" : ""}`} key={step}>
+                  <div className={`execute-step ${finished ? "is-done" : ""} ${active ? "is-active" : ""}`} key={step.id}>
                     <span>{finished ? <CheckCircle2 size={17} /> : active ? <Loader2 size={17} className="spin" /> : index + 1}</span>
-                    <strong>{step}</strong>
-                    <small>{finished ? "已完成" : active ? "执行中" : "等待中"}</small>
+                    <strong>{step.label}</strong>
+                    <small>{statusText}</small>
                   </div>
                 );
               })}
@@ -133,7 +138,7 @@ export function BottomActionBar({ plan, pdfToken = "", pdfPreparing = false, pdf
                   </button>
                 </>
               ) : (
-                <button type="button" className="confirm-dialog-danger execute-confirm" onClick={closeExecution}>
+                <button type="button" className="confirm-dialog-danger execute-confirm execute-confirm-centered" onClick={closeExecution}>
                   确定
                 </button>
               )}
@@ -156,13 +161,11 @@ export function BottomActionBar({ plan, pdfToken = "", pdfPreparing = false, pdf
             </button>
             <h3 id="download-plan-title">下载 PDF 文件</h3>
             <p>
-              {pdfToken
-                ? "方案文档已准备好。点击确定后，浏览器会直接下载 PDF 文件。"
-                : pdfPreparing
-                  ? "方案文档正在后台生成，请稍等片刻。准备完成后点击确定即可下载。"
-                  : pdfPrepareError
-                    ? "预渲染未完成，将为你现场生成并下载，可能需要稍等。"
-                    : "点击确定后将下载 PDF 文件。"}
+              {pdfPreparing
+                ? "方案文档正在后台生成，请稍等片刻。"
+                : pdfPrepareError
+                  ? "预渲染未完成，将为你现场生成并下载，可能需要稍等。"
+                  : "点击确定后将下载 PDF 文件。"}
             </p>
             <div className="execute-modal-actions">
               <button type="button" className="confirm-dialog-secondary" onClick={() => setDownloadOpen(false)} disabled={downloadFallbackRunning}>

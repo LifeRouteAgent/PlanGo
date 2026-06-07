@@ -27,17 +27,6 @@ SLOT_CATEGORIES = {
     "beauty_or_spa": ["beauty"],
 }
 
-SCENE_SLOTS = {
-    "family_half_day": (["activity_or_entertainment", "restaurant"], ["shopping_or_cafe"]),
-    "friends_gathering": (["activity_or_entertainment", "restaurant"], ["lifestyle"]),
-    "couple_date": (["activity_or_attraction", "restaurant"], ["restaurant_or_cafe"]),
-    "meal_only": (["restaurant"], []),
-    "meal_plus_activity": (["activity_or_entertainment", "restaurant"], []),
-    "shopping_leisure": (["shopping", "restaurant_or_cafe"], []),
-    "relaxation": (["beauty_or_spa", "restaurant_or_cafe"], []),
-    "unknown": (["activity_or_entertainment", "restaurant"], []),
-}
-
 MEAL_KEYWORDS = (
     "吃饭",
     "吃喝",

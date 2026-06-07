@@ -20,9 +20,12 @@ class SceneUnderstanding(StateModel):
 class SlotDetail(StateModel):
     slot_id: str
     slot_name: str
+    slot_type: str = ""
     required: bool = True
     expected_duration_minutes: int | None = Field(default=None, ge=0)
     candidate_logical_categories: list[str] = Field(default_factory=list)
+    keywords: list[str] = Field(default_factory=list)
+    reason: str = ""
 
 
 class SlotUnderstanding(StateModel):

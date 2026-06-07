@@ -34,17 +34,7 @@ ALLOWED_CATEGORIES = {
     POI_ENTERTAINMENT,
     POI_BEAUTY,
 }
-ALLOWED_TEMPLATES = {
-    "meal_only",
-    "meal_plus_activity",
-    "family_half_day",
-    "friends_gathering",
-    "entertainment_gathering",
-    "couple_date",
-    "relaxation",
-    "shopping_leisure",
-    "category_recommendation",
-}
+ALLOWED_LOGICAL_CATEGORIES = {item.removeprefix("poi_") for item in ALLOWED_CATEGORIES}
 ALLOWED_MISSING = {"people_or_scenario", "time_window", "preference", "location", "budget"}
 ALLOWED_MOVEMENT_POLICIES = {
     "balanced_local",
@@ -180,8 +170,11 @@ def _build_prompt(
 7. start_time 和 duration_hours 只有用户明确说了时间时才填写，不要自行补默认时间。
 8. 历史画像只能影响后续排序，不得写入 preferences，除非本轮用户明确提到。
 9. budget 必须做语义归一化：预算1k/1K/一千=1000，0.8万=8000。
-10. category_tag_requirements 的标签只能从 POI 标签背景知识对应类别的 available_tags 中选择。
-11. 用户明确偏好的标签写入 positive_logic_tags；明确排除的标签写入 negative_logic_tags。
+10. 你必须直接规划 dynamic_slots，不要选择固定场景模板；slot 个数、顺序、类型和 max_duration_minutes 由用户时间、活动意图和节奏决定。
+11. 如果用户明确给出总时长，dynamic_slots 的 max_duration_minutes 总和应尽量落在总时长内；如果用户没有明确给出总时长，根据规划内容在合理范围内自行给出每个 slot 的时长。
+12. dynamic_slots.candidate_logical_categories 只能使用：restaurant、activity、attraction、shopping、fitness、entertainment、beauty。
+13. category_tag_requirements 的标签只能从 POI 标签背景知识对应类别的 available_tags 中选择。
+14. 用户明确偏好的标签写入 positive_logic_tags；明确排除的标签写入 negative_logic_tags。
 
 target_categories 可选：
 - poi_restaurant
@@ -191,17 +184,6 @@ target_categories 可选：
 - poi_fitness
 - poi_entertainment
 - poi_beauty
-
-planning_template 可选：
-- meal_only
-- meal_plus_activity
-- family_half_day
-- friends_gathering
-- entertainment_gathering
-- couple_date
-- relaxation
-- shopping_leisure
-- category_recommendation
 
 请输出这些字段：
 {{
@@ -214,17 +196,39 @@ planning_template 可选：
   "start_time": null,
   "duration_hours": null,
   "budget": 1000,
-  "planning_template": "couple_date",
-  "required_slots": ["attraction", "entertainment"],
+  "planning_template": "",
+  "required_slots": ["slot_1", "slot_2"],
+  "dynamic_slots": [
+    {{
+      "slot_id": "slot_1",
+      "slot_type": "attraction",
+      "slot_name": "环球影城",
+      "required": true,
+      "candidate_logical_categories": ["attraction"],
+      "max_duration_minutes": 180,
+      "keywords": ["环球影城"],
+      "reason": "用户明确想去环球影城"
+    }},
+    {{
+      "slot_id": "slot_2",
+      "slot_type": "entertainment",
+      "slot_name": "唱歌",
+      "required": true,
+      "candidate_logical_categories": ["entertainment"],
+      "max_duration_minutes": 120,
+      "keywords": ["KTV", "唱歌"],
+      "reason": "用户明确想唱歌"
+    }}
+  ],
   "must_pois": [
     {{"name": "北京环球度假区", "category": "poi_attraction", "must_include": true}}
   ],
   "preference_keywords": ["KTV"],
   "activity_intents": [
-    {{"slot": "entertainment", "semantic_type": "ktv", "must_match": true, "keywords": ["KTV", "唱歌"]}}
+    {{"slot": "slot_2", "semantic_type": "ktv", "must_match": true, "keywords": ["KTV", "唱歌"]}}
   ],
   "category_tag_requirements": [
-    {{"logical_category": "entertainment", "target_slot": "entertainment", "positive_logic_tags": ["KTV"], "negative_logic_tags": []}}
+    {{"logical_category": "entertainment", "target_slot": "slot_2", "positive_logic_tags": ["KTV"], "negative_logic_tags": []}}
   ],
   "need_clarification": false,
   "missing_constraints": [],
@@ -246,10 +250,11 @@ def _normalize_understanding(data: dict[str, Any]) -> dict[str, Any] | None:
     preferences = _clean_string_list(data.get("preferences"))
     if not _has_readable_preference(preferences):
         preferences = _preferences_for_categories(categories)
-    template = str(data.get("planning_template") or "").strip()
-    if template and template not in ALLOWED_TEMPLATES:
-        template = ""
-    required_slots = _clean_string_list(data.get("required_slots"))
+    template = ""
+    dynamic_slots = _clean_dynamic_slots(data.get("dynamic_slots"))
+    required_slots = _clean_string_list(data.get("required_slots")) or [
+        slot["slot_id"] for slot in dynamic_slots
+    ]
     missing = [
         str(item) for item in data.get("missing_constraints", []) if str(item) in ALLOWED_MISSING
     ]
@@ -266,13 +271,16 @@ def _normalize_understanding(data: dict[str, Any]) -> dict[str, Any] | None:
         "budget": _clean_int(data.get("budget")),
         "planning_template": template,
         "required_slots": required_slots,
+        "dynamic_slots": dynamic_slots,
         "must_pois": _clean_must_pois(data.get("must_pois")),
         "preference_keywords": _clean_string_list(data.get("preference_keywords")),
         "activity_intents": _clean_activity_intents(data.get("activity_intents")),
         "category_tag_requirements": _clean_category_tag_requirements(
             data.get("category_tag_requirements")
         ),
-        "dag_plan": _clean_dag_plan(data.get("dag_plan"), template, required_slots, categories),
+        "dag_plan": _clean_dag_plan(
+            data.get("dag_plan"), template, required_slots, categories, dynamic_slots
+        ),
         "need_clarification": bool(data.get("need_clarification")),
         "missing_constraints": missing,
         "clarify_question": _clean_optional_string(data.get("clarify_question")) or "",
@@ -336,17 +344,77 @@ def _clean_category_tag_requirements(value: Any) -> list[dict[str, Any]]:
     return result[:12]
 
 
+def _clean_dynamic_slots(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+    result: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for index, item in enumerate(value, start=1):
+        if not isinstance(item, dict):
+            continue
+        categories = [
+            _clean_logical_category(category)
+            for category in item.get("candidate_logical_categories", []) or []
+        ]
+        categories = [category for category in categories if category]
+        slot_type = _clean_logical_category(item.get("slot_type"))
+        if slot_type and slot_type not in categories:
+            categories.insert(0, slot_type)
+        if not categories:
+            continue
+        slot_id = _clean_optional_string(item.get("slot_id")) or f"slot_{index}"
+        slot_id = _safe_slot_id(slot_id, index)
+        if slot_id in seen:
+            slot_id = f"{slot_id}_{index}"
+        seen.add(slot_id)
+        result.append(
+            {
+                "slot_id": slot_id,
+                "slot_type": slot_type or categories[0],
+                "slot_name": _clean_optional_string(item.get("slot_name")) or slot_id,
+                "required": bool(item.get("required", True)),
+                "candidate_logical_categories": _dedupe(categories)[:4],
+                "max_duration_minutes": _clean_int(item.get("max_duration_minutes")),
+                "keywords": _clean_string_list(item.get("keywords"))[:8],
+                "reason": _clean_optional_string(item.get("reason")) or "",
+            }
+        )
+    return result[:8]
+
+
+def _clean_logical_category(value: Any) -> str:
+    text = str(value or "").strip()
+    if text.startswith("poi_"):
+        text = text.removeprefix("poi_")
+    return text if text in ALLOWED_LOGICAL_CATEGORIES else ""
+
+
+def _safe_slot_id(value: str, index: int) -> str:
+    safe = "".join(char if char.isalnum() or char == "_" else "_" for char in value.strip())
+    return safe[:40] or f"slot_{index}"
+
+
 def _clean_dag_plan(
     value: Any,
     fallback_template: str,
     fallback_slots: list[str],
     fallback_categories: list[str],
+    fallback_dynamic_slots: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     if not isinstance(value, dict):
+        if fallback_dynamic_slots:
+            return {
+                "collector_categories": fallback_categories[:8],
+                "planning_template": "",
+                "slot_sequence": fallback_slots[:8],
+                "required_slots": fallback_slots[:8],
+                "dynamic_slots": list(fallback_dynamic_slots),
+                "movement_policy": "",
+                "candidate_strategy": "",
+                "reason": "",
+            }
         return {}
-    template = str(value.get("planning_template") or fallback_template or "").strip()
-    if template not in ALLOWED_TEMPLATES:
-        template = fallback_template
+    template = ""
     collector_categories = [
         str(item)
         for item in value.get("collector_categories", fallback_categories) or []
@@ -364,6 +432,9 @@ def _clean_dag_plan(
         "planning_template": template,
         "slot_sequence": slot_sequence[:8],
         "required_slots": slot_sequence[:8],
+        "dynamic_slots": _clean_dynamic_slots(value.get("dynamic_slots")) or list(
+            fallback_dynamic_slots or []
+        ),
         "movement_policy": movement_policy,
         "candidate_strategy": candidate_strategy,
         "reason": _clean_optional_string(value.get("reason")) or "",

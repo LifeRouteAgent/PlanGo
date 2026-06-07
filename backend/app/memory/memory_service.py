@@ -7,6 +7,7 @@ from typing import Any
 from app.runtime.runtime_paths import MEMORY_DIR, MEMORY_USERS_DIR, ensure_runtime_dirs
 from app.agents.memory_extractor_agent import extract_memory_updates
 from app.memory.memory_store import FileMemoryStore, ToolCacheEntry
+from app.memory.policy import MemoryPolicy
 from app.memory.vector_memory_store import VectorMemoryRecord, VectorMemoryStore
 
 
@@ -25,6 +26,7 @@ class MemoryService:
         self.history_jsonl = self._history_path("default")
         self.vector_store = vector_store or VectorMemoryStore()
         self.store = FileMemoryStore()
+        self.policy = MemoryPolicy()
         if not self.memory_md.exists():
             self.memory_md.write_text("# LifeRoute Memory\n\n", encoding="utf-8")
         self._ensure_user_files("default")
@@ -210,7 +212,7 @@ class MemoryService:
             )
             return
 
-        weight = _memory_stage_weight(stage)
+        weight = self.policy.stage_weight(stage)
         profile = self.read_profile(user_id=user_id)
         categories = profile.get("favorite_categories", {})
         if not isinstance(categories, dict):
@@ -522,11 +524,10 @@ def _apply_llm_memory_updates(
 ) -> list[str]:
     """把 LLM 记忆抽取结果写入画像，低置信度或临时约束不写长期画像。"""
 
-    if not extracted:
+    policy = MemoryPolicy()
+    if not policy.decide_extracted_profile_update(extracted).should_update_profile:
         return []
-    confidence = _safe_float(extracted.get("confidence"), 0.0)
-    scope = str(extracted.get("scope") or "temporary")
-    if not extracted.get("should_update_profile") or scope != "long_term" or confidence < 0.65:
+    if not extracted:
         return []
     updates = extracted.get("profile_updates")
     if not isinstance(updates, dict):
@@ -706,18 +707,6 @@ def _similar_profile_tags(profile: dict[str, Any]) -> list[str]:
     tags.extend(str(item) for item in profile.get("preferred_areas", [])[:5])
     tags.extend(str(item) for item in profile.get("disliked_keywords", [])[:5])
     return _dedupe(tags)[:16]
-
-
-def _memory_stage_weight(stage: str) -> float:
-    return {
-        "user_query": 0.4,
-        "plan_saved": 0.8,
-        "plan_favorited": 1.0,
-        "plan_exported_pdf": 1.1,
-        "plan_exported_calendar": 1.1,
-        "plan_selected": 1.6,
-        "plan_executed": 2.2,
-    }.get(stage, 1.2)
 
 
 def _extract_tags(text: str) -> list[str]:

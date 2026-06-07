@@ -266,6 +266,7 @@ def _public_dag_plan(value: Any) -> dict[str, Any]:
         "planning_template",
         "required_slots",
         "slot_sequence",
+        "dynamic_slots",
         "time_budget",
         "movement_policy",
         "candidate_strategy",

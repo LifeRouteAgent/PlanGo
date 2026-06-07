@@ -6,19 +6,17 @@ import time
 from typing import Any
 
 from app.config import settings
+from app.memory.event_processor import MemoryEventProcessor
 from app.memory.memory_service import MemoryService
-from app.observability.trace_recorder import record_trace_event, set_trace_context
+from app.memory.write_service import MemoryWriteService
+from app.observability.trace_recorder import record_trace_event
 
 
 class MemoryEventQueue:
-    """异步记忆事件队列。
+    """Asynchronous memory event queue.
 
-    设计目标：规划请求只负责投递用户输入事件，不等待 Memory LLM 抽取完成。
-    - Kafka 可用时：把事件发送到 `KAFKA_MEMORY_TOPIC`，便于后续接独立消费者。
-    - 本地开发/演示：同时启动一个后台线程执行 `MemoryService.observe_user_query`，保证
-      不启动 Kafka 时长期画像仍能更新。
-
-    注意：Kafka 发布失败不能影响规划主链路，只记录 trace 后走本地后台兜底。
+    Planning requests enqueue memory work and return immediately. Kafka is used
+    when configured; local development still gets a background worker fallback.
     """
 
     def __init__(self, memory: MemoryService | None = None) -> None:
@@ -33,8 +31,6 @@ class MemoryEventQueue:
         run_id: str = "",
         session_id: str = "",
     ) -> None:
-        """投递用户输入记忆事件，并立即返回。"""
-
         event = {
             "event_type": "user_query_observed",
             "query": query,
@@ -53,13 +49,7 @@ class MemoryEventQueue:
             },
         )
         self._publish_to_kafka(event)
-        worker = threading.Thread(
-            target=self._process_locally,
-            args=(event,),
-            daemon=True,
-            name="liferoute-memory-worker",
-        )
-        worker.start()
+        self._start_local_worker(event)
 
     def publish_plan_feedback(
         self,
@@ -72,8 +62,6 @@ class MemoryEventQueue:
         run_id: str = "",
         session_id: str = "",
     ) -> None:
-        """投递规划后反馈事件，并立即返回。"""
-
         event = {
             "event_type": "plan_feedback_observed",
             "plan": plan,
@@ -95,6 +83,9 @@ class MemoryEventQueue:
             },
         )
         self._publish_to_kafka(event)
+        self._start_local_worker(event)
+
+    def _start_local_worker(self, event: dict[str, Any]) -> None:
         worker = threading.Thread(
             target=self._process_locally,
             args=(event,),
@@ -104,8 +95,6 @@ class MemoryEventQueue:
         worker.start()
 
     def _publish_to_kafka(self, event: dict[str, Any]) -> None:
-        """尝试发送 Kafka；失败只记录，不阻塞规划。"""
-
         if not settings.kafka_enabled:
             return
         try:
@@ -140,45 +129,5 @@ class MemoryEventQueue:
             )
 
     def _process_locally(self, event: dict[str, Any]) -> None:
+        MemoryEventProcessor(MemoryWriteService(self.memory)).process(event)
         """本地后台兜底处理，执行原有 LLM Memory 抽取。"""
-
-        set_trace_context(
-            trace_id=str(event.get("trace_id") or ""),
-            run_id=str(event.get("run_id") or ""),
-            session_id=str(event.get("session_id") or event.get("user_id") or ""),
-        )
-        started = time.time()
-        try:
-            event_type = str(event.get("event_type") or "")
-            user_id = str(event.get("user_id") or "default")
-            if event_type == "plan_feedback_observed":
-                self.memory.observe_plan_feedback(
-                    event.get("plan") if isinstance(event.get("plan"), dict) else {},
-                    user_id=user_id,
-                    stage=str(event.get("stage") or "plan_selected"),
-                    feedback=(
-                        event.get("feedback") if isinstance(event.get("feedback"), dict) else {}
-                    ),
-                )
-            else:
-                self.memory.observe_user_query(
-                    str(event.get("query") or ""),
-                    user_id=user_id,
-                )
-            record_trace_event(
-                "memory_event_processed",
-                {
-                    "success": True,
-                    "duration_ms": int((time.time() - started) * 1000),
-                    "source": "local_async_worker",
-                },
-            )
-        except Exception as exc:  # noqa: BLE001
-            record_trace_event(
-                "memory_event_process_failed",
-                {
-                    "success": False,
-                    "duration_ms": int((time.time() - started) * 1000),
-                    "error": str(exc)[:500],
-                },
-            )

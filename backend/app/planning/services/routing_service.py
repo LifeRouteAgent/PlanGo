@@ -131,7 +131,10 @@ def _build_candidate_plan(
     constraints: FinalConstraints,
 ) -> CandidatePlan:
     route_minutes, total_distance, max_pair = _route_metrics(items, constraints)
-    visit_minutes = [_duration_for_category(item.logical_category) for item in items]
+    visit_minutes = [
+        _duration_for_slot(slot, item, constraints)
+        for slot, item in zip(slots, items, strict=False)
+    ]
     estimated_budget = sum(float(item.avg_price or 0) for item in items)
     start = constraints.time_policy.start_time or datetime.now().replace(
         hour=14, minute=0, second=0, microsecond=0
@@ -156,7 +159,9 @@ def _build_candidate_plan(
             TimelineItem(
                 time_text=f"{cursor.strftime('%H:%M')}-{end.strftime('%H:%M')}",
                 title=item.name,
-                description=item.subcategory or item.logical_category,
+                description=constraints.hard_constraints.slot_names.get(slot)
+                or item.subcategory
+                or item.logical_category,
                 poi_id=item.poi_id,
             )
         )
@@ -227,17 +232,15 @@ def _haversine_km(a: tuple[float, float], b: tuple[float, float]) -> float:
     value = sin(d_lat / 2) ** 2 + cos(start_lat) * cos(end_lat) * sin(d_lon / 2) ** 2
     return 6371 * 2 * asin(sqrt(value))
 
-
-def _duration_for_category(category: str) -> int:
-    return {
-        "restaurant": 75,
-        "activity": 120,
-        "attraction": 120,
-        "shopping": 90,
-        "entertainment": 120,
-        "fitness": 90,
-        "beauty": 90,
-    }.get(category, 90)
+def _duration_for_slot(
+    slot: str,
+    item: ScoredPOICandidate,
+    constraints: FinalConstraints,
+) -> int:
+    duration = constraints.hard_constraints.slot_duration_minutes.get(slot)
+    if duration:
+        return duration
+    return constraints.time_policy.duration_minutes or 90
 
 
 def _budget_fit_label(estimated: float, constraints: FinalConstraints) -> str:
