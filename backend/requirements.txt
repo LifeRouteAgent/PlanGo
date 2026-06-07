@@ -10,5 +10,5 @@ pymilvus
 sentence-transformers
 numpy
 reportlab
-kafka-python
+tenacity
 
