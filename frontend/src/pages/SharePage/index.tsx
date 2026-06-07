@@ -96,7 +96,7 @@ export function SharePage({ plan, feedbackMessage, onFeedback, onBack, onBackHom
         )}
       </GlassCard>
 
-      <AppleButton type="button" variant="ghost" className="centered" onClick={onBackHome}>
+      <AppleButton type="button" variant="ghost" className="share-home-action centered" onClick={onBackHome}>
         <Home size={17} />
         回到 PlanGo 首页
       </AppleButton>

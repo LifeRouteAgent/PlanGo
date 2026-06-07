@@ -561,6 +561,14 @@ async function postMockExecutionStep(step: MockExecutionStep): Promise<MockExecu
   };
 }
 
+const MOCK_STEP_VISIBLE_MS = 1200;
+
+function wait(ms: number) {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, ms);
+  });
+}
+
 export function buildMockExecutionSteps(plan: Plan): MockExecutionStep[] {
   const planId = plan.id ?? plan.trace_id ?? "plan";
   const steps: MockExecutionStep[] = [];
@@ -639,7 +647,7 @@ export async function executeMockPlan(
   const results: MockExecutionResult[] = [];
   for (const [index, step] of steps.entries()) {
     onStepStart(index, step);
-    const result = await postMockExecutionStep(step);
+    const [result] = await Promise.all([postMockExecutionStep(step), wait(MOCK_STEP_VISIBLE_MS)]);
     results.push(result);
     onStepDone(index, result);
   }

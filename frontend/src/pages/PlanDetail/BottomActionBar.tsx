@@ -117,11 +117,12 @@ export function BottomActionBar({
                 const result = executionResults[index];
                 const finished = Boolean(result);
                 const active = running && activeIndex === index;
+                const statusText = finished ? "已完成" : active ? "执行中" : "等待中";
                 return (
                   <div className={`execute-step ${finished ? "is-done" : ""} ${active ? "is-active" : ""}`} key={step.id}>
                     <span>{finished ? <CheckCircle2 size={17} /> : active ? <Loader2 size={17} className="spin" /> : index + 1}</span>
                     <strong>{step.label}</strong>
-                    <small>{result?.order_id || result?.message || (active ? "调用中" : "等待中")}</small>
+                    <small>{statusText}</small>
                   </div>
                 );
               })}
@@ -137,7 +138,7 @@ export function BottomActionBar({
                   </button>
                 </>
               ) : (
-                <button type="button" className="confirm-dialog-danger execute-confirm" onClick={closeExecution}>
+                <button type="button" className="confirm-dialog-danger execute-confirm execute-confirm-centered" onClick={closeExecution}>
                   确定
                 </button>
               )}

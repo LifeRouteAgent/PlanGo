@@ -1861,6 +1861,13 @@ img {
 }
 
 .centered {
+  justify-self: center;
+  margin: 18px auto 0;
+}
+
+.share-home-action {
+  display: flex;
+  width: fit-content;
   margin: 18px auto 0;
 }
 
@@ -4122,6 +4129,7 @@ img {
 .execute-modal-actions {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  justify-items: stretch;
   gap: 12px;
   margin-top: 22px;
 }
@@ -4237,6 +4245,12 @@ img {
 
 .execute-confirm {
   width: 100%;
+}
+
+.execute-confirm-centered {
+  grid-column: 1 / -1;
+  justify-self: center;
+  width: min(180px, 100%);
 }
 
 @media (max-width: 560px) {

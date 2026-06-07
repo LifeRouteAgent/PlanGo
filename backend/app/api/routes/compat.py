@@ -160,6 +160,7 @@ def _mock_action_response(
     order_prefix: str,
     message: str,
 ) -> dict[str, Any]:
+    time.sleep(2000)
     plan_id = str(payload.get("plan_id") or "")
     target_id = str(payload.get("target_id") or payload.get("action_id") or "")
     target_name = str(payload.get("target_name") or payload.get("title") or "PlanGo 目标")
