@@ -15,21 +15,16 @@ class PlanningRulesConfig(BaseModel):
     """规划阶段的数值阈值和默认时长配置。"""
 
     default_start_hour: int = Field(default=10, ge=0, le=23)
-    default_total_duration_minutes: int = Field(default=240, ge=30)
+    min_total_duration_minutes: int = Field(default=90, ge=30)
+    max_total_duration_minutes: int = Field(default=720, ge=30)
+    min_slot_duration_minutes: int = Field(default=30, ge=10)
+    max_slot_duration_minutes: int = Field(default=240, ge=30)
+    fallback_slot_duration_minutes: int = Field(default=90, ge=10)
     max_route_minutes: int = Field(default=90, ge=0)
     max_segment_route_minutes: int = Field(default=45, ge=0)
-    top_k_per_category: int = Field(default=8, ge=1, le=50)
-    max_raw_plan_combinations: int = Field(default=12, ge=1, le=200)
+    top_k_per_category: int = Field(default=8, ge=1, le=2000)
+    max_raw_plan_combinations: int = Field(default=12, ge=1, le=20000)
     default_budget_per_person: int = Field(default=180, ge=0)
-    stay_minutes_by_slot: dict[str, int] = Field(default_factory=dict)
-
-
-class CategoryPolicyConfig(BaseModel):
-    """模板、slot 和 V2 逻辑类别映射。"""
-
-    template_slots: dict[str, list[str]] = Field(default_factory=dict)
-    slot_categories: dict[str, list[str]] = Field(default_factory=dict)
-    default_logical_categories: list[str] = Field(default_factory=list)
 
 
 class RiskPolicyConfig(BaseModel):
@@ -61,10 +56,6 @@ class PolicyConfigService:
         return _load_config("planning_rules.yaml", PlanningRulesConfig)
 
     @cached_property
-    def category_policy(self) -> CategoryPolicyConfig:
-        return _load_config("category_policy.yaml", CategoryPolicyConfig)
-
-    @cached_property
     def risk_policy(self) -> RiskPolicyConfig:
         return _load_config("risk_policy.yaml", RiskPolicyConfig)
 
@@ -78,7 +69,8 @@ def _load_config(file_name: str, model: type[BaseModel]) -> Any:
         )
         return model()
     try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
+        text = path.read_text(encoding="utf-8")
+        payload, _ = json.JSONDecoder().raw_decode(text)
         return model.model_validate(payload)
     except (OSError, json.JSONDecodeError, ValidationError) as exc:
         record_trace_event(

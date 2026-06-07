@@ -49,6 +49,17 @@ class CategoryTagRequirementOutput(BaseModel):
     negative_logic_tags: list[str] = Field(default_factory=list)
 
 
+class DynamicSlotOutput(BaseModel):
+    slot_id: str = ""
+    slot_type: str = ""
+    slot_name: str = ""
+    required: bool = True
+    candidate_logical_categories: list[str] = Field(default_factory=list)
+    max_duration_minutes: int | None = Field(default=None, ge=0)
+    keywords: list[str] = Field(default_factory=list)
+    reason: str = ""
+
+
 class RevisionConstraintOutput(BaseModel):
     revision_type: str = "global_constraint"
     indoor_preferred: bool | None = None
@@ -80,6 +91,7 @@ class DagPlanOutput(BaseModel):
     collector_categories: list[str] = Field(default_factory=list)
     planning_template: str = ""
     slot_sequence: list[str] = Field(default_factory=list)
+    dynamic_slots: list[DynamicSlotOutput] = Field(default_factory=list)
     movement_policy: str = ""
     candidate_strategy: str = ""
     reason: str = ""
@@ -103,6 +115,7 @@ class IntentUnderstandingOutput(BaseModel):
     budget: int | None = Field(default=None, ge=0)
     planning_template: str | None = None
     required_slots: list[str] = Field(default_factory=list)
+    dynamic_slots: list[DynamicSlotOutput] = Field(default_factory=list)
     must_pois: list[MustPoiOutput] = Field(default_factory=list)
     preference_keywords: list[str] = Field(default_factory=list)
     activity_intents: list[ActivityIntentOutput] = Field(default_factory=list)

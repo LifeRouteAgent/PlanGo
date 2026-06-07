@@ -56,6 +56,7 @@ from app.planning.payloads import normalize_response_payload
 
 from app.planning.services.common import *
 from app.planning.services.ranking_service import _candidate_index
+from app.planning.policy_config import policy_config
 
 def check_plan_availability(
     candidate_plans: list[CandidatePlan],
@@ -146,6 +147,12 @@ def relax_constraints_for_failure(
                 requirement.positive_logic_tags = requirement.positive_logic_tags[:1]
     if reason == "route_infeasible":
         relaxed.hard_constraints.max_route_minutes = int((relaxed.hard_constraints.max_route_minutes or 90) * 1.25)
+        max_total = policy_config.planning_rules.max_total_duration_minutes
+        relaxed.hard_constraints.max_total_duration_minutes = min(
+            max_total,
+            int((relaxed.hard_constraints.max_total_duration_minutes or 240) * 1.15),
+        )
+        relaxed.time_policy.duration_minutes = relaxed.hard_constraints.max_total_duration_minutes
     return relaxed, relaxed_recall
 
 def _mock_availability(item: ScoredPOICandidate) -> POIAvailability:

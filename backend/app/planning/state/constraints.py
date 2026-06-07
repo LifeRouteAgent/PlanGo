@@ -6,6 +6,9 @@ class HardConstraints(StateModel):
     origin: OriginPoint | None = None
     avoid_keywords: list[str] = Field(default_factory=list)
     required_slots: list[str] = Field(default_factory=list)
+    slot_duration_minutes: dict[str, int] = Field(default_factory=dict)
+    slot_logical_categories: dict[str, list[str]] = Field(default_factory=dict)
+    slot_names: dict[str, str] = Field(default_factory=dict)
     max_total_duration_minutes: int | None = None
     max_route_minutes: int | None = None
     must_include_poi_ids: list[str] = Field(default_factory=list)

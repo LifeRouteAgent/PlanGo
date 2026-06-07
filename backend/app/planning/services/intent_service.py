@@ -94,14 +94,19 @@ def resolve_intent(
     scenario = str(raw.get("scenario") or _fallback_scene(message))
     meal_allowed = _should_include_restaurant(message, raw)
     categories = _normalize_restaurant_categories(categories, meal_allowed, request_type)
-    required, optional = SCENE_SLOTS.get(scenario, SCENE_SLOTS["unknown"])
-    raw_slots = list(
-        raw.get("required_slots")
-        or (categories if request_type == "single_category_recommend" and categories else required)
+    slot_details = _slot_details_from_understanding(
+        raw,
+        categories,
+        meal_allowed=meal_allowed,
+        request_type=request_type,
     )
-    raw_slots = _normalize_restaurant_slots(raw_slots, meal_allowed)
-    if not raw_slots and categories:
-        raw_slots = list(categories)
+    raw_slots = [slot.slot_id for slot in slot_details if slot.required]
+    if not categories:
+        categories = _dedupe(
+            category
+            for slot in slot_details
+            for category in slot.candidate_logical_categories
+        )
     must_keywords = _dedupe([
         *[item.get("name") for item in raw.get("must_pois", []) if item.get("name")],
         *_must_poi_keywords_from_message(message),
@@ -122,16 +127,8 @@ def resolve_intent(
         ),
         slots=SlotUnderstanding(
             required_slots=raw_slots,
-            optional_slots=optional,
-            slot_details=[
-                SlotDetail(
-                    slot_id=slot,
-                    slot_name=slot,
-                    required=True,
-                    candidate_logical_categories=SLOT_CATEGORIES.get(slot, categories),
-                )
-                for slot in raw_slots
-            ],
+            optional_slots=[],
+            slot_details=slot_details,
         ),
         poi_recall_intent={
             "target_logical_categories": categories,
@@ -211,6 +208,156 @@ def _category_tag_requirements(
             )
     return result
 
+
+def _slot_details_from_understanding(
+    raw: dict[str, Any],
+    categories: list[str],
+    *,
+    meal_allowed: bool,
+    request_type: str,
+) -> list[SlotDetail]:
+    details = _slot_details_from_dynamic_slots(raw.get("dynamic_slots"), meal_allowed, request_type)
+    if details:
+        return details
+    legacy_slots = _normalize_restaurant_slots(
+        list(raw.get("required_slots") or []),
+        meal_allowed,
+    )
+    if legacy_slots:
+        return _slot_details_from_legacy_slots(legacy_slots, categories, meal_allowed, request_type)
+    normalized_categories = _normalize_restaurant_categories(
+        categories,
+        meal_allowed,
+        request_type,
+    )
+    if normalized_categories:
+        return [
+            SlotDetail(
+                slot_id=_slot_id_for_category(category, index),
+                slot_name=_category_label(category),
+                slot_type=category,
+                required=True,
+                candidate_logical_categories=[category],
+                expected_duration_minutes=None,
+            )
+            for index, category in enumerate(normalized_categories[:4], start=1)
+        ]
+    if request_type == "simple_qa":
+        return []
+    return [
+        SlotDetail(
+            slot_id="slot_1",
+            slot_name="本地生活活动",
+            slot_type="activity",
+            required=True,
+            candidate_logical_categories=["activity", "entertainment", "attraction"],
+            expected_duration_minutes=None,
+        )
+    ]
+
+
+def _slot_details_from_dynamic_slots(
+    value: Any,
+    meal_allowed: bool,
+    request_type: str,
+) -> list[SlotDetail]:
+    if not isinstance(value, list):
+        return []
+    result: list[SlotDetail] = []
+    seen: set[str] = set()
+    for index, item in enumerate(value, start=1):
+        if not isinstance(item, dict):
+            continue
+        categories = [
+            _logical_category(category)
+            for category in item.get("candidate_logical_categories", []) or []
+        ]
+        categories = [category for category in categories if category]
+        slot_type = _logical_category(item.get("slot_type"))
+        if slot_type and slot_type not in categories:
+            categories.insert(0, slot_type)
+        categories = _normalize_restaurant_categories(
+            _dedupe(categories),
+            meal_allowed,
+            request_type,
+        )
+        if not categories:
+            continue
+        slot_id = _safe_slot_id(str(item.get("slot_id") or f"slot_{index}"), index)
+        if slot_id in seen:
+            slot_id = f"{slot_id}_{index}"
+        seen.add(slot_id)
+        result.append(
+            SlotDetail(
+                slot_id=slot_id,
+                slot_name=str(item.get("slot_name") or slot_type or categories[0]),
+                slot_type=slot_type or categories[0],
+                required=bool(item.get("required", True)),
+                expected_duration_minutes=_positive_int(item.get("max_duration_minutes")),
+                candidate_logical_categories=categories[:4],
+                keywords=[str(keyword) for keyword in item.get("keywords", []) if str(keyword).strip()][:8],
+                reason=str(item.get("reason") or ""),
+            )
+        )
+    return result[:8]
+
+
+def _slot_details_from_legacy_slots(
+    slots: list[str],
+    categories: list[str],
+    meal_allowed: bool,
+    request_type: str,
+) -> list[SlotDetail]:
+    result: list[SlotDetail] = []
+    for index, slot in enumerate(slots, start=1):
+        logical_categories = SLOT_CATEGORIES.get(slot, [_logical_category(slot)])
+        logical_categories = [
+            category for category in logical_categories if category in PHYSICAL_TABLES
+        ] or categories
+        logical_categories = _normalize_restaurant_categories(
+            _dedupe(logical_categories),
+            meal_allowed,
+            request_type,
+        )
+        if not logical_categories:
+            continue
+        result.append(
+            SlotDetail(
+                slot_id=_safe_slot_id(str(slot or f"slot_{index}"), index),
+                slot_name=_category_label(logical_categories[0]),
+                slot_type=logical_categories[0],
+                required=True,
+                candidate_logical_categories=logical_categories[:4],
+                expected_duration_minutes=None,
+            )
+        )
+    return result
+
+
+def _logical_category(value: Any) -> str:
+    text = str(value or "").strip()
+    if text.startswith("poi_"):
+        text = text.removeprefix("poi_")
+    return text if text in PHYSICAL_TABLES else ""
+
+
+def _safe_slot_id(value: str, index: int) -> str:
+    safe = re.sub(r"\W+", "_", str(value or "").strip())
+    return safe[:40] or f"slot_{index}"
+
+
+def _slot_id_for_category(category: str, index: int) -> str:
+    return category if index == 1 else f"{category}_{index}"
+
+
+def _positive_int(value: Any) -> int | None:
+    try:
+        number = int(float(value))
+    except (TypeError, ValueError):
+        return None
+    return number if number > 0 else None
+
+
 def _rule_understanding(message: str) -> dict[str, Any]:
     """Deterministic understanding for frontend fixed prompts and inspiration cards."""
 
@@ -221,6 +368,7 @@ def _rule_understanding(message: str) -> dict[str, Any]:
             "intent_type": "full_trip_plan",
             "target_categories": _inspiration_target_categories(must_category),
             "required_slots": _inspiration_required_slots(must_category),
+            "dynamic_slots": _inspiration_dynamic_slots(must_category),
             "must_pois": [
                 {"name": keyword, "category": must_category, "must_include": True}
                 for keyword in must_keywords
@@ -271,7 +419,7 @@ def _merge_rule_understanding(raw: dict[str, Any], rule: dict[str, Any]) -> dict
     if rule.get("scenario") == "inspiration_must_poi":
         # 首页灵感卡片的“我想去 X”语义已经足够明确：
         # X 是必去点，槽位数量应保持可组合，避免 LLM 额外补槽导致路线组合被过滤到 0。
-        for key in ("intent_type", "target_categories", "required_slots", "must_pois", "scenario"):
+        for key in ("intent_type", "target_categories", "required_slots", "dynamic_slots", "must_pois", "scenario"):
             merged[key] = rule[key]
         merged["preference_keywords"] = _dedupe([
             *list(rule.get("preference_keywords") or []),
@@ -329,6 +477,37 @@ def _inspiration_required_slots(must_category: str) -> list[str]:
         "poi_fitness": ["fitness", "activity_or_entertainment"],
     }
     return slot_order.get(must_category, ["attraction", "activity_or_entertainment"])
+
+
+def _inspiration_dynamic_slots(must_category: str) -> list[dict[str, Any]]:
+    logical = LEGACY_TO_LOGICAL.get(must_category, must_category)
+    if logical not in PHYSICAL_TABLES:
+        logical = "attraction"
+    companion = {
+        "shopping": ["activity", "entertainment"],
+        "activity": ["entertainment", "shopping"],
+        "entertainment": ["activity", "shopping"],
+        "beauty": ["shopping", "activity"],
+        "fitness": ["activity", "shopping"],
+    }.get(logical, ["activity", "entertainment"])
+    return [
+        {
+            "slot_id": "must_visit",
+            "slot_type": logical,
+            "slot_name": _category_label(logical),
+            "candidate_logical_categories": [logical],
+            "max_duration_minutes": 120,
+            "required": True,
+        },
+        {
+            "slot_id": "nearby_match",
+            "slot_type": companion[0],
+            "slot_name": _category_label(companion[0]),
+            "candidate_logical_categories": companion,
+            "max_duration_minutes": 90,
+            "required": True,
+        },
+    ]
 
 def _must_poi_keywords_from_message(message: str) -> list[str]:
     match = INSPIRATION_MUST_PATTERN.search(message)
@@ -418,19 +597,31 @@ def _explicit_time_crosses_meal(message: str, raw: dict[str, Any]) -> bool:
     return any(start < meal_hour < end for meal_hour in (12, 17, 18))
 
 def _time_window_hours(message: str, raw: dict[str, Any]) -> tuple[float, float] | None:
+    range_window = _time_range_hours(message)
+    if range_window:
+        return range_window
+    start = _start_hour_from_message(message, raw.get("start_time"))
+    duration = raw.get("duration_hours") or _duration_hours_only(message)
+    if start is not None and duration:
+        return (start, start + float(duration))
+    return None
+
+
+def _time_range_hours(message: str) -> tuple[float, float] | None:
     range_match = re.search(
         r"(?P<start>\d{1,2})(?:[:：]\d{1,2})?\s*点?.{0,4}(?:到|至|-|—|~)\s*(?P<end>\d{1,2})(?:[:：]\d{1,2})?\s*点?",
         message,
     )
-    if range_match:
-        start = _normalize_hour(float(range_match.group("start")), message[: range_match.start("start")])
-        end = _normalize_hour(float(range_match.group("end")), message[range_match.start("end") - 4 : range_match.start("end")])
-        return (start, end)
-    start = _start_hour_from_message(message, raw.get("start_time"))
-    duration = raw.get("duration_hours") or _duration(message)
-    if start is not None and duration:
-        return (start, start + float(duration))
-    return None
+    if not range_match:
+        return None
+    start = _normalize_hour(float(range_match.group("start")), message[: range_match.start("start")])
+    end = _normalize_hour(
+        float(range_match.group("end")),
+        message[range_match.start("end") - 4 : range_match.start("end")],
+    )
+    if start >= 12 and end < 12 and end + 12 > start:
+        end += 12
+    return (start, end)
 
 def _start_hour_from_message(message: str, raw_start: Any) -> float | None:
     if isinstance(raw_start, str):
@@ -538,6 +729,18 @@ def _people_count(message: str) -> int | None:
     return int(match.group(1)) if match else None
 
 def _duration(message: str) -> float | None:
+    window = _time_range_hours(message)
+    if window:
+        start, end = window
+        if end <= start:
+            end += 24
+        duration = end - start
+        if duration > 0:
+            return duration
+    return _duration_hours_only(message)
+
+
+def _duration_hours_only(message: str) -> float | None:
     match = re.search(r"(\d+(?:\.\d+)?)\s*(?:个)?小时", message)
     return float(match.group(1)) if match else None
 

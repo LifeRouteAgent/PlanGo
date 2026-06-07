@@ -185,6 +185,9 @@ def _public_constraints(state: PlanningState) -> dict[str, Any]:
         "city": constraints.hard_constraints.city,
         "origin_name": constraints.hard_constraints.origin.name if constraints.hard_constraints.origin else None,
         "required_slots": list(constraints.hard_constraints.required_slots),
+        "slot_duration_minutes": dict(constraints.hard_constraints.slot_duration_minutes),
+        "slot_logical_categories": dict(constraints.hard_constraints.slot_logical_categories),
+        "slot_names": dict(constraints.hard_constraints.slot_names),
         "avoid_keywords": list(constraints.hard_constraints.avoid_keywords),
         "duration_minutes": constraints.time_policy.duration_minutes,
         "duration_hours": (

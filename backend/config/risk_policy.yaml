@@ -17,3 +17,30 @@
   "requires_verified_target_min_level": 3,
   "auto_execute_max_level": 3
 }
+
+
+# # =========================
+# # tool_safety.yaml
+# # 工具风险等级与执行安全策略
+# # =========================
+
+# risk_levels:                         # 不同工具 / 动作的风险等级，数字越大风险越高
+#   internal_reasoning: 0              # 内部推理，不调用外部工具，不影响真实世界
+#   database_query: 1                  # 查询数据库，只读操作
+#   amap_route: 1                      # 查询高德路线，只读操作
+#   amap_weather: 1                    # 查询高德天气，只读操作
+
+#   pdf_export: 2                      # 导出 PDF，会生成用户文件，需要确认
+#   calendar_export: 2                 # 写入日历，会修改用户日历，需要确认
+#   share_plan: 2                      # 分享方案，可能泄露行程信息，需要确认
+
+#   restaurant_booking: 3              # 预约餐厅，影响真实世界，需要确认并校验目标
+#   ticket_order: 3                    # 订票 / 买票，影响真实世界，需要确认并校验目标
+#   taxi: 3                            # 叫车，影响真实世界，需要确认并校验上下车点
+
+#   payment: 4                         # 支付，资金相关，高风险
+#   refund: 4                          # 退款，资金相关，高风险
+
+# requires_confirmation_min_level: 2   # 风险等级 >= 2 的动作必须让用户确认
+# requires_verified_target_min_level: 3 # 风险等级 >= 3 的动作必须校验目标对象
+# auto_execute_max_level: 3            # 风险等级 <= 3 的动作在满足确认/校验条件后允许由系统执行

@@ -154,8 +154,12 @@ def test_policy_configs_load_from_files() -> None:
     """策略配置应从文件加载，而不是散落在业务代码里。"""
 
     assert policy_config.planning_rules.max_segment_route_minutes > 0
+    assert policy_config.planning_rules.min_slot_duration_minutes > 0
+    assert (
+        policy_config.planning_rules.max_slot_duration_minutes
+        >= policy_config.planning_rules.min_slot_duration_minutes
+    )
     assert "restaurant_booking" in policy_config.risk_policy.risk_levels
-    assert policy_config.category_policy.default_logical_categories
 
 
 def test_local_life_benchmark_has_layered_paths() -> None:

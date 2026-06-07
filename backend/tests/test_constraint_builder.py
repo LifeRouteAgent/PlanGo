@@ -9,7 +9,7 @@ def test_v2_constraint_builder_parses_budget_and_uses_defaults() -> None:
     constraints, recall = build_constraints(understanding, city="北京", origin=None)
 
     assert constraints.budget_policy.total_budget == 600
-    assert constraints.time_policy.duration_minutes == 270
+    assert constraints.time_policy.duration_minutes == 240
     assert constraints.rating_policy.min_rating_initial == 4.0
     assert recall.target_slots
 

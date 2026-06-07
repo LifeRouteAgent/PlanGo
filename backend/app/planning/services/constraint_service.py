@@ -53,6 +53,7 @@ from app.planning.poi_catalog_service import PoiCatalogService
 from app.integrations.amap_route_service import AmapRouteService
 from app.planning.scoring_service import score_candidates as score_poi_candidates
 from app.planning.payloads import normalize_response_payload
+from app.planning.policy_config import policy_config
 
 from app.planning.services.common import *
 from app.planning.services.intent_service import _normalize_restaurant_categories, _normalize_restaurant_slots, _resolve_route_origin, _restaurant_allowed_for_understanding
@@ -66,6 +67,7 @@ def build_constraints(
     session_preference: SessionPreferenceProfile | None = None,
 ) -> tuple[FinalConstraints, LogicalRecallPlan]:
     previous = previous or {}
+    rules = policy_config.planning_rules
     scene = understanding.scene.scene_type
     radii = {
         "family_half_day": (3, 5, 8),
@@ -81,12 +83,40 @@ def build_constraints(
     per_person = understanding.budget.budget_per_person or (
         total_budget / people if total_budget else None
     )
-    duration_minutes = round((understanding.time.duration_hours or 4.5) * 60)
+    slot_details = [slot for slot in understanding.slots.slot_details if slot.required]
+    if not slot_details and understanding.slots.required_slots:
+        slot_details = [
+            SlotDetail(
+                slot_id=slot,
+                slot_name=slot,
+                slot_type="",
+                required=True,
+                candidate_logical_categories=[],
+            )
+            for slot in understanding.slots.required_slots
+        ]
+    slot_duration_minutes = _slot_duration_minutes(slot_details, rules)
+    explicit_duration_minutes = (
+        round(understanding.time.duration_hours * 60)
+        if understanding.time.duration_hours
+        else None
+    )
+    duration_minutes = _total_duration_minutes(
+        slot_duration_minutes,
+        explicit_duration_minutes,
+        rules,
+    )
+    if explicit_duration_minutes:
+        slot_duration_minutes = _fit_slot_durations_to_total(
+            slot_duration_minutes,
+            duration_minutes,
+            rules,
+        )
     start_time = understanding.time.start_time or datetime.now().replace(
-        hour=14, minute=0, second=0, microsecond=0
+        hour=rules.default_start_hour, minute=0, second=0, microsecond=0
     )
     restaurant_allowed = _restaurant_allowed_for_understanding(understanding)
-    required_slots = understanding.slots.required_slots or SCENE_SLOTS.get(scene, SCENE_SLOTS["unknown"])[0]
+    required_slots = [slot.slot_id for slot in slot_details] or understanding.slots.required_slots
     required_slots = _normalize_restaurant_slots(required_slots, restaurant_allowed)
     preferred_categories = understanding.poi_recall_intent.target_logical_categories
     preferred_categories = _normalize_restaurant_categories(
@@ -98,8 +128,8 @@ def build_constraints(
         preferred_categories = list(
             dict.fromkeys(
                 category
-                for slot in required_slots
-                for category in SLOT_CATEGORIES.get(slot, ["activity", "restaurant"])
+                for slot in slot_details
+                for category in slot.candidate_logical_categories
             )
         )
         preferred_categories = _normalize_restaurant_categories(
@@ -160,8 +190,15 @@ def build_constraints(
             origin=route_origin,
             avoid_keywords=avoid,
             required_slots=required_slots,
+            slot_duration_minutes=slot_duration_minutes,
+            slot_logical_categories={
+                slot.slot_id: list(slot.candidate_logical_categories)
+                for slot in slot_details
+                if slot.slot_id
+            },
+            slot_names={slot.slot_id: slot.slot_name for slot in slot_details if slot.slot_id},
             max_total_duration_minutes=duration_minutes,
-            max_route_minutes=90,
+            max_route_minutes=rules.max_route_minutes,
         ),
         soft_preferences=SoftPreferences(
             preferred_categories=preferred_categories,
@@ -206,10 +243,14 @@ def build_constraints(
     )
     requirements: list[SlotRecallRequirement] = []
     restaurant_query_count = 0
+    slot_detail_by_id = {slot.slot_id: slot for slot in slot_details}
     for slot in required_slots:
+        detail = slot_detail_by_id.get(slot)
+        detail_categories = list(detail.candidate_logical_categories) if detail else []
         logical_categories = (
-            [category for category in SLOT_CATEGORIES.get(slot, preferred_categories) if category in preferred_categories]
-            or SLOT_CATEGORIES.get(slot, preferred_categories)
+            [category for category in detail_categories if category in preferred_categories]
+            or detail_categories
+            or preferred_categories
         )
         logical_categories = _normalize_restaurant_categories(
             logical_categories,
@@ -251,4 +292,79 @@ def build_constraints(
         ),
     )
     return constraints, recall
+
+
+def _slot_duration_minutes(slot_details: list[SlotDetail], rules: Any) -> dict[str, int]:
+    result: dict[str, int] = {}
+    for slot in slot_details:
+        raw_duration = slot.expected_duration_minutes or rules.fallback_slot_duration_minutes
+        result[slot.slot_id] = _clamp_minutes(
+            raw_duration,
+            rules.min_slot_duration_minutes,
+            rules.max_slot_duration_minutes,
+        )
+    return result
+
+
+def _total_duration_minutes(
+    slot_duration_minutes: dict[str, int],
+    explicit_duration_minutes: int | None,
+    rules: Any,
+) -> int:
+    if explicit_duration_minutes:
+        return _clamp_minutes(
+            explicit_duration_minutes,
+            rules.min_total_duration_minutes,
+            rules.max_total_duration_minutes,
+        )
+    visit_minutes = sum(slot_duration_minutes.values())
+    route_buffer = max(0, len(slot_duration_minutes) - 1) * 20
+    if visit_minutes <= 0:
+        visit_minutes = rules.fallback_slot_duration_minutes
+    return _clamp_minutes(
+        visit_minutes + route_buffer,
+        rules.min_total_duration_minutes,
+        rules.max_total_duration_minutes,
+    )
+
+
+def _fit_slot_durations_to_total(
+    slot_duration_minutes: dict[str, int],
+    total_duration_minutes: int,
+    rules: Any,
+) -> dict[str, int]:
+    if not slot_duration_minutes:
+        return {}
+    route_buffer = max(0, len(slot_duration_minutes) - 1) * 20
+    available_visit_minutes = max(
+        rules.min_slot_duration_minutes * len(slot_duration_minutes),
+        total_duration_minutes - route_buffer,
+    )
+    current_visit_minutes = sum(slot_duration_minutes.values())
+    if current_visit_minutes <= available_visit_minutes:
+        return slot_duration_minutes
+    ratio = available_visit_minutes / max(1, current_visit_minutes)
+    fitted = {
+        slot: _clamp_minutes(
+            round(duration * ratio),
+            rules.min_slot_duration_minutes,
+            rules.max_slot_duration_minutes,
+        )
+        for slot, duration in slot_duration_minutes.items()
+    }
+    overflow = sum(fitted.values()) - available_visit_minutes
+    if overflow <= 0:
+        return fitted
+    for slot in sorted(fitted, key=fitted.get, reverse=True):
+        reducible = max(0, fitted[slot] - rules.min_slot_duration_minutes)
+        reduction = min(reducible, overflow)
+        fitted[slot] -= reduction
+        overflow -= reduction
+        if overflow <= 0:
+            break
+    return fitted
+
+
+def _clamp_minutes(value: int | float, minimum: int, maximum: int) -> int:
+    return max(minimum, min(maximum, int(round(value))))
 
