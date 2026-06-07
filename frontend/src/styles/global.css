@@ -1638,7 +1638,7 @@ img {
   bottom: 16px;
   z-index: 20;
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 8px;
   padding: 10px;
   background: rgba(255, 255, 255, 0.82);
@@ -3961,9 +3961,9 @@ img {
 }
 
 .bottom-action-bar {
-  width: min(760px, calc(100% - 240px));
+  width: min(900px, calc(100% - 240px));
   margin: 0 auto;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
 }
 
 @media (max-width: 1180px) {
