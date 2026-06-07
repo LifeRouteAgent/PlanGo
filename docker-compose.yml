@@ -3,7 +3,7 @@ services:
     image: mysql:8.0
     container_name: liferoute-mysql
     environment:
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?请在本机环境或 .env 中设置 MYSQL_ROOT_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?set MYSQL_ROOT_PASSWORD in .env}
       MYSQL_DATABASE: life_route_agent
     ports:
       - "3306:3306"
@@ -12,6 +12,19 @@ services:
       - ./database/sql:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-p${MYSQL_ROOT_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: liferoute-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - liferoute_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -32,9 +45,9 @@ services:
     image: minio/minio:RELEASE.2024-12-18T13-15-44Z
     container_name: liferoute-minio
     environment:
-      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
-      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:?请在本机环境或 .env 中设置 MINIO_SECRET_KEY}
-    command: minio server /minio_data
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:?set MINIO_SECRET_KEY in .env}
+    command: minio server /minio_data --console-address ":9001"
     ports:
       - "9000:9000"
       - "9001:9001"
@@ -49,7 +62,7 @@ services:
       ETCD_ENDPOINTS: etcd:2379
       MINIO_ADDRESS: minio:9000
       MINIO_ACCESS_KEY_ID: ${MINIO_ACCESS_KEY:-minioadmin}
-      MINIO_SECRET_ACCESS_KEY: ${MINIO_SECRET_KEY:?请在本机环境或 .env 中设置 MINIO_SECRET_KEY}
+      MINIO_SECRET_ACCESS_KEY: ${MINIO_SECRET_KEY:?set MINIO_SECRET_KEY in .env}
     ports:
       - "19530:19530"
       - "9091:9091"
@@ -65,32 +78,61 @@ services:
     container_name: liferoute-backend
     environment:
       LIFEROUTE_CONFIG_PATH: /app/config.docker.json
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?请在本机环境或 .env 中设置 MYSQL_ROOT_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?set MYSQL_ROOT_PASSWORD in .env}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      DEEPSEEK_BASE_URL: ${DEEPSEEK_BASE_URL:-https://api.deepseek.com}
+      DEEPSEEK_MODEL: ${DEEPSEEK_MODEL:-deepseek-v4-pro}
+      DEEPSEEK_REASONING_EFFORT: ${DEEPSEEK_REASONING_EFFORT:-high}
+      DEEPSEEK_THINKING_ENABLED: ${DEEPSEEK_THINKING_ENABLED:-false}
       AMAP_API_KEY: ${AMAP_API_KEY:-}
+      AMAP_ROUTE_ENABLED: ${AMAP_ROUTE_ENABLED:-true}
     ports:
       - "8000:8000"
+    volumes:
+      - liferoute_backend_runtime:/app/data/runtime
     depends_on:
       mysql:
         condition: service_healthy
+      redis:
+        condition: service_healthy
       milvus:
         condition: service_started
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3).read()",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
 
   frontend:
     build:
       context: ./frontend
     container_name: liferoute-frontend
     environment:
-      VITE_BACKEND_PROXY: http://backend:8000
       AMAP_API_KEY: ${AMAP_API_KEY:-}
       AMAP_SECURITY_JS_CODE: ${AMAP_SECURITY_JS_CODE:-}
     ports:
-      - "5173:5173"
+      - "5173:80"
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O-", "http://127.0.0.1/"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
 
 volumes:
   liferoute_mysql_data:
+  liferoute_redis_data:
   liferoute_etcd_data:
   liferoute_minio_data:
   liferoute_milvus_data:
+  liferoute_backend_runtime:

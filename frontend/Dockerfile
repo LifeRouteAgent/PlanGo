@@ -1,12 +1,18 @@
-FROM node:20-alpine
+FROM node:20-alpine AS build
 
 WORKDIR /app
 
 COPY package*.json /app/
-RUN npm install
+RUN npm ci
 
 COPY . /app
+RUN npm run build
 
-EXPOSE 5173
+FROM nginx:1.27-alpine
 
-CMD ["sh", "-c", "node -e \"const fs=require('fs'); const cfg={amap_key:process.env.AMAP_API_KEY||'', amap_security_js_code:process.env.AMAP_SECURITY_JS_CODE||''}; fs.writeFileSync('/app/public/app-config.json', JSON.stringify(cfg, null, 2));\" && npm run dev -- --host 0.0.0.0 --port 5173"]
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY --from=build /app/dist /usr/share/nginx/html
+COPY docker-entrypoint.sh /docker-entrypoint.d/99-liferoute-config.sh
+RUN chmod +x /docker-entrypoint.d/99-liferoute-config.sh
+
+EXPOSE 80
