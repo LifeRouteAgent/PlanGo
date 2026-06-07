@@ -1,18 +1,16 @@
 from __future__ import annotations
 
 import re
-import threading
-import time
-from collections import Counter
 from dataclasses import dataclass
 from typing import Any
 
-import pymysql
-from pymysql.cursors import DictCursor
-
-from app.config import settings
 from app.planning.state import POILogicalTagCatalog, POITableTagInfo
 from app.repositories.poi_repository import CATEGORY_SQL_SPECS
+from app.planning.poi_tag_background import (
+    load_static_poi_tag_background,
+    static_tag_fields_by_table,
+    static_tags_by_logical_category,
+)
 
 NORMALIZED_RETURN_FIELDS = [
     "poi_id", "name", "subcategory", "logic_tags", "address",
@@ -45,6 +43,8 @@ FALLBACK_TAGS = {
     "fitness": ["健身中心", "瑜伽", "游泳馆", "搏击", "舞蹈培训", "篮球场"],
     "beauty": ["按摩", "足疗", "SPA", "美发", "美容", "美甲", "艾灸", "洗浴"],
 }
+STATIC_TAGS = static_tags_by_logical_category()
+STATIC_TAG_FIELDS = static_tag_fields_by_table()
 SEMANTIC_ALIAS_HINTS = {
     "唱歌": {"category": "entertainment", "tags": ["KTV", "ktv", "量贩式KTV"]},
     "看电影": {"category": "entertainment", "tags": ["电影院", "cinema", "私人影院"]},
@@ -55,24 +55,23 @@ SEMANTIC_ALIAS_HINTS = {
     "按摩": {"category": "beauty", "tags": ["按摩", "massage", "中医推拿", "盲人按摩"]},
     "泡澡": {"category": "beauty", "tags": ["洗浴", "bath", "洗浴中心"]},
 }
-TAG_SPLIT_PATTERN = re.compile(r"[|,;/，；、&]+")
 PROMPT_TOP_TAGS_PER_CATEGORY = 80
-CACHE_TTL_SECONDS = 1800
 
 
 @dataclass
 class CatalogSnapshot:
     physical_fields: dict[str, list[str]]
     tags: dict[str, list[str]]
-    loaded_at: float
-
-
-_cache_lock = threading.Lock()
-_cache: CatalogSnapshot | None = None
+    tag_version: str
 
 
 class PoiCatalogService:
-    """Builds a database-backed POI schema and tag catalog for planning context."""
+    """构建给 LLM 使用的 POI 标签背景知识。
+
+    这里不访问数据库。标签变化不频繁，由 `poi_tag_background.json` 维护；
+    物理表和字段白名单来自 `CATEGORY_SQL_SPECS`，用于告诉 LLM 后续可匹配哪些字段。
+    真正的 POI 数据库查询只发生在召回阶段的 PoiRepository。
+    """
 
     def load_catalog(self, *, query: str = "") -> POILogicalTagCatalog:
         snapshot = self._snapshot()
@@ -80,15 +79,23 @@ class PoiCatalogService:
         for legacy_category, spec in CATEGORY_SQL_SPECS.items():
             logical = LEGACY_TO_LOGICAL[legacy_category]
             physical_fields = snapshot.physical_fields.get(spec.table, [])
-            all_tags = snapshot.tags.get(logical) or FALLBACK_TAGS[logical]
+            # LLM 可选标签只来自静态背景和短 fallback，不在 intent 阶段扫描数据库。
+            all_tags = _merge_tag_lists(
+                snapshot.tags.get(logical),
+                FALLBACK_TAGS[logical],
+            )
             prompt_tags = self._prompt_tags(query, all_tags)
+            tag_fields = _merge_field_lists(
+                [field for field in spec.tag_fields if field in physical_fields],
+                [field for field in STATIC_TAG_FIELDS.get(spec.table, []) if field in physical_fields],
+            )
             tables[logical] = POITableTagInfo(
                 physical_table=spec.table,
                 logical_category=logical,
                 category_name=CATEGORY_NAMES[logical],
                 physical_fields=physical_fields,
                 filter_fields=[field for field in spec.filter_fields if field in physical_fields],
-                tag_fields=[field for field in spec.tag_fields if field in physical_fields],
+                tag_fields=tag_fields,
                 supported_logic_tags=prompt_tags,
                 total_logic_tag_count=len(all_tags),
                 queryable_fields=NORMALIZED_RETURN_FIELDS,
@@ -96,16 +103,26 @@ class PoiCatalogService:
                 es_search_fields=[spec.name_expr, *spec.tag_fields],
             )
         return POILogicalTagCatalog(
-            tag_version=f"database-{int(snapshot.loaded_at)}",
+            tag_version=snapshot.tag_version,
             tables=tables,
         )
 
     def background_knowledge(self, catalog: POILogicalTagCatalog) -> dict[str, Any]:
+        static_background = load_static_poi_tag_background()
         return {
             "mapping_rule": (
                 "只能把用户语义映射为 available_tags 中真实存在的标签；"
-                "不要编造标签。positive_logic_tags 表示偏好，negative_logic_tags 表示排除。"
+                "不要编造标签。available_tags 来自静态 POI 标签背景知识，不在 LLM 阶段查询数据库。"
+                "positive_logic_tags 表示偏好，后续用于 SQL LIKE 排序加分和候选打分；"
+                "negative_logic_tags 表示排除，后续用于 SQL NOT LIKE 过滤。"
             ),
+            "tag_source": {
+                "database_tags": "not_used_for_intent_background",
+                "static_tags": "source_of_truth_for_llm_available_tags",
+                "static_background_version": static_background.get("version", ""),
+                "split_separators": static_background.get("split_separators", []),
+                "ignored_tables": static_background.get("ignored_tables", {}),
+            },
             "semantic_alias_hints": SEMANTIC_ALIAS_HINTS,
             "categories": {
                 category: {
@@ -156,68 +173,22 @@ class PoiCatalogService:
         return result
 
     def _snapshot(self) -> CatalogSnapshot:
-        global _cache
-        now = time.time()
-        if _cache and now - _cache.loaded_at < CACHE_TTL_SECONDS:
-            return _cache
-        with _cache_lock:
-            if _cache and now - _cache.loaded_at < CACHE_TTL_SECONDS:
-                return _cache
-            try:
-                _cache = self._load_from_database(now)
-            except Exception:  # noqa: BLE001
-                _cache = CatalogSnapshot(
-                    physical_fields={spec.table: list(spec.filter_fields) for spec in CATEGORY_SQL_SPECS.values()},
-                    tags={category: list(tags) for category, tags in FALLBACK_TAGS.items()},
-                    loaded_at=now,
+        static_background = load_static_poi_tag_background()
+        return CatalogSnapshot(
+            physical_fields={
+                spec.table: _merge_field_lists(
+                    spec.filter_fields,
+                    spec.tag_fields,
+                    STATIC_TAG_FIELDS.get(spec.table),
                 )
-            return _cache
-
-    def _load_from_database(self, loaded_at: float) -> CatalogSnapshot:
-        physical_fields: dict[str, list[str]] = {}
-        tags: dict[str, list[str]] = {}
-        with self._connect() as connection:
-            with connection.cursor() as cursor:
-                for legacy_category, spec in CATEGORY_SQL_SPECS.items():
-                    logical = LEGACY_TO_LOGICAL[legacy_category]
-                    cursor.execute(
-                        """
-                        SELECT COLUMN_NAME
-                        FROM information_schema.COLUMNS
-                        WHERE TABLE_SCHEMA=%s AND TABLE_NAME=%s
-                        ORDER BY ORDINAL_POSITION
-                        """,
-                        (settings.database_name, spec.table),
-                    )
-                    columns = [str(row["COLUMN_NAME"]) for row in cursor.fetchall()]
-                    physical_fields[spec.table] = columns
-                    tags[logical] = self._load_tags(cursor, spec.table, spec.tag_fields, set(columns))
-        return CatalogSnapshot(physical_fields=physical_fields, tags=tags, loaded_at=loaded_at)
-
-    def _load_tags(
-        self,
-        cursor: DictCursor,
-        table: str,
-        tag_fields: tuple[str, ...],
-        existing_fields: set[str],
-    ) -> list[str]:
-        counter: Counter[str] = Counter()
-        for field in tag_fields:
-            if field not in existing_fields:
-                continue
-            cursor.execute(
-                f"""
-                SELECT CAST(`{field}` AS CHAR) AS tag_value, COUNT(*) AS tag_count
-                FROM `{table}`
-                WHERE `{field}` IS NOT NULL AND TRIM(CAST(`{field}` AS CHAR)) <> ''
-                GROUP BY `{field}`
-                """
-            )
-            for row in cursor.fetchall():
-                count = int(row.get("tag_count") or 0)
-                for tag in self._split_tags(row.get("tag_value")):
-                    counter[tag] += count
-        return [tag for tag, _ in counter.most_common()]
+                for spec in CATEGORY_SQL_SPECS.values()
+            },
+            tags={
+                category: _merge_tag_lists(STATIC_TAGS.get(category), fallback_tags)
+                for category, fallback_tags in FALLBACK_TAGS.items()
+            },
+            tag_version=str(static_background.get("version") or "static-poi-tags"),
+        )
 
     def _prompt_tags(self, query: str, all_tags: list[str]) -> list[str]:
         selected = list(all_tags[:PROMPT_TOP_TAGS_PER_CATEGORY])
@@ -232,16 +203,6 @@ class PoiCatalogService:
             matched.extend(tag for tag in all_tags if tag in hint["tags"])
         return list(dict.fromkeys([*matched, *selected]))
 
-    def _split_tags(self, value: Any) -> list[str]:
-        if value in (None, ""):
-            return []
-        tags = []
-        for item in TAG_SPLIT_PATTERN.split(str(value)):
-            tag = item.strip()
-            if 1 < len(tag) <= 24 and tag not in tags:
-                tags.append(tag)
-        return tags
-
     def _split_negative_text(self, query: str) -> tuple[str, str]:
         negative_markers = ("不要", "不想", "排除", "避开", "别去", "不去")
         positive_parts: list[str] = []
@@ -253,14 +214,35 @@ class PoiCatalogService:
                 positive_parts.append(clause)
         return " ".join(positive_parts), " ".join(negative_parts)
 
-    def _connect(self):
-        return pymysql.connect(
-            host=settings.database_host,
-            port=settings.database_port,
-            user=settings.database_user,
-            password=settings.database_password,
-            database=settings.database_name,
-            charset="utf8mb4",
-            cursorclass=DictCursor,
-            autocommit=True,
-        )
+
+def _merge_tag_lists(*groups: list[str] | tuple[str, ...] | None) -> list[str]:
+    """合并标签列表并保序去重。
+
+    数据库标签通常最新，静态背景更完整，短 fallback 只在前两者缺失时兜底。
+    """
+
+    merged: list[str] = []
+    seen: set[str] = set()
+    for group in groups:
+        for item in group or []:
+            tag = str(item).strip()
+            if not tag or tag in seen:
+                continue
+            seen.add(tag)
+            merged.append(tag)
+    return merged
+
+
+def _merge_field_lists(*groups: list[str] | tuple[str, ...] | None) -> list[str]:
+    """合并物理标签字段，避免同一字段重复出现在 prompt 背景里。"""
+
+    merged: list[str] = []
+    seen: set[str] = set()
+    for group in groups:
+        for item in group or []:
+            field = str(item).strip()
+            if not field or field in seen:
+                continue
+            seen.add(field)
+            merged.append(field)
+    return merged
