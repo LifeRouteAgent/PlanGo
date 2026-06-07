@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import time
+from urllib.parse import quote
 
 from fastapi import APIRouter
 from fastapi.responses import Response
@@ -54,7 +55,7 @@ def download_prepared_plan_pdf(token: str) -> Response:
         cached["bytes"],
         media_type="application/pdf",
         headers={
-            "Content-Disposition": f'attachment; filename="{cached.get("filename") or "plango-plan.pdf"}"',
+            "Content-Disposition": _content_disposition(str(cached.get("filename") or "plango-plan.pdf")),
         },
     )
 
@@ -107,7 +108,7 @@ def export_plan_pdf(request: ExportPlanRequest) -> Response:
         pdf_bytes,
         media_type="application/pdf",
         headers={
-            "Content-Disposition": f'attachment; filename="{_pdf_filename(request.plan)}"',
+            "Content-Disposition": _content_disposition(_pdf_filename(request.plan)),
         },
     )
 
@@ -168,3 +169,8 @@ def _pdf_filename(plan: dict[str, object]) -> str:
     title = title or str(plan.get("title") or "plango-plan")
     safe = "".join(ch for ch in title if ch.isalnum() or ch in {"-", "_"})
     return f"{safe[:40] or 'plango-plan'}.pdf"
+
+
+def _content_disposition(filename: str) -> str:
+    encoded = quote(filename, safe="")
+    return f"attachment; filename=\"plango-plan.pdf\"; filename*=UTF-8''{encoded}"

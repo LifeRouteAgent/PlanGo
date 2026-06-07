@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import time
 from typing import Any
+from uuid import uuid4
 
 from fastapi import APIRouter, Body, HTTPException, Query
 from fastapi.responses import StreamingResponse
@@ -129,6 +131,62 @@ def _home_category_label(category: str) -> str:
         POI_ENTERTAINMENT: "娱乐",
         POI_BEAUTY: "养生",
     }.get(category, "本地生活")
+
+
+@router.post("/mock/restaurant-booking")
+def mock_restaurant_booking(payload: dict[str, Any] = Body(default_factory=dict)) -> dict[str, Any]:
+    return _mock_action_response("restaurant_booking", payload, order_prefix="REST", message="餐厅预约已确认")
+
+
+@router.post("/mock/ticket-reservation")
+def mock_ticket_reservation(payload: dict[str, Any] = Body(default_factory=dict)) -> dict[str, Any]:
+    return _mock_action_response("ticket_reservation", payload, order_prefix="TICKET", message="票务名额已锁定")
+
+
+@router.post("/mock/taxi-dispatch")
+def mock_taxi_dispatch(payload: dict[str, Any] = Body(default_factory=dict)) -> dict[str, Any]:
+    return _mock_action_response("taxi_dispatch", payload, order_prefix="TAXI", message="打车路线已准备")
+
+
+@router.post("/mock/calendar-event")
+def mock_calendar_event(payload: dict[str, Any] = Body(default_factory=dict)) -> dict[str, Any]:
+    return _mock_action_response("calendar_event", payload, order_prefix="CAL", message="日历提醒已生成")
+
+
+def _mock_action_response(
+    action_type: str,
+    payload: dict[str, Any],
+    *,
+    order_prefix: str,
+    message: str,
+) -> dict[str, Any]:
+    plan_id = str(payload.get("plan_id") or "")
+    target_id = str(payload.get("target_id") or payload.get("action_id") or "")
+    target_name = str(payload.get("target_name") or payload.get("title") or "PlanGo 目标")
+    order_id = f"{order_prefix}-{uuid4().hex[:10].upper()}"
+    result = {
+        "ok": True,
+        "action_type": action_type,
+        "action_id": str(payload.get("action_id") or f"{action_type}-{uuid4().hex[:8]}"),
+        "plan_id": plan_id,
+        "target_id": target_id,
+        "target_name": target_name,
+        "status": "confirmed",
+        "order_id": order_id,
+        "message": message,
+        "created_at": int(time.time()),
+        "mock": True,
+    }
+    record_trace_event(
+        "mock_api_called",
+        {
+            "action_type": action_type,
+            "plan_id": plan_id,
+            "target_id": target_id,
+            "order_id": order_id,
+        },
+    )
+    return result
 
 
 def _extract_user_query(payload: dict[str, Any]) -> str:
