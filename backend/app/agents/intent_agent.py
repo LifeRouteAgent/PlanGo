@@ -389,6 +389,10 @@ def _clean_dynamic_slots(value: Any) -> list[dict[str, Any]]:
     return result[:8]
 
 
+def _dedupe(values: list[str]) -> list[str]:
+    return list(dict.fromkeys(value for value in values if value))
+
+
 def _clean_logical_category(value: Any) -> str:
     text = str(value or "").strip()
     if text.startswith("poi_"):

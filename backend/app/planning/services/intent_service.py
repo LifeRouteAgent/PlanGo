@@ -72,7 +72,14 @@ def resolve_intent(
     raw = _merge_rule_understanding(raw, _rule_understanding(message))
     catalog = _catalog_from_knowledge(poi_knowledge or {})
     rule_tag_matches = PoiCatalogService().match_query_tags(message, catalog)
-    legacy_intent = str(raw.get("intent_type") or detect_intent_type(message))
+    rule_intent = detect_intent_type(message)
+    legacy_intent = str(raw.get("intent_type") or rule_intent)
+    if legacy_intent == "simple_qa" and rule_intent in {
+        "category_recommend",
+        "poi_search",
+        "full_trip_plan",
+    }:
+        legacy_intent = rule_intent
     request_type = {
         "capability": "simple_qa",
         "simple_qa": "simple_qa",
@@ -377,6 +384,35 @@ def _rule_understanding(message: str) -> dict[str, Any]:
             "scenario": "inspiration_must_poi",
         }
 
+    if _looks_like_date_night_plan(message):
+        return {
+            "intent_type": "full_trip_plan",
+            "target_categories": ["poi_restaurant", "poi_attraction"],
+            "required_slots": ["restaurant", "attraction"],
+            "dynamic_slots": [
+                {
+                    "slot_id": "slot_1",
+                    "slot_name": "浪漫晚餐",
+                    "slot_type": "restaurant",
+                    "required": True,
+                    "candidate_logical_categories": ["restaurant"],
+                    "keywords": ["浪漫", "双人餐", "晚餐"],
+                    "reason": "用户表达了约会和晚上吃饭需求。",
+                },
+                {
+                    "slot_id": "slot_2",
+                    "slot_name": "看夜景",
+                    "slot_type": "attraction",
+                    "required": True,
+                    "candidate_logical_categories": ["attraction"],
+                    "keywords": ["夜景", "夜游观景", "地标观景"],
+                    "reason": "用户明确想看夜景。",
+                },
+            ],
+            "preference_keywords": ["浪漫", "约会", "夜景", "双人餐", "夜游观景"],
+            "scenario": "couple_date_night",
+        }
+
     if "我推荐附近适合今天去的本地生活地点" in message:
         return {
             "intent_type": "category_recommend",
@@ -416,11 +452,12 @@ def _merge_rule_understanding(raw: dict[str, Any], rule: dict[str, Any]) -> dict
     if not rule:
         return raw
     merged = dict(raw)
-    if rule.get("scenario") == "inspiration_must_poi":
+    if rule.get("scenario") in {"inspiration_must_poi", "couple_date_night"}:
         # 首页灵感卡片的“我想去 X”语义已经足够明确：
         # X 是必去点，槽位数量应保持可组合，避免 LLM 额外补槽导致路线组合被过滤到 0。
         for key in ("intent_type", "target_categories", "required_slots", "dynamic_slots", "must_pois", "scenario"):
-            merged[key] = rule[key]
+            if key in rule:
+                merged[key] = rule[key]
         merged["preference_keywords"] = _dedupe([
             *list(rule.get("preference_keywords") or []),
             *list(raw.get("preference_keywords") or []),
@@ -709,6 +746,12 @@ def _fallback_scene(message: str) -> str:
     if any(x in message for x in ("朋友", "同事", "同学", "闺蜜")):
         return "friends_gathering"
     return "unknown"
+
+def _looks_like_date_night_plan(message: str) -> bool:
+    has_date_context = any(x in message for x in ("约会", "情侣", "对象", "女朋友", "男朋友"))
+    has_evening_context = any(x in message for x in ("晚上", "今晚", "夜景", "夜游", "看夜景"))
+    has_plan_activity = any(x in message for x in ("吃饭", "晚餐", "餐厅", "浪漫", "地方", "景"))
+    return has_date_context and has_evening_context and has_plan_activity
 
 def _looks_like_adjustment(message: str) -> bool:
     return any(x in message for x in ("换", "改", "保留", "不要", "太远", "太贵", "重新排序"))

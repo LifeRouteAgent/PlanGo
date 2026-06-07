@@ -473,11 +473,6 @@ git clone https://github.com/LifeRouteAgent/PlanGo.git
 cd PlanGo
 ```
 
-如果你已经在本机目录中：
-
-```powershell
-cd C:\Users\dengp\project\LifeRouteAgent
-```
 
 ### 10.2 配置后端
 
@@ -557,7 +552,7 @@ cd backend
 ### 10.6 启动后端
 
 ```powershell
-cd C:\Users\dengp\project\LifeRouteAgent\backend
+cd LifeRouteAgent\backend
 ..\.venv\Scripts\python.exe -m uvicorn app.api.main:app --host 127.0.0.1 --port 8000
 ```
 
@@ -571,7 +566,7 @@ http://127.0.0.1:8000/docs
 ### 10.7 启动前端
 
 ```powershell
-cd C:\Users\dengp\project\LifeRouteAgent\frontend
+cd LifeRouteAgent\frontend
 npm install
 npm run dev -- --host 127.0.0.1 --port 5173
 ```
@@ -662,14 +657,14 @@ docs/                        部署、项目介绍和答辩文档
 后端测试：
 
 ```powershell
-cd C:\Users\dengp\project\LifeRouteAgent\backend
+cd LifeRouteAgent\backend
 ..\.venv\Scripts\python.exe -m pytest tests -q
 ```
 
 前端构建：
 
 ```powershell
-cd C:\Users\dengp\project\LifeRouteAgent\frontend
+cd LifeRouteAgent\frontend
 npm run build
 ```
 
