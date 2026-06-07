@@ -1,8 +1,33 @@
 # LifeRouteAgent
 
+<p align="center">
+  <sub><strong>LOCAL LIFE AGENT</strong> · <strong>AI WEEKEND PLANNER</strong></sub>
+</p>
+
+<h1 align="center">PlanGo — AI 本地生活规划师</h1>
+
+<p align="center">
+  一句话输入，AI 自动规划吃喝玩乐完整方案，完成 POI 召回、路线组合、可用性检查与失败回退。
+</p>
+
+<p align="center">
+  <a href="http://[2001:da8:215:3c02:c2a4:230f:3cf2:5413]:5173">在线 Demo</a>
+  ·
+  <a href="docs/PlanGo.pdf">设计文档</a>
+</p>
+
+<p align="center">
+  <img alt="Python" src="https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white">
+  <img alt="FastAPI" src="https://img.shields.io/badge/FastAPI-0.115-009688?logo=fastapi&logoColor=white">
+  <img alt="React" src="https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=222">
+  <img alt="Vite" src="https://img.shields.io/badge/Vite-5-646CFF?logo=vite&logoColor=white">
+  <img alt="Amap" src="https://img.shields.io/badge/Amap-API-00A86B">
+  <img alt="License" src="https://img.shields.io/badge/License-MIT-yellow">
+</p>
+
 ## 1. 项目简介
 
-LifeRouteAgent 是一个面向本地生活场景的智能规划 Agent 系统，重点解决周末、下午、晚上等闲时活动规划问题。用户可以用自然语言提出需求，例如“今天下午想和老婆孩子出去玩几个小时，别太远”，系统会自动理解出行场景、时间、距离、预算、人群偏好等约束，并生成包含活动、餐饮、路线、预算、时间线和风险提示的可执行方案。
+PlanGo 是一个面向本地生活场景的智能规划 Agent 系统，重点解决周末、下午、晚上等闲时活动规划问题。用户可以用自然语言提出需求，例如“今天下午想和老婆孩子出去玩几个小时，别太远”，系统会自动理解出行场景、时间、距离、预算、人群偏好等约束，并生成包含活动、餐饮、路线、预算、时间线和风险提示的可执行方案。
 
 它不是普通的 CRUD 项目，也不是简单的 POI 搜索或关键词推荐。项目核心是一个 Planning Graph 工作流：把用户输入拆解成意图、约束、召回计划、候选 POI、路线组合、可用性检查、方案排序和最终解释，帮助用户完成“一套能直接执行的本地生活方案”。
 
