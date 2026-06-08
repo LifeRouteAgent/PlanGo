@@ -1,5 +1,6 @@
-# LifeRouteAgent 示例配置
-# 复制为 config.local.toml 并填入真实 key，该文件不提交 Git
+# LifeRouteAgent 示例配置（默认值的唯一来源）
+# 复制为 config.local.toml 并填入真实 key，该文件不提交 Git。
+# config.local.toml 只需写需要覆写的字段，其余自动继承此文件的值。
 
 [app]
 APP_ENV = "local"
@@ -7,12 +8,15 @@ DEBUG = false
 
 [llm]
 LLM_PROVIDER = "deepseek"
+LLM_MODEL = "deepseek-v4-pro"
+LLM_TIMEOUT = 60
 DEEPSEEK_API_KEY = ""
 DEEPSEEK_BASE_URL = "https://api.deepseek.com"
 DEEPSEEK_MODEL = "deepseek-v4-pro"
 DEEPSEEK_REASONING_EFFORT = "high"
-DEEPSEEK_THINKING_ENABLED = false
+DEEPSEEK_THINKING_ENABLED = true
 MAX_RECENT_TURNS = 8
+MAX_MEMORY_ITEMS = 20
 
 [route]
 ROUTE_PROVIDER = "amap"
@@ -24,7 +28,7 @@ AMAP_ROUTE_ENABLED = false
 
 [database]
 DATABASE_URL = ""
-LIFEROUTE_USE_DATABASE = true
+USE_DATABASE = true
 DATABASE_HOST = "127.0.0.1"
 DATABASE_PORT = 3306
 DATABASE_USER = "root"
