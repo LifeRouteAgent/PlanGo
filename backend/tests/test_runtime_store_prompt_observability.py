@@ -55,7 +55,7 @@ def test_trace_recorder_writes_node_metrics() -> None:
 
     metrics = get_runtime_store().list_node_metrics("trace_metric_unit")
     assert metrics
-    assert metrics[0]["node_name"] == "unit_node"
+    assert metrics[0].node_name == "unit_node"
 
 
 def test_prompt_registry_returns_versioned_specs() -> None:

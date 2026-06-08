@@ -9,7 +9,7 @@ from typing import Any, TypeVar
 import loguru
 
 from app.runtime.runtime_paths import TRACES_DIR, ensure_runtime_dirs
-from app.runtime.runtime_store import get_runtime_store
+from app.runtime.runtime_store import NodeMetricRecord, get_runtime_store
 
 T = TypeVar("T")
 
@@ -75,18 +75,20 @@ class TraceRecorder:
         }
         get_runtime_store().append_trace_event(self.trace_id, event)
         if event_type == "node_run":
-            get_runtime_store().record_node_metric({
-                "trace_id": self.trace_id,
-                "run_id": self.run_id,
-                "session_id": self.session_id,
-                "node_name": str(payload.get("node_name") or ""),
-                "started_at": float(payload.get("started_at") or event["timestamp"]),
-                "ended_at": float(payload.get("ended_at") or event["timestamp"]),
-                "duration_ms": int(payload.get("duration_ms", 0) or 0),
-                "status": "failed" if payload.get("error") else "success",
-                "error": payload.get("error"),
-                "output_summary": payload.get("output_summary", {}),
-            })
+            get_runtime_store().record_node_metric(
+                NodeMetricRecord(
+                    trace_id=self.trace_id,
+                    run_id=self.run_id,
+                    session_id=self.session_id,
+                    node_name=str(payload.get("node_name") or ""),
+                    started_at=float(payload.get("started_at") or event["timestamp"]),
+                    ended_at=float(payload.get("ended_at") or event["timestamp"]),
+                    duration_ms=int(payload.get("duration_ms", 0) or 0),
+                    status="failed" if payload.get("error") else "success",
+                    error=payload.get("error"),
+                    output_summary=payload.get("output_summary", {}),
+                )
+            )
         else:
             loguru.logger.info("event_type={!r} 非 node_run 类型, 不予记录", event_type)
 

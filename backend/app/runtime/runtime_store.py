@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import dataclasses
 import json
 import time
+from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Protocol, TypedDict
+from typing import Any, Protocol
 
 import pymysql
 from pymysql.cursors import DictCursor
@@ -19,17 +21,43 @@ from app.runtime.runtime_paths import (
 )
 
 
-class NodeMetricRecord(TypedDict, total=False):
-    trace_id: str
-    run_id: str
-    session_id: str
-    node_name: str
-    started_at: float
-    ended_at: float
-    duration_ms: int
-    status: str
-    error: str | None
-    output_summary: dict[str, Any]
+@dataclass
+class NodeMetricRecord:
+    """节点执行指标。
+
+    用于 LangGraph 节点耗时跟踪和观测面板排序。
+    """
+
+    trace_id: str = ""
+    run_id: str = ""
+    session_id: str = ""
+    node_name: str = ""
+    started_at: float = 0.0
+    ended_at: float = 0.0
+    duration_ms: int = 0
+    status: str = "success"
+    error: str | None = None
+    output_summary: dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        return dataclasses.asdict(self)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> NodeMetricRecord:
+        return cls(
+            trace_id=str(data.get("trace_id") or ""),
+            run_id=str(data.get("run_id") or ""),
+            session_id=str(data.get("session_id") or ""),
+            node_name=str(data.get("node_name") or ""),
+            started_at=float(data.get("started_at") or 0),
+            ended_at=float(data.get("ended_at") or 0),
+            duration_ms=int(data.get("duration_ms", 0) or 0),
+            status=str(data.get("status") or "success"),
+            error=data.get("error"),
+            output_summary=(
+                data.get("output_summary") if isinstance(data.get("output_summary"), dict) else {}
+            ),
+        )
 
 
 class RuntimeStore(Protocol):
@@ -71,41 +99,43 @@ class FileRuntimeStore(RuntimeStore):
         ensure_runtime_dirs()
 
     def load_session(self, session_id: str) -> dict[str, Any] | None:
-        return _read_json(_session_path(session_id))
+        return FileRuntimeStore._read_json(FileRuntimeStore._session_path(session_id))
 
     def save_session(self, session_id: str, payload: dict[str, Any]) -> None:
-        _write_json(_session_path(session_id), payload)
+        FileRuntimeStore._write_json(FileRuntimeStore._session_path(session_id), payload)
 
     def load_task(self, task_id: str) -> dict[str, Any] | None:
-        return _read_json(_task_path(task_id))
+        return FileRuntimeStore._read_json(FileRuntimeStore._task_path(task_id))
 
     def save_task(self, task_id: str, payload: dict[str, Any]) -> None:
-        _write_json(_task_path(task_id), payload)
+        FileRuntimeStore._write_json(FileRuntimeStore._task_path(task_id), payload)
 
     def list_tasks(self) -> list[dict[str, Any]]:
         tasks: list[dict[str, Any]] = []
         for path in TASKS_DIR.glob("task_*.json"):
-            payload = _read_json(path)
+            payload = FileRuntimeStore._read_json(path)
             if isinstance(payload, dict):
                 tasks.append(payload)
         return tasks
 
     def get_tool_cache(self, key: str) -> dict[str, Any] | None:
-        payload = _read_json(_tool_cache_path(key))
+        payload = FileRuntimeStore._read_json(FileRuntimeStore._tool_cache_path(key))
         if not isinstance(payload, dict) or _is_expired(payload.get("expires_at")):
             return None
         return payload
 
     def put_tool_cache(self, key: str, payload: dict[str, Any]) -> None:
-        _write_json(_tool_cache_path(key), {**payload, "cache_key": key})
+        FileRuntimeStore._write_json(
+            FileRuntimeStore._tool_cache_path(key), {**payload, "cache_key": key}
+        )
 
     def append_trace_event(self, trace_id: str, event: dict[str, Any]) -> None:
-        path = TRACES_DIR / f"{_safe_name(trace_id)}.jsonl"
+        path = TRACES_DIR / f"{FileRuntimeStore._safe_name(trace_id)}.jsonl"
         with path.open("a", encoding="utf-8") as file:
             file.write(json.dumps(event, ensure_ascii=False, default=str) + "\n")
 
     def read_trace_events(self, trace_id: str) -> list[dict[str, Any]]:
-        path = TRACES_DIR / f"{_safe_name(trace_id)}.jsonl"
+        path = TRACES_DIR / f"{FileRuntimeStore._safe_name(trace_id)}.jsonl"
         if not path.exists():
             return []
         events: list[dict[str, Any]] = []
@@ -121,14 +151,14 @@ class FileRuntimeStore(RuntimeStore):
         return events
 
     def record_node_metric(self, metric: NodeMetricRecord) -> None:
-        trace_id = str(metric.get("trace_id") or "unknown")
-        path = TRACES_DIR / f"{_safe_name(trace_id)}.metrics.jsonl"
+        trace_id = metric.trace_id or "unknown"
+        path = TRACES_DIR / f"{FileRuntimeStore._safe_name(trace_id)}.metrics.jsonl"
         with path.open("a", encoding="utf-8") as file:
-            file.write(json.dumps(metric, ensure_ascii=False, default=str) + "\n")
+            file.write(json.dumps(metric.to_dict(), ensure_ascii=False, default=str) + "\n")
 
     def list_node_metrics(self, trace_id: str | None = None) -> list[NodeMetricRecord]:
         paths = (
-            [TRACES_DIR / f"{_safe_name(trace_id)}.metrics.jsonl"]
+            [TRACES_DIR / f"{FileRuntimeStore._safe_name(trace_id)}.metrics.jsonl"]
             if trace_id
             else list(TRACES_DIR.glob("*.metrics.jsonl"))
         )
@@ -140,13 +170,49 @@ class FileRuntimeStore(RuntimeStore):
                 try:
                     payload = json.loads(line)
                     if isinstance(payload, dict):
-                        result.append(payload)
+                        result.append(NodeMetricRecord.from_dict(payload))
                 except json.JSONDecodeError:
                     continue
-        return sorted(result, key=lambda item: int(item.get("duration_ms", 0) or 0), reverse=True)
+        return sorted(result, key=lambda item: item.duration_ms, reverse=True)
 
     def health(self) -> dict[str, Any]:
         return {"store": "file", "ok": True, "fallback": False}
+
+    ### 私有辅助方法 ###
+
+    @staticmethod
+    def _safe_name(value: str | None) -> str:
+        raw = str(value or "default")
+        return "".join(ch for ch in raw if ch.isalnum() or ch in {"_", "-"}) or "default"
+
+    @staticmethod
+    def _session_path(session_id: str) -> Path:
+        return SESSIONS_DIR / f"{FileRuntimeStore._safe_name(session_id)}.json"
+
+    @staticmethod
+    def _task_path(task_id: str) -> Path:
+        return TASKS_DIR / f"{FileRuntimeStore._safe_name(task_id)}.json"
+
+    @staticmethod
+    def _tool_cache_path(key: str) -> Path:
+        return TOOL_CACHE_DIR / f"{FileRuntimeStore._safe_name(key)}.json"
+
+    @staticmethod
+    def _read_json(path: Path) -> dict[str, Any] | None:
+        if not path.exists():
+            return None
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            return payload if isinstance(payload, dict) else None
+        except OSError, json.JSONDecodeError:
+            return None
+
+    @staticmethod
+    def _write_json(path: Path, payload: dict[str, Any]) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2, default=str), encoding="utf-8"
+        )
 
 
 class MySqlRuntimeStore(RuntimeStore):
@@ -172,7 +238,7 @@ class MySqlRuntimeStore(RuntimeStore):
         row = self._fetch_one(
             "SELECT payload FROM runtime_sessions WHERE session_id=%s", session_id
         )
-        return _loads_payload(row["payload"]) if row else None
+        return MySqlRuntimeStore._loads_payload(row["payload"]) if row else None
 
     def save_session(self, session_id: str, payload: dict[str, Any]) -> None:
         self._execute(
@@ -182,12 +248,12 @@ class MySqlRuntimeStore(RuntimeStore):
             ON DUPLICATE KEY UPDATE payload=VALUES(payload), updated_at=NOW()
             """,
             session_id,
-            _dumps_payload(payload),
+            MySqlRuntimeStore._dumps_payload(payload),
         )
 
     def load_task(self, task_id: str) -> dict[str, Any] | None:
         row = self._fetch_one("SELECT payload FROM runtime_tasks WHERE task_id=%s", task_id)
-        return _loads_payload(row["payload"]) if row else None
+        return MySqlRuntimeStore._loads_payload(row["payload"]) if row else None
 
     def save_task(self, task_id: str, payload: dict[str, Any]) -> None:
         self._execute(
@@ -207,7 +273,7 @@ class MySqlRuntimeStore(RuntimeStore):
             str(payload.get("status") or ""),
             int(payload.get("version", 1) or 1),
             int(payload.get("state_revision", 0) or 0),
-            _dumps_payload(payload),
+            MySqlRuntimeStore._dumps_payload(payload),
         )
 
     def list_tasks(self) -> list[dict[str, Any]]:
@@ -215,7 +281,9 @@ class MySqlRuntimeStore(RuntimeStore):
             "SELECT payload FROM runtime_tasks ORDER BY updated_at DESC LIMIT 500"
         )
         return [
-            payload for row in rows if isinstance((payload := _loads_payload(row["payload"])), dict)
+            payload
+            for row in rows
+            if isinstance((payload := MySqlRuntimeStore._loads_payload(row["payload"])), dict)
         ]
 
     def get_tool_cache(self, key: str) -> dict[str, Any] | None:
@@ -225,7 +293,7 @@ class MySqlRuntimeStore(RuntimeStore):
         )
         if not row or _is_expired(row.get("expires_at")):
             return None
-        return _loads_payload(row["payload"])
+        return MySqlRuntimeStore._loads_payload(row["payload"])
 
     def put_tool_cache(self, key: str, payload: dict[str, Any]) -> None:
         self._execute(
@@ -242,8 +310,8 @@ class MySqlRuntimeStore(RuntimeStore):
             key,
             str(payload.get("tool_name") or ""),
             str(payload.get("request_hash") or ""),
-            _dumps_payload({**payload, "cache_key": key}),
-            _mysql_dt(payload.get("expires_at")),
+            MySqlRuntimeStore._dumps_payload({**payload, "cache_key": key}),
+            MySqlRuntimeStore._mysql_dt(payload.get("expires_at")),
         )
 
     def append_trace_event(self, trace_id: str, event: dict[str, Any]) -> None:
@@ -256,7 +324,7 @@ class MySqlRuntimeStore(RuntimeStore):
             str(event.get("run_id") or ""),
             str(event.get("session_id") or ""),
             str(event.get("event_type") or ""),
-            _dumps_payload(event),
+            MySqlRuntimeStore._dumps_payload(event),
             float(event.get("timestamp") or time.time()),
         )
 
@@ -266,7 +334,9 @@ class MySqlRuntimeStore(RuntimeStore):
             trace_id,
         )
         return [
-            payload for row in rows if isinstance((payload := _loads_payload(row["payload"])), dict)
+            payload
+            for row in rows
+            if isinstance((payload := MySqlRuntimeStore._loads_payload(row["payload"])), dict)
         ]
 
     def record_node_metric(self, metric: NodeMetricRecord) -> None:
@@ -278,16 +348,16 @@ class MySqlRuntimeStore(RuntimeStore):
             )
             VALUES(%s, %s, %s, %s, FROM_UNIXTIME(%s), FROM_UNIXTIME(%s), %s, %s, %s, %s, NOW())
             """,
-            str(metric.get("trace_id") or ""),
-            str(metric.get("run_id") or ""),
-            str(metric.get("session_id") or ""),
-            str(metric.get("node_name") or ""),
-            float(metric.get("started_at") or time.time()),
-            float(metric.get("ended_at") or time.time()),
-            int(metric.get("duration_ms", 0) or 0),
-            str(metric.get("status") or "success"),
-            metric.get("error"),
-            _dumps_payload(metric.get("output_summary") or {}),
+            metric.trace_id or "",
+            metric.run_id or "",
+            metric.session_id or "",
+            metric.node_name or "",
+            metric.started_at or time.time(),
+            metric.ended_at or time.time(),
+            metric.duration_ms or 0,
+            metric.status or "success",
+            metric.error,
+            MySqlRuntimeStore._dumps_payload(metric.output_summary),
         )
 
     def list_node_metrics(self, trace_id: str | None = None) -> list[NodeMetricRecord]:
@@ -314,7 +384,7 @@ class MySqlRuntimeStore(RuntimeStore):
                 ORDER BY created_at DESC
                 LIMIT 500
                 """)
-        return [_metric_from_row(row) for row in rows]
+        return [MySqlRuntimeStore._metric_from_row(row) for row in rows]
 
     def health(self) -> dict[str, Any]:
         self._check_connection()
@@ -335,6 +405,44 @@ class MySqlRuntimeStore(RuntimeStore):
             with conn.cursor() as cursor:
                 cursor.execute(sql, args)
                 return cursor.fetchone()
+
+    @staticmethod
+    def _dumps_payload(payload: Any) -> str:
+        return json.dumps(payload, ensure_ascii=False, default=str)
+
+    @staticmethod
+    def _loads_payload(payload: Any) -> dict[str, Any]:
+        if isinstance(payload, dict):
+            return payload
+        try:
+            data = json.loads(str(payload or "{}"))
+            return data if isinstance(data, dict) else {}
+        except json.JSONDecodeError:
+            return {}
+
+    @staticmethod
+    def _mysql_dt(value: Any) -> str | None:
+        if not value:
+            return None
+        text = str(value)
+        if text.endswith("Z") and "T" in text:
+            return text.replace("T", " ").replace("Z", "")
+        return text
+
+    @staticmethod
+    def _metric_from_row(row: dict[str, Any]) -> NodeMetricRecord:
+        return NodeMetricRecord(
+            trace_id=str(row.get("trace_id") or ""),
+            run_id=str(row.get("run_id") or ""),
+            session_id=str(row.get("session_id") or ""),
+            node_name=str(row.get("node_name") or ""),
+            started_at=float(row.get("started_ts") or 0),
+            ended_at=float(row.get("ended_ts") or 0),
+            duration_ms=int(row.get("duration_ms", 0) or 0),
+            status=str(row.get("status") or "success"),
+            error=row.get("error"),
+            output_summary=MySqlRuntimeStore._loads_payload(row.get("output_summary")),
+        )
 
     def _fetch_all(self, sql: str, *args: Any) -> list[dict[str, Any]]:
         with pymysql.connect(**self._conn_kwargs) as conn:
@@ -426,54 +534,6 @@ def get_runtime_store() -> RuntimeStore:
         return ResilientRuntimeStore(None, fallback, primary_error=str(exc))
 
 
-def _safe_name(value: str | None) -> str:
-    raw = str(value or "default")
-    return "".join(ch for ch in raw if ch.isalnum() or ch in {"_", "-"}) or "default"
-
-
-def _session_path(session_id: str) -> Path:
-    return SESSIONS_DIR / f"{_safe_name(session_id)}.json"
-
-
-def _task_path(task_id: str) -> Path:
-    return TASKS_DIR / f"{_safe_name(task_id)}.json"
-
-
-def _tool_cache_path(key: str) -> Path:
-    return TOOL_CACHE_DIR / f"{_safe_name(key)}.json"
-
-
-def _read_json(path: Path) -> dict[str, Any] | None:
-    if not path.exists():
-        return None
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-        return payload if isinstance(payload, dict) else None
-    except OSError, json.JSONDecodeError:
-        return None
-
-
-def _write_json(path: Path, payload: dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        json.dumps(payload, ensure_ascii=False, indent=2, default=str), encoding="utf-8"
-    )
-
-
-def _dumps_payload(payload: Any) -> str:
-    return json.dumps(payload, ensure_ascii=False, default=str)
-
-
-def _loads_payload(payload: Any) -> dict[str, Any]:
-    if isinstance(payload, dict):
-        return payload
-    try:
-        data = json.loads(str(payload or "{}"))
-        return data if isinstance(data, dict) else {}
-    except json.JSONDecodeError:
-        return {}
-
-
 def _is_expired(value: Any) -> bool:
     if not value:
         return False
@@ -486,27 +546,3 @@ def _is_expired(value: Any) -> bool:
         except ValueError:
             continue
     return False
-
-
-def _mysql_dt(value: Any) -> str | None:
-    if not value:
-        return None
-    text = str(value)
-    if text.endswith("Z") and "T" in text:
-        return text.replace("T", " ").replace("Z", "")
-    return text
-
-
-def _metric_from_row(row: dict[str, Any]) -> NodeMetricRecord:
-    return {
-        "trace_id": str(row.get("trace_id") or ""),
-        "run_id": str(row.get("run_id") or ""),
-        "session_id": str(row.get("session_id") or ""),
-        "node_name": str(row.get("node_name") or ""),
-        "started_at": float(row.get("started_ts") or 0),
-        "ended_at": float(row.get("ended_ts") or 0),
-        "duration_ms": int(row.get("duration_ms", 0) or 0),
-        "status": str(row.get("status") or "success"),
-        "error": row.get("error"),
-        "output_summary": _loads_payload(row.get("output_summary")),
-    }
