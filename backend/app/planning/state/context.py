@@ -1,4 +1,10 @@
-from app.planning.state.base import *  # noqa: F403
+from datetime import datetime
+from typing import Literal, Any
+from uuid import uuid4
+
+from pydantic import Field
+
+from app.planning.state import StateModel, PHYSICAL_TABLES
 
 
 class GeoLocation(StateModel):

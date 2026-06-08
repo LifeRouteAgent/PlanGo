@@ -1,9 +1,24 @@
-from app.planning.state.base import *  # noqa: F403
-from app.planning.state.context import *  # noqa: F403
-from app.planning.state.understanding import *  # noqa: F403
-from app.planning.state.constraints import *  # noqa: F403
-from app.planning.state.recall import *  # noqa: F403
-from app.planning.state.plans import *  # noqa: F403
+from typing import Any
+from uuid import uuid4
+
+from pydantic import Field
+
+from app.planning.state import (
+    StateModel,
+    StateMeta,
+    UserInfo,
+    ContextState,
+    LLMUnderstanding,
+    FinalConstraints,
+    LogicalRecallPlan,
+    CompiledRecallPlan,
+    CandidateState,
+    PlanResultsState,
+    GeoLocation,
+    OriginPoint,
+    ConversationContext,
+    CurrentPlanContext,
+)
 
 
 class ResponseState(StateModel):
@@ -80,10 +95,12 @@ def create_planning_state(
     geo_location: dict[str, Any] | None = None,
     manual_origin: dict[str, Any] | None = None,
 ) -> PlanningState:
+    # 参数标准化
     geo = GeoLocation.model_validate(geo_location) if geo_location else None
     origin = OriginPoint.model_validate(manual_origin) if manual_origin else None
     if origin is None and geo is not None:
         origin = OriginPoint(name="当前位置", lat=geo.lat, lng=geo.lng, source=geo.source)
+    # 用 session_id 给 usee_id 为空的情况进行兜底
     effective_user = user_id or session_id
     return PlanningState(
         state_meta=StateMeta(

@@ -1,12 +1,11 @@
-from datetime import datetime
-from typing import Any, Literal
-from uuid import uuid4
+from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict
 
 RequestType = Literal[
     "simple_qa", "single_category_recommend", "full_itinerary_plan", "plan_adjustment"
 ]
+
 LogicalCategory = Literal[
     "restaurant", "activity", "attraction", "shopping", "entertainment", "fitness", "beauty"
 ]
@@ -20,8 +19,8 @@ PHYSICAL_TABLES: dict[str, str] = {
     "fitness": "poi_fitness",
     "beauty": "poi_beauty",
 }
-LEGACY_CATEGORIES = {category: f"poi_{category}" for category in PHYSICAL_TABLES}
 
 
 class StateModel(BaseModel):
+    # `ConfigDict(extra="forbid")` 含义是禁止传入模型中未定义的额外字段
     model_config = ConfigDict(extra="forbid")

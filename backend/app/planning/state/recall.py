@@ -1,4 +1,8 @@
-from app.planning.state.base import *  # noqa: F403
+from typing import Any
+
+from pydantic import Field, field_validator
+
+from app.planning.state import StateModel, PHYSICAL_TABLES
 
 
 class SlotRecallRequirement(StateModel):
