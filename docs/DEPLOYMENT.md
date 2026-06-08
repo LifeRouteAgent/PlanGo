@@ -30,7 +30,7 @@ The large model provider is configured in these files:
 |---|---|
 | Docker runtime values | `.env` |
 | Docker backend config shape | `backend/config.docker.json` |
-| Local backend config example | `backend/config.example.json` |
+| Local backend config example | `backend/config.example.toml` |
 | Backend config loader | `backend/app/config.py` |
 
 Current LLM variables:
@@ -46,8 +46,8 @@ DEEPSEEK_THINKING_ENABLED=false
 `backend/app/config.py` reads config in this order:
 
 1. `LIFEROUTE_CONFIG_PATH`
-2. `backend/config.local.json`
-3. `backend/config.example.json`
+2. `backend/config.local.toml`
+3. `backend/config.example.toml`
 
 Docker sets `LIFEROUTE_CONFIG_PATH=/app/config.docker.json`, so containerized backend settings come from `backend/config.docker.json` plus environment variables from `.env`.
 

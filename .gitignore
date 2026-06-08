@@ -9,7 +9,7 @@ backend/pytest-cache-files-*/
 .env
 .env.*
 !.env.example
-backend/config.local.json
+backend/config.local.toml
 node_modules/
 .npm-cache/
 dist/

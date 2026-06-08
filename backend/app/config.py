@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import json
 import os
@@ -37,7 +37,7 @@ def _load_config() -> dict[str, Any]:
 
 
 def _expand_env_placeholders(value: Any) -> Any:
-    """展开配置文件中的 `${ENV_NAME}` 占位符。
+    """递归展开配置文件中的 `${ENV_NAME}` 占位符。
 
     这样 Docker 配置仍由文件声明字段结构，但敏感值由运行环境注入，不需要提交真实 key。
     """
@@ -47,7 +47,7 @@ def _expand_env_placeholders(value: Any) -> Any:
     if isinstance(value, list):
         return [_expand_env_placeholders(item) for item in value]
     if isinstance(value, str):
-        match = re.fullmatch(r"\$\{([A-Z0-9_]+)\}", value)
+        match = re.fullmatch(r"\$\{([A-Z0-9_]+)}", value)
         if match:
             return os.environ.get(match.group(1), "")
     return value
