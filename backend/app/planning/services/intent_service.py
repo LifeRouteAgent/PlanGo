@@ -1,7 +1,60 @@
 from __future__ import annotations
 
-from app.planning.services.common import *
+import re
+from itertools import product
+from math import asin, cos, radians, sin, sqrt
+from datetime import datetime, timedelta
+from typing import Any
 
+from app.planning.intent_rules import detect_intent_type, detect_target_categories
+from app.agents.intent_agent import build_llm_understanding
+from app.planning.state import (
+    AvailabilityResults,
+    BudgetPolicy,
+    CandidatePlan,
+    CategoryTagRequirement,
+    CompiledRecallPlan,
+    CompiledRecallQuery,
+    DistancePolicy,
+    ESNameMatchPlan,
+    FallbackLevel,
+    FallbackPolicy,
+    FinalConstraints,
+    HardConstraints,
+    IntentResult,
+    KeywordRecallPlan,
+    LLMUnderstanding,
+    LogicalRecallPlan,
+    MustPOIResolutionPlan,
+    OriginPoint,
+    PHYSICAL_TABLES,
+    PlanBudgetSummary,
+    PlanRankFeatures,
+    PlanSlot,
+    POIAvailability,
+    POIScoreBreakdown,
+    QueryRecallStat,
+    RankedPlan,
+    RatingPolicy,
+    RecallStats,
+    SafePOICandidate,
+    ScoredPOICandidate,
+    SceneUnderstanding,
+    SessionPreferenceProfile,
+    SlotDetail,
+    SlotRecallRequirement,
+    SlotUnderstanding,
+    SoftPreferences,
+    TimePolicy,
+    TimelineItem,
+)
+from app.repositories.poi_repository import PoiRecallConstraints, PoiRepository
+from app.planning.poi_catalog_service import PoiCatalogService
+from app.integrations.amap_route_service import AmapRouteService
+from app.planning.scoring_service import score_candidates as score_poi_candidates
+from app.planning.payloads import normalize_response_payload
+
+from app.planning.services.common import *
 
 def resolve_intent(
     message: str,
@@ -10,19 +63,23 @@ def resolve_intent(
     *,
     poi_knowledge: dict[str, Any] | None = None,
 ) -> LLMUnderstanding:
-    raw = (
-        build_llm_understanding(
-            message,
-            profile,
-            conversation_context=context,
-            poi_knowledge=poi_knowledge,
-        )
-        or {}
-    )
+    raw = build_llm_understanding(
+        message,
+        profile,
+        conversation_context=context,
+        poi_knowledge=poi_knowledge,
+    ) or {}
     raw = _merge_rule_understanding(raw, _rule_understanding(message))
     catalog = _catalog_from_knowledge(poi_knowledge or {})
     rule_tag_matches = PoiCatalogService().match_query_tags(message, catalog)
-    legacy_intent = str(raw.get("intent_type") or detect_intent_type(message))
+    rule_intent = detect_intent_type(message)
+    legacy_intent = str(raw.get("intent_type") or rule_intent)
+    if legacy_intent == "simple_qa" and rule_intent in {
+        "category_recommend",
+        "poi_search",
+        "full_trip_plan",
+    }:
+        legacy_intent = rule_intent
     request_type = {
         "capability": "simple_qa",
         "simple_qa": "simple_qa",
@@ -34,7 +91,7 @@ def resolve_intent(
         request_type = "plan_adjustment"
     categories = [
         LEGACY_TO_LOGICAL.get(item, item)
-        for item in raw.get("target_categories") or detect_target_categories(message)
+        for item in (raw.get("target_categories") or detect_target_categories(message))
         if LEGACY_TO_LOGICAL.get(item, item) in PHYSICAL_TABLES
     ]
     if rule_tag_matches:
@@ -53,7 +110,9 @@ def resolve_intent(
     raw_slots = [slot.slot_id for slot in slot_details if slot.required]
     if not categories:
         categories = _dedupe(
-            category for slot in slot_details for category in slot.candidate_logical_categories
+            category
+            for slot in slot_details
+            for category in slot.candidate_logical_categories
         )
     must_keywords = _dedupe([
         *[item.get("name") for item in raw.get("must_pois", []) if item.get("name")],
@@ -64,9 +123,7 @@ def resolve_intent(
         intent=IntentResult(
             request_type=request_type,
             is_followup=bool(context.get("has_active_plan")),
-            adjustment_type=(
-                _adjustment_type(message) if request_type == "plan_adjustment" else None
-            ),
+            adjustment_type=_adjustment_type(message) if request_type == "plan_adjustment" else None,
             confidence=0.8 if raw else 0.55,
         ),
         scene=SceneUnderstanding(
@@ -99,9 +156,7 @@ def resolve_intent(
             "budget_is_explicit": bool(raw.get("budget") or "预算" in message),
         },
         distance={
-            "distance_preference": (
-                "nearby" if any(x in message for x in ("附近", "别太远", "近一点")) else "normal"
-            ),
+            "distance_preference": "nearby" if any(x in message for x in ("附近", "别太远", "近一点")) else "normal",
             "origin_text": _extract_origin_text(message),
             "origin_source": "user_message" if _extract_origin_text(message) else None,
         },
@@ -111,7 +166,6 @@ def resolve_intent(
         },
         rating={"min_rating": 4.0, "rating_preference": "normal"},
     )
-
 
 def _category_tag_requirements(
     raw: dict[str, Any],
@@ -129,21 +183,11 @@ def _category_tag_requirements(
     for item in raw.get("category_tag_requirements", []) or []:
         if not isinstance(item, dict):
             continue
-        category = LEGACY_TO_LOGICAL.get(
-            str(item.get("logical_category") or ""), str(item.get("logical_category") or "")
-        )
+        category = LEGACY_TO_LOGICAL.get(str(item.get("logical_category") or ""), str(item.get("logical_category") or ""))
         if category not in available:
             continue
-        positive = [
-            str(tag)
-            for tag in item.get("positive_logic_tags", [])
-            if str(tag) in available[category]
-        ]
-        negative = [
-            str(tag)
-            for tag in item.get("negative_logic_tags", [])
-            if str(tag) in available[category]
-        ]
+        positive = [str(tag) for tag in item.get("positive_logic_tags", []) if str(tag) in available[category]]
+        negative = [str(tag) for tag in item.get("negative_logic_tags", []) if str(tag) in available[category]]
         if not positive and not negative:
             continue
         result.append(
@@ -258,9 +302,7 @@ def _slot_details_from_dynamic_slots(
                 required=bool(item.get("required", True)),
                 expected_duration_minutes=_positive_int(item.get("max_duration_minutes")),
                 candidate_logical_categories=categories[:4],
-                keywords=[
-                    str(keyword) for keyword in item.get("keywords", []) if str(keyword).strip()
-                ][:8],
+                keywords=[str(keyword) for keyword in item.get("keywords", []) if str(keyword).strip()][:8],
                 reason=str(item.get("reason") or ""),
             )
         )
@@ -318,7 +360,7 @@ def _slot_id_for_category(category: str, index: int) -> str:
 def _positive_int(value: Any) -> int | None:
     try:
         number = int(float(value))
-    except TypeError, ValueError:
+    except (TypeError, ValueError):
         return None
     return number if number > 0 else None
 
@@ -342,15 +384,39 @@ def _rule_understanding(message: str) -> dict[str, Any]:
             "scenario": "inspiration_must_poi",
         }
 
+    if _looks_like_date_night_plan(message):
+        return {
+            "intent_type": "full_trip_plan",
+            "target_categories": ["poi_restaurant", "poi_attraction"],
+            "required_slots": ["restaurant", "attraction"],
+            "dynamic_slots": [
+                {
+                    "slot_id": "slot_1",
+                    "slot_name": "浪漫晚餐",
+                    "slot_type": "restaurant",
+                    "required": True,
+                    "candidate_logical_categories": ["restaurant"],
+                    "keywords": ["浪漫", "双人餐", "晚餐"],
+                    "reason": "用户表达了约会和晚上吃饭需求。",
+                },
+                {
+                    "slot_id": "slot_2",
+                    "slot_name": "看夜景",
+                    "slot_type": "attraction",
+                    "required": True,
+                    "candidate_logical_categories": ["attraction"],
+                    "keywords": ["夜景", "夜游观景", "地标观景"],
+                    "reason": "用户明确想看夜景。",
+                },
+            ],
+            "preference_keywords": ["浪漫", "约会", "夜景", "双人餐", "夜游观景"],
+            "scenario": "couple_date_night",
+        }
+
     if "我推荐附近适合今天去的本地生活地点" in message:
         return {
             "intent_type": "category_recommend",
-            "target_categories": [
-                "poi_activity",
-                "poi_attraction",
-                "poi_entertainment",
-                "poi_shopping",
-            ],
+            "target_categories": ["poi_activity", "poi_attraction", "poi_entertainment", "poi_shopping"],
             "required_slots": ["activity", "attraction", "entertainment", "shopping"],
             "preference_keywords": ["今天", "附近", "热门"],
             "scenario": "nearby_today",
@@ -358,13 +424,7 @@ def _rule_understanding(message: str) -> dict[str, Any]:
     if "北京热门的吃喝玩乐地点" in message:
         return {
             "intent_type": "category_recommend",
-            "target_categories": [
-                "poi_restaurant",
-                "poi_activity",
-                "poi_attraction",
-                "poi_entertainment",
-                "poi_shopping",
-            ],
+            "target_categories": ["poi_restaurant", "poi_activity", "poi_attraction", "poi_entertainment", "poi_shopping"],
             "required_slots": ["restaurant", "activity", "attraction", "entertainment", "shopping"],
             "preference_keywords": ["热门", "吃喝玩乐"],
             "scenario": "city_hotspots",
@@ -381,35 +441,23 @@ def _rule_understanding(message: str) -> dict[str, Any]:
     if "室内活动" in message and ("别太晒" in message or "路线轻松" in message):
         return {
             "intent_type": "full_trip_plan",
-            "target_categories": [
-                "poi_activity",
-                "poi_entertainment",
-                "poi_shopping",
-                "poi_beauty",
-            ],
+            "target_categories": ["poi_activity", "poi_entertainment", "poi_shopping", "poi_beauty"],
             "required_slots": ["activity_or_entertainment", "shopping"],
             "preference_keywords": ["室内", "轻松", "不晒"],
             "scenario": "indoor_light_route",
         }
     return {}
 
-
 def _merge_rule_understanding(raw: dict[str, Any], rule: dict[str, Any]) -> dict[str, Any]:
     if not rule:
         return raw
     merged = dict(raw)
-    if rule.get("scenario") == "inspiration_must_poi":
+    if rule.get("scenario") in {"inspiration_must_poi", "couple_date_night"}:
         # 首页灵感卡片的“我想去 X”语义已经足够明确：
         # X 是必去点，槽位数量应保持可组合，避免 LLM 额外补槽导致路线组合被过滤到 0。
-        for key in (
-            "intent_type",
-            "target_categories",
-            "required_slots",
-            "dynamic_slots",
-            "must_pois",
-            "scenario",
-        ):
-            merged[key] = rule[key]
+        for key in ("intent_type", "target_categories", "required_slots", "dynamic_slots", "must_pois", "scenario"):
+            if key in rule:
+                merged[key] = rule[key]
         merged["preference_keywords"] = _dedupe([
             *list(rule.get("preference_keywords") or []),
             *list(raw.get("preference_keywords") or []),
@@ -425,7 +473,6 @@ def _merge_rule_understanding(raw: dict[str, Any], rule: dict[str, Any]) -> dict
             merged[key] = value
     return merged
 
-
 def _infer_inspiration_must_category(name: str) -> str:
     """根据首页灵感卡片中的 POI 名称，推断必去点最可能所在的 POI 表。"""
 
@@ -437,18 +484,7 @@ def _infer_inspiration_must_category(name: str) -> str:
         return "poi_shopping"
     if any(
         token in text
-        for token in (
-            "开心麻花",
-            "戏剧",
-            "话剧",
-            "音乐剧",
-            "演出",
-            "剧场",
-            "沉浸",
-            "聊斋",
-            "展览",
-            "活动",
-        )
+        for token in ("开心麻花", "戏剧", "话剧", "音乐剧", "演出", "剧场", "沉浸", "聊斋", "展览", "活动")
     ):
         return "poi_activity"
     if any(token in text for token in ("ktv", "影院", "电影", "密室", "桌游", "酒吧", "娱乐")):
@@ -459,24 +495,15 @@ def _infer_inspiration_must_category(name: str) -> str:
         return "poi_fitness"
     return "poi_attraction"
 
-
 def _inspiration_target_categories(must_category: str) -> list[str]:
     category_order = {
         "poi_shopping": ["poi_shopping", "poi_activity", "poi_entertainment", "poi_attraction"],
         "poi_activity": ["poi_activity", "poi_entertainment", "poi_shopping", "poi_attraction"],
-        "poi_entertainment": [
-            "poi_entertainment",
-            "poi_activity",
-            "poi_shopping",
-            "poi_attraction",
-        ],
+        "poi_entertainment": ["poi_entertainment", "poi_activity", "poi_shopping", "poi_attraction"],
         "poi_beauty": ["poi_beauty", "poi_shopping", "poi_activity", "poi_entertainment"],
         "poi_fitness": ["poi_fitness", "poi_activity", "poi_shopping", "poi_entertainment"],
     }
-    return category_order.get(
-        must_category, ["poi_attraction", "poi_activity", "poi_entertainment", "poi_shopping"]
-    )
-
+    return category_order.get(must_category, ["poi_attraction", "poi_activity", "poi_entertainment", "poi_shopping"])
 
 def _inspiration_required_slots(must_category: str) -> list[str]:
     slot_order = {
@@ -519,7 +546,6 @@ def _inspiration_dynamic_slots(must_category: str) -> list[dict[str, Any]]:
         },
     ]
 
-
 def _must_poi_keywords_from_message(message: str) -> list[str]:
     match = INSPIRATION_MUST_PATTERN.search(message)
     if not match:
@@ -534,7 +560,6 @@ def _must_poi_keywords_from_message(message: str) -> list[str]:
             variants.append(part)
     return _dedupe(variants)[:4]
 
-
 def _extract_origin_text(message: str) -> str | None:
     for pattern in ORIGIN_TEXT_PATTERNS:
         match = pattern.search(message)
@@ -545,20 +570,18 @@ def _extract_origin_text(message: str) -> str | None:
             return name
     return None
 
-
 def _clean_origin_text(value: str) -> str:
     text = re.sub(r"\s+", "", str(value or ""))
     text = text.strip(" ，,。；;：:")
     for prefix in ("我想", "帮我", "今天", "今晚", "下午", "上午", "中午"):
         if text.startswith(prefix) and len(text) > len(prefix) + 1:
-            text = text[len(prefix) :]
+            text = text[len(prefix):]
     for suffix in ("附近", "周边", "这边", "这里"):
         if text.endswith(suffix) and len(text) > len(suffix) + 1:
             text = text[: -len(suffix)]
     if len(text) < 2:
         return ""
     return text[:24]
-
 
 def _resolve_route_origin(origin_text: str | None, fallback: Any) -> Any:
     if not origin_text:
@@ -567,7 +590,6 @@ def _resolve_route_origin(origin_text: str | None, fallback: Any) -> Any:
     if resolved is not None:
         return resolved
     return fallback
-
 
 def _origin_from_name_search(origin_text: str) -> OriginPoint | None:
     try:
@@ -586,29 +608,21 @@ def _origin_from_name_search(origin_text: str) -> OriginPoint | None:
                 name=origin_text,
                 lat=lat,
                 lng=lng,
-                address=" · ".join(part for part in (row_name, row_address) if part) or None,
+                address=(" · ".join(part for part in (row_name, row_address) if part)) or None,
                 source="user_message",
             )
     return None
 
-
 def _should_include_restaurant(message: str, raw: dict[str, Any]) -> bool:
     if any(keyword in message for keyword in MEAL_KEYWORDS):
         return True
-    categories = [
-        LEGACY_TO_LOGICAL.get(str(item), str(item)) for item in raw.get("target_categories", [])
-    ]
+    categories = [LEGACY_TO_LOGICAL.get(str(item), str(item)) for item in raw.get("target_categories", [])]
     slots = [str(item) for item in raw.get("required_slots", [])]
-    if "restaurant" in categories and any(
-        keyword in message for keyword in ("找几个", "推荐", "餐厅", "吃")
-    ):
+    if "restaurant" in categories and any(keyword in message for keyword in ("找几个", "推荐", "餐厅", "吃")):
         return True
-    if any("restaurant" in slot or "餐" in slot for slot in slots) and any(
-        keyword in message for keyword in MEAL_KEYWORDS
-    ):
+    if any("restaurant" in slot or "餐" in slot for slot in slots) and any(keyword in message for keyword in MEAL_KEYWORDS):
         return True
     return _explicit_time_crosses_meal(message, raw)
-
 
 def _explicit_time_crosses_meal(message: str, raw: dict[str, Any]) -> bool:
     window = _time_window_hours(message, raw)
@@ -618,7 +632,6 @@ def _explicit_time_crosses_meal(message: str, raw: dict[str, Any]) -> bool:
     if end <= start:
         end += 24
     return any(start < meal_hour < end for meal_hour in (12, 17, 18))
-
 
 def _time_window_hours(message: str, raw: dict[str, Any]) -> tuple[float, float] | None:
     range_window = _time_range_hours(message)
@@ -636,30 +649,23 @@ def _time_range_hours(message: str) -> tuple[float, float] | None:
         r"(?P<start>\d{1,2})(?:[:：]\d{1,2})?\s*点?.{0,4}(?:到|至|-|—|~)\s*(?P<end>\d{1,2})(?:[:：]\d{1,2})?\s*点?",
         message,
     )
-    if range_match:
-        start = _normalize_hour(
-            float(range_match.group("start")), message[: range_match.start("start")]
-        )
-        end = _normalize_hour(
-            float(range_match.group("end")),
-            message[range_match.start("end") - 4 : range_match.start("end")],
-        )
-        return (start, end)
-    start = _start_hour_from_message(message, raw.get("start_time"))
-    duration = raw.get("duration_hours") or _duration(message)
-    if start is not None and duration:
-        return (start, start + float(duration))
-    return None
-
+    if not range_match:
+        return None
+    start = _normalize_hour(float(range_match.group("start")), message[: range_match.start("start")])
+    end = _normalize_hour(
+        float(range_match.group("end")),
+        message[range_match.start("end") - 4 : range_match.start("end")],
+    )
+    if start >= 12 and end < 12 and end + 12 > start:
+        end += 12
+    return (start, end)
 
 def _start_hour_from_message(message: str, raw_start: Any) -> float | None:
     if isinstance(raw_start, str):
         match = re.search(r"(\d{1,2})(?::(\d{1,2}))?", raw_start)
         if match:
             return float(match.group(1)) + float(match.group(2) or 0) / 60
-    match = re.search(
-        r"(上午|中午|下午|晚上|今晚|今天)?\s*(\d{1,2})(?:[:：]\d{1,2})?\s*点", message
-    )
+    match = re.search(r"(上午|中午|下午|晚上|今晚|今天)?\s*(\d{1,2})(?:[:：]\d{1,2})?\s*点", message)
     if not match:
         if "中午" in message:
             return 11.5
@@ -670,14 +676,12 @@ def _start_hour_from_message(message: str, raw_start: Any) -> float | None:
         return None
     return _normalize_hour(float(match.group(2)), match.group(1) or "")
 
-
 def _normalize_hour(hour: float, prefix: str) -> float:
     if any(token in prefix for token in ("下午", "晚上", "今晚")) and hour < 12:
         return hour + 12
     if "中午" in prefix and hour < 11:
         return hour + 12
     return hour
-
 
 def _normalize_restaurant_categories(
     categories: list[str], meal_allowed: bool, request_type: str
@@ -688,15 +692,12 @@ def _normalize_restaurant_categories(
         return categories
     return [category for category in _dedupe(categories) if category != "restaurant"]
 
-
 def _normalize_restaurant_slots(slots: list[str], meal_allowed: bool) -> list[str]:
     result: list[str] = []
     restaurant_count = 0
     for slot in slots:
         slot_text = str(slot)
-        is_restaurant_slot = (
-            slot_text in {"restaurant", "restaurant_2", "restaurant_or_cafe"} or "餐" in slot_text
-        )
+        is_restaurant_slot = slot_text in {"restaurant", "restaurant_2", "restaurant_or_cafe"} or "餐" in slot_text
         if is_restaurant_slot:
             if not meal_allowed or restaurant_count >= 2:
                 continue
@@ -705,7 +706,6 @@ def _normalize_restaurant_slots(slots: list[str], meal_allowed: bool) -> list[st
             continue
         result.append(slot_text)
     return _dedupe(result)
-
 
 def _restaurant_allowed_for_understanding(understanding: LLMUnderstanding) -> bool:
     raw = {
@@ -719,7 +719,6 @@ def _restaurant_allowed_for_understanding(understanding: LLMUnderstanding) -> bo
         ),
     }
     return _should_include_restaurant(understanding.raw_user_message, raw)
-
 
 def _catalog_from_knowledge(poi_knowledge: dict[str, Any]):
     from app.planning.state import POILogicalTagCatalog, POITableTagInfo
@@ -739,7 +738,6 @@ def _catalog_from_knowledge(poi_knowledge: dict[str, Any]):
         )
     return POILogicalTagCatalog(tables=tables)
 
-
 def _fallback_scene(message: str) -> str:
     if "亲子" in message or "孩子" in message:
         return "family_half_day"
@@ -749,10 +747,14 @@ def _fallback_scene(message: str) -> str:
         return "friends_gathering"
     return "unknown"
 
+def _looks_like_date_night_plan(message: str) -> bool:
+    has_date_context = any(x in message for x in ("约会", "情侣", "对象", "女朋友", "男朋友"))
+    has_evening_context = any(x in message for x in ("晚上", "今晚", "夜景", "夜游", "看夜景"))
+    has_plan_activity = any(x in message for x in ("吃饭", "晚餐", "餐厅", "浪漫", "地方", "景"))
+    return has_date_context and has_evening_context and has_plan_activity
 
 def _looks_like_adjustment(message: str) -> bool:
     return any(x in message for x in ("换", "改", "保留", "不要", "太远", "太贵", "重新排序"))
-
 
 def _adjustment_type(message: str) -> str:
     if "换" in message:
@@ -765,11 +767,9 @@ def _adjustment_type(message: str) -> str:
         return "avoid_category"
     return "rerank"
 
-
 def _people_count(message: str) -> int | None:
     match = re.search(r"(\d+)\s*(?:个)?人", message)
     return int(match.group(1)) if match else None
-
 
 def _duration(message: str) -> float | None:
     window = _time_range_hours(message)
@@ -786,7 +786,6 @@ def _duration(message: str) -> float | None:
 def _duration_hours_only(message: str) -> float | None:
     match = re.search(r"(\d+(?:\.\d+)?)\s*(?:个)?小时", message)
     return float(match.group(1)) if match else None
-
 
 def _number_after(message: str, prefix: str) -> float | None:
     match = re.search(prefix + r"[^\d]{0,5}(\d+(?:\.\d+)?)", message)

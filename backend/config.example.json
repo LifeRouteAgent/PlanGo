@@ -8,6 +8,7 @@
     "DEEPSEEK_THINKING_ENABLED":  false,
     "AMAP_API_KEY":  "",
     "AMAP_ROUTE_ENABLED":  false,
+    "REDIS_URL":  "",
     "LIFEROUTE_USE_DATABASE":  true,
     "DATABASE_HOST":  "127.0.0.1",
     "DATABASE_PORT":  3306,
