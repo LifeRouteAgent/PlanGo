@@ -14,17 +14,6 @@ from app.tools.tool_harness import ToolHarness
 from app.tools.tool_policy import ToolCallRequest
 
 
-def is_llm_enabled() -> bool:
-    """判断当前是否具备调用大模型的条件。
-
-    项目当前默认使用 DeepSeek 的 OpenAI-compatible Chat Completions 接口。
-    如果本地没有配置 DEEPSEEK_API_KEY，上层 Agent 会自动走规则/模板兜底，
-    保证 DAG 和 Demo 不因为模型不可用而中断。
-    """
-
-    return bool(_active_api_key())
-
-
 def call_chat_completion(
     messages: list[dict[str, str]],
     *,
@@ -41,10 +30,12 @@ def call_chat_completion(
     这里继续用轻量 httpx 封装，便于 ToolHarness 统一记录 timeout、retry、fallback。
     """
 
-    provider = _active_provider()
-    model = _active_model()
-    api_key = _active_api_key()
-    base_url = _active_base_url()
+    # 这里直接改成硬编码 (即不再区分 MiMo 还是 DeepSeek, 统一使用 DeepSeek). 以后再考虑兼容性
+    provider = settings.llm_provider
+    model = settings.deepseek_model
+    api_key = settings.deepseek_api_key
+    base_url = settings.deepseek_base_url
+
     prompt_spec = get_prompt_spec(prompt_name)
     prompt_meta = {
         "prompt_name": prompt_spec.prompt_name,
@@ -88,6 +79,7 @@ def call_chat_completion(
         return None
 
     url = _chat_completions_url(base_url)
+    # 以后默认就是 DeepSeek 直接硬编码了. 后续再考虑兼容性的问题
     payload: dict[str, Any] = {
         "model": model,
         "messages": messages,
@@ -95,15 +87,14 @@ def call_chat_completion(
         "top_p": 0.95,
         "stream": False,
         "max_tokens": max_completion_tokens,
+        "reasoning_effort": settings.deepseek_reasoning_effort,
     }
-    if provider == "deepseek":
-        payload["reasoning_effort"] = settings.deepseek_reasoning_effort
-        if settings.deepseek_thinking_enabled:
-            payload["thinking"] = {"type": "enabled"}
+
+    if settings.deepseek_thinking_enabled:
+        payload["thinking"] = {"type": "enabled"}
 
     headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json",
+        "Authorization": f"Bearer {api_key}", "Content-Type": "application/json"
     }
 
     def _request() -> str | None:
@@ -168,36 +159,6 @@ def call_chat_completion(
     return str(content) if result.success and content else None
 
 
-def _active_provider() -> str:
-    """返回当前启用的大模型供应商名称。"""
-
-    return (settings.llm_provider or "deepseek").strip().lower()
-
-
-def _active_api_key() -> str:
-    """读取当前供应商的 key；DeepSeek 优先，MiMo 字段仅作为旧配置兼容。"""
-
-    if _active_provider() == "deepseek":
-        return settings.deepseek_api_key or settings.mimo_api_key
-    return settings.mimo_api_key
-
-
-def _active_base_url() -> str:
-    """读取当前供应商的 base_url。"""
-
-    if _active_provider() == "deepseek":
-        return settings.deepseek_base_url or "https://api.deepseek.com"
-    return settings.mimo_base_url
-
-
-def _active_model() -> str:
-    """读取当前供应商的模型名。"""
-
-    if _active_provider() == "deepseek":
-        return settings.deepseek_model or "deepseek-v4-pro"
-    return settings.mimo_model
-
-
 def _chat_completions_url(base_url: str) -> str:
     """把 OpenAI-compatible base_url 转为 chat completions URL。
 
@@ -230,7 +191,7 @@ def extract_json_object(text: str | None) -> dict[str, Any] | None:
     except json.JSONDecodeError:
         pass
 
-    match = re.search(r"\{.*\}", cleaned, flags=re.S)
+    match = re.search(r"\{.*}", cleaned, flags=re.S)
     if not match:
         return None
     try:

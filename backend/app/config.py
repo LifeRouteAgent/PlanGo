@@ -147,28 +147,6 @@ class Settings(BaseSettings):
     kafka_bootstrap_servers: str
     kafka_memory_topic: str
 
-    # ── MiMo 兼容别名 ──
-    @property
-    def mimo_api_key(self) -> str:
-        warnings.warn(
-            "mimo_api_key is deprecated, use deepseek_api_key", DeprecationWarning, stacklevel=2
-        )
-        return self.deepseek_api_key
-
-    @property
-    def mimo_base_url(self) -> str:
-        warnings.warn(
-            "mimo_base_url is deprecated, use deepseek_base_url", DeprecationWarning, stacklevel=2
-        )
-        return self.deepseek_base_url
-
-    @property
-    def mimo_model(self) -> str:
-        warnings.warn(
-            "mimo_model is deprecated, use deepseek_model", DeprecationWarning, stacklevel=2
-        )
-        return self.deepseek_model
-
 
 def get_settings() -> Settings:
     """加载并返回 Settings 实例。"""
