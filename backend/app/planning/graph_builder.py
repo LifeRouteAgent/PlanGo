@@ -6,75 +6,20 @@ from langgraph.graph import END, START, StateGraph
 
 from app.bus.event import Event
 from app.bus.event_bus import publish_event_sync
-from app.planning.nodes.candidate_nodes import (
-    candidate_pool_balancer_node,
-    poi_scorer_node,
-    single_category_ranker_node,
-)
-from app.planning.nodes.constraint_nodes import constraint_builder_node
-from app.planning.nodes.context_nodes import (
-    memory_reader_node,
-    request_context_loader_node,
-    session_state_loader_node,
-)
+from app.planning.nodes import GRAPH_NODES
 from app.planning.nodes.intent_nodes import (
-    async_event_emitter_node,
-    intent_resolver_node,
     request_route,
-    request_router_node,
-    session_preference_extractor_node,
 )
-from app.planning.nodes.planning_nodes import plan_editor_node, route_planner_node
-from app.planning.nodes.recall_nodes import collector_node, recall_plan_compiler_node
-from app.planning.nodes.response_nodes import (
-    response_assembler_node,
-    response_generator_node,
-    simple_response_generator_node,
-)
-from app.planning.nodes.session_nodes import session_state_saver_node
 from app.planning.nodes.validation_nodes import (
-    availability_checker_node,
-    failure_analyzer_node,
     failure_route,
-    final_ranker_node,
-    post_check_filter_node,
     post_check_route,
-    pre_ranker_node,
-    fallback_relaxation_node,
 )
 from app.planning.state import PlanningState, create_planning_state
 
 
 def build_planning_graph_v2():
     graph = StateGraph(PlanningState)
-    nodes = {
-        "request_context_loader": request_context_loader_node,
-        "session_state_loader": session_state_loader_node,
-        "memory_reader": memory_reader_node,
-        "intent_resolver": intent_resolver_node,
-        "session_preference_extractor": session_preference_extractor_node,
-        "async_event_emitter": async_event_emitter_node,
-        "request_router": request_router_node,
-        "constraint_builder": constraint_builder_node,
-        "plan_editor": plan_editor_node,
-        "recall_plan_compiler": recall_plan_compiler_node,
-        "collector": collector_node,
-        "poi_scorer": poi_scorer_node,
-        "candidate_pool_balancer": candidate_pool_balancer_node,
-        "route_planner": route_planner_node,
-        "pre_ranker": pre_ranker_node,
-        "availability_checker": availability_checker_node,
-        "post_check_filter": post_check_filter_node,
-        "failure_analyzer": failure_analyzer_node,
-        "fallback_relaxation": fallback_relaxation_node,
-        "final_ranker": final_ranker_node,
-        "single_category_ranker": single_category_ranker_node,
-        "response_assembler": response_assembler_node,
-        "response_generator": response_generator_node,
-        "simple_response_generator": simple_response_generator_node,
-        "session_state_saver": session_state_saver_node,
-    }
-    for name, node in nodes.items():
+    for name, node in GRAPH_NODES.items():
         graph.add_node(name, _instrument_node(name, node))
     graph.add_edge(START, "request_context_loader")
     graph.add_edge("request_context_loader", "session_state_loader")
