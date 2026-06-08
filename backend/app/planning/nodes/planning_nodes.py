@@ -2,13 +2,12 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.planning.nodes.common import append_trace, ensure_state
+from app.planning.nodes.common import append_trace
 from app.planning.services.routing_service import create_route_plans
 from app.planning.state import PlanningState
 
 
-def plan_editor_node(value: PlanningState | dict[str, Any]) -> dict[str, Any]:
-    state = ensure_state(value)
+def plan_editor_node(state: PlanningState) -> dict[str, Any]:
     context = state.context.model_copy(deep=True)
     adjustment = (
         state.llm_understanding.intent.adjustment_type if state.llm_understanding else "rerank"
@@ -28,8 +27,7 @@ def plan_editor_node(value: PlanningState | dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def route_planner_node(value: PlanningState | dict[str, Any]) -> dict[str, Any]:
-    state = ensure_state(value)
+def route_planner_node(state: PlanningState) -> dict[str, Any]:
     plans = state.plans.model_copy(deep=True)
     plans.candidate_plans = create_route_plans(
         state.candidates.balanced_candidates, state.constraints

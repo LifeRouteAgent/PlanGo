@@ -1,12 +1,7 @@
 from __future__ import annotations
 
-from typing import Any
 
 from app.planning.state import DebugState, NodeTrace, PlanningState
-
-
-def ensure_state(value: PlanningState | dict[str, Any]) -> PlanningState:
-    return value if isinstance(value, PlanningState) else PlanningState.model_validate(value)
 
 
 def append_trace(state: PlanningState, node: str, message: str) -> DebugState:

@@ -6,7 +6,7 @@ from app.context.context_manager import ContextManager
 from app.memory.read_service import MemoryReadService
 
 from app.context.session_store import SessionStore
-from app.planning.nodes.common import append_trace, ensure_state
+from app.planning.nodes.common import append_trace
 from app.planning.poi_catalog_service import PoiCatalogService
 from app.planning.state import (
     PlanningState,
@@ -16,8 +16,7 @@ from app.planning.state import (
 )
 
 
-def request_context_loader_node(value: PlanningState | dict[str, Any]) -> dict[str, Any]:
-    state = ensure_state(value)
+def request_context_loader_node(state: PlanningState) -> dict[str, Any]:
     user = state.user_info.model_copy(deep=True)
     if user.default_origin is None and user.geo_location is not None:
         user.default_origin = {
@@ -39,8 +38,7 @@ def request_context_loader_node(value: PlanningState | dict[str, Any]) -> dict[s
     }
 
 
-def session_state_loader_node(value: PlanningState | dict[str, Any]) -> dict[str, Any]:
-    state = ensure_state(value)
+def session_state_loader_node(state: PlanningState) -> dict[str, Any]:
     saved = SessionStore.load(state.state_meta.session_id) if state.state_meta.session_id else None
     context = state.context.model_copy(deep=True)
     context = ContextManager().apply_session_payload(context, saved)
@@ -50,8 +48,7 @@ def session_state_loader_node(value: PlanningState | dict[str, Any]) -> dict[str
     }
 
 
-def memory_reader_node(value: PlanningState | dict[str, Any]) -> dict[str, Any]:
-    state = ensure_state(value)
+def memory_reader_node(state: PlanningState) -> dict[str, Any]:
     memory = MemoryReadService()
     profile = memory.read_profile(user_id=state.state_meta.user_id or "default")
     similar_profiles = memory.similar_user_preferences(

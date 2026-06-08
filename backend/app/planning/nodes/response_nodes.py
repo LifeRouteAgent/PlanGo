@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.planning.nodes.common import append_trace, ensure_state
+from app.planning.nodes.common import append_trace
 from app.planning.payloads import normalize_response_payload
 from app.planning.services.response_service import assemble_state_response
 from app.planning.state import PlanningState
@@ -12,8 +12,7 @@ from app.agents.response_agent import (
 )
 
 
-def response_assembler_node(value: PlanningState | dict[str, Any]) -> dict[str, Any]:
-    state = ensure_state(value)
+def response_assembler_node(state: PlanningState) -> dict[str, Any]:
     response = state.response.model_copy(deep=True)
     if not response.response_payload:
         # 结构化响应只在这里统一组装，避免上游节点各自拼前端字段导致契约漂移。
@@ -25,8 +24,7 @@ def response_assembler_node(value: PlanningState | dict[str, Any]) -> dict[str, 
     }
 
 
-def response_generator_node(value: PlanningState | dict[str, Any]) -> dict[str, Any]:
-    state = ensure_state(value)
+def response_generator_node(state: PlanningState) -> dict[str, Any]:
     response = state.response.model_copy(deep=True)
     payload = response.response_payload or {}
     # Response Generator 只做展示清洗和文案生成，不重新召回、不改排序、不替换 POI。
@@ -204,8 +202,7 @@ def _category_label(category: Any) -> str:
     }.get(str(category or "").replace("poi_", ""), "本地生活")
 
 
-def simple_response_generator_node(value: PlanningState | dict[str, Any]) -> dict[str, Any]:
-    state = ensure_state(value)
+def simple_response_generator_node(state: PlanningState) -> dict[str, Any]:
     response = state.response.model_copy(deep=True)
     response.response_type = "simple_text"
     response.response_payload = {"response_type": "simple_text"}

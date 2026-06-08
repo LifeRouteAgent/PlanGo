@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.planning.nodes.common import append_trace, ensure_state
+from app.planning.nodes.common import append_trace
 from app.planning.services.availability_service import (
     analyze_failure_reason,
     check_plan_availability,
@@ -12,8 +12,7 @@ from app.planning.services.ranking_service import rank_route_plans
 from app.planning.state import PlanningState
 
 
-def pre_ranker_node(value: PlanningState | dict[str, Any]) -> dict[str, Any]:
-    state = ensure_state(value)
+def pre_ranker_node(state: PlanningState) -> dict[str, Any]:
     plans = state.plans.model_copy(deep=True)
     kept, ranked = rank_route_plans(
         plans.candidate_plans,
@@ -31,8 +30,7 @@ def pre_ranker_node(value: PlanningState | dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def availability_checker_node(value: PlanningState | dict[str, Any]) -> dict[str, Any]:
-    state = ensure_state(value)
+def availability_checker_node(state: PlanningState) -> dict[str, Any]:
     availability, filtered, warnings = check_plan_availability(
         state.plans.candidate_plans,
         state.candidates.scored_candidates,
@@ -46,8 +44,7 @@ def availability_checker_node(value: PlanningState | dict[str, Any]) -> dict[str
     return {"plans": plans, "debug": debug}
 
 
-def post_check_filter_node(value: PlanningState | dict[str, Any]) -> dict[str, Any]:
-    state = ensure_state(value)
+def post_check_filter_node(state: PlanningState) -> dict[str, Any]:
     return {
         "debug": append_trace(
             state, "post_check_filter", f"post-check plan count: {len(state.plans.candidate_plans)}"
@@ -55,8 +52,7 @@ def post_check_filter_node(value: PlanningState | dict[str, Any]) -> dict[str, A
     }
 
 
-def failure_analyzer_node(value: PlanningState | dict[str, Any]) -> dict[str, Any]:
-    state = ensure_state(value)
+def failure_analyzer_node(state: PlanningState) -> dict[str, Any]:
     reason = analyze_failure_reason(
         state.candidates.raw_candidates,
         state.candidates.balanced_candidates,
@@ -71,8 +67,7 @@ def failure_analyzer_node(value: PlanningState | dict[str, Any]) -> dict[str, An
     return {"debug": debug}
 
 
-def fallback_relaxation_node(value: PlanningState | dict[str, Any]) -> dict[str, Any]:
-    state = ensure_state(value)
+def fallback_relaxation_node(state: PlanningState) -> dict[str, Any]:
     reason = str(state.debug.recall_debug.get("failure_reason") or "unknown")
     iteration = int(state.debug.recall_debug.get("fallback_iteration") or 0) + 1
     constraints, recall = relax_constraints_for_failure(
@@ -86,8 +81,7 @@ def fallback_relaxation_node(value: PlanningState | dict[str, Any]) -> dict[str,
     return {"constraints": constraints, "recall_plan": recall, "debug": debug}
 
 
-def final_ranker_node(value: PlanningState | dict[str, Any]) -> dict[str, Any]:
-    state = ensure_state(value)
+def final_ranker_node(state: PlanningState) -> dict[str, Any]:
     plans = state.plans.model_copy(deep=True)
     kept, ranked = rank_route_plans(
         plans.candidate_plans,
@@ -104,13 +98,11 @@ def final_ranker_node(value: PlanningState | dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def post_check_route(value: PlanningState | dict[str, Any]) -> str:
-    state = ensure_state(value)
+def post_check_route(state: PlanningState) -> str:
     return "final_ranker" if len(state.plans.candidate_plans) >= 3 else "failure_analyzer"
 
 
-def failure_route(value: PlanningState | dict[str, Any]) -> str:
-    state = ensure_state(value)
+def failure_route(state: PlanningState) -> str:
     return (
         "fallback_relaxation" if state.debug.recall_debug.get("needs_fallback") else "final_ranker"
     )

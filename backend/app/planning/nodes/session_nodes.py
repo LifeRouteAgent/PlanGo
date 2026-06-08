@@ -2,13 +2,12 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.planning.nodes.common import append_trace, ensure_state
+from app.planning.nodes.common import append_trace
 from app.planning.state import PlanningState, planning_state_to_legacy
 from app.context.session_store import SessionStore
 
 
-def session_state_saver_node(value: PlanningState | dict[str, Any]) -> dict[str, Any]:
-    state = ensure_state(value)
+def session_state_saver_node(state: PlanningState) -> dict[str, Any]:
     safe = planning_state_to_legacy(state)
     if state.state_meta.session_id:
         SessionStore.save_turn(

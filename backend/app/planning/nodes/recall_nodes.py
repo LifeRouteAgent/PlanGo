@@ -2,13 +2,12 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.planning.nodes.common import append_trace, ensure_state
+from app.planning.nodes.common import append_trace
 from app.planning.services.recall_service import collect_candidates, compile_recall_plan
 from app.planning.state import PlanningState
 
 
-def recall_plan_compiler_node(value: PlanningState | dict[str, Any]) -> dict[str, Any]:
-    state = ensure_state(value)
+def recall_plan_compiler_node(state: PlanningState) -> dict[str, Any]:
     compiled = compile_recall_plan(
         state.recall_plan, state.constraints, state.context.poi_logical_tag_catalog
     )
@@ -20,8 +19,7 @@ def recall_plan_compiler_node(value: PlanningState | dict[str, Any]) -> dict[str
     }
 
 
-def collector_node(value: PlanningState | dict[str, Any]) -> dict[str, Any]:
-    state = ensure_state(value)
+def collector_node(state: PlanningState) -> dict[str, Any]:
     candidates = state.candidates.model_copy(deep=True)
     candidates.raw_candidates, candidates.recall_stats = collect_candidates(
         state.compiled_recall_plan, state.constraints

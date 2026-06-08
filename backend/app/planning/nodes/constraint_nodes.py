@@ -2,13 +2,12 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.planning.nodes.common import append_trace, ensure_state
+from app.planning.nodes.common import append_trace
 from app.planning.services.constraint_service import build_constraints
 from app.planning.state import PlanningState
 
 
-def constraint_builder_node(value: PlanningState | dict[str, Any]) -> dict[str, Any]:
-    state = ensure_state(value)
+def constraint_builder_node(state: PlanningState) -> dict[str, Any]:
     constraints, recall = build_constraints(
         state.llm_understanding,
         city=state.user_info.city,

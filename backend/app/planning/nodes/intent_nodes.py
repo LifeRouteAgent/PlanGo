@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 from uuid import uuid4
 
-from app.planning.nodes.common import append_trace, ensure_state
+from app.planning.nodes.common import append_trace
 from app.planning.services.intent_service import resolve_intent
 from app.planning.state import AsyncEventInfo, PlanningState
 from app.memory.memory_event_queue import MemoryEventQueue
@@ -12,8 +12,7 @@ from app.memory.session_preference_extractor import extract_session_preference_p
 from app.observability.trace_recorder import record_trace_event
 
 
-def intent_resolver_node(value: PlanningState | dict[str, Any]) -> dict[str, Any]:
-    state = ensure_state(value)
+def intent_resolver_node(state: PlanningState) -> dict[str, Any]:
     conversation_context = {
         **state.context.current_plan_state.model_dump(mode="json"),
         "prompt_context_pack": state.context.prompt_context_pack,
@@ -34,8 +33,7 @@ def intent_resolver_node(value: PlanningState | dict[str, Any]) -> dict[str, Any
     }
 
 
-def session_preference_extractor_node(value: PlanningState | dict[str, Any]) -> dict[str, Any]:
-    state = ensure_state(value)
+def session_preference_extractor_node(state: PlanningState) -> dict[str, Any]:
     context = state.context.model_copy(deep=True)
     context.session_preference_profile = extract_session_preference_profile(
         state.context.conversation_context.last_user_message,
@@ -51,8 +49,7 @@ def session_preference_extractor_node(value: PlanningState | dict[str, Any]) -> 
     }
 
 
-def async_event_emitter_node(value: PlanningState | dict[str, Any]) -> dict[str, Any]:
-    state = ensure_state(value)
+def async_event_emitter_node(state: PlanningState) -> dict[str, Any]:
     events = state.async_events.model_copy(deep=True)
     MemoryEventQueue().publish_user_query(
         state.context.conversation_context.last_user_message,
@@ -74,13 +71,11 @@ def async_event_emitter_node(value: PlanningState | dict[str, Any]) -> dict[str,
     }
 
 
-def request_router_node(value: PlanningState | dict[str, Any]) -> dict[str, Any]:
-    state = ensure_state(value)
+def request_router_node(state: PlanningState) -> dict[str, Any]:
     return {"debug": append_trace(state, "request_router", "请求分支已选择")}
 
 
-def request_route(value: PlanningState | dict[str, Any]) -> str:
-    state = ensure_state(value)
+def request_route(state: PlanningState) -> str:
     return (
         state.llm_understanding.intent.request_type
         if state.llm_understanding

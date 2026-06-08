@@ -2,14 +2,13 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.planning.nodes.common import append_trace, ensure_state
+from app.planning.nodes.common import append_trace
 from app.planning.payloads import normalize_response_payload
 from app.planning.services.candidate_service import balance_candidates, score_candidates
 from app.planning.state import PlanningState
 
 
-def poi_scorer_node(value: PlanningState | dict[str, Any]) -> dict[str, Any]:
-    state = ensure_state(value)
+def poi_scorer_node(state: PlanningState) -> dict[str, Any]:
     candidates = state.candidates.model_copy(deep=True)
     session = state.context.session_preference_profile
     memory_tags = [
@@ -33,8 +32,7 @@ def poi_scorer_node(value: PlanningState | dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def candidate_pool_balancer_node(value: PlanningState | dict[str, Any]) -> dict[str, Any]:
-    state = ensure_state(value)
+def candidate_pool_balancer_node(state: PlanningState) -> dict[str, Any]:
     candidates = state.candidates.model_copy(deep=True)
     candidates.balanced_candidates = balance_candidates(candidates.scored_candidates)
     return {
@@ -43,8 +41,7 @@ def candidate_pool_balancer_node(value: PlanningState | dict[str, Any]) -> dict[
     }
 
 
-def single_category_ranker_node(value: PlanningState | dict[str, Any]) -> dict[str, Any]:
-    state = ensure_state(value)
+def single_category_ranker_node(state: PlanningState) -> dict[str, Any]:
     items = [item for group in state.candidates.scored_candidates.values() for item in group]
     items.sort(key=lambda item: item.final_poi_score, reverse=True)
     payload = normalize_response_payload({
