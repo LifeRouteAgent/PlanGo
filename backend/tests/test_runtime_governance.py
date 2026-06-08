@@ -53,6 +53,8 @@ def test_memory_store_session_and_tool_cache_ttl() -> None:
 def test_checkpoint_resume_blocks_blind_rerun_after_success() -> None:
     """已有成功交易时，恢复策略不能盲目重跑整单。"""
 
+    from app.runtime.checkpoint_store import BookingAction
+
     store = CheckpointStore()
     task = store.create(
         session_id="session_checkpoint_test",
@@ -62,24 +64,24 @@ def test_checkpoint_resume_blocks_blind_rerun_after_success() -> None:
     )
     key = make_idempotency_key(
         user_id="user_checkpoint_test",
-        task_id=task["task_id"],
+        task_id=task.task_id,
         action_type="ticket_order",
         target_id="poi_1",
     )
     store.append_action(
-        task["task_id"],
-        {
-            "action_id": "ticket_1",
-            "type": "ticket_order",
-            "risk_level": 3,
-            "status": "success",
-            "idempotency_key": key,
-            "request": {"poi_id": "poi_1"},
-            "result": {"order_id": "mock_order"},
-        },
+        task.task_id,
+        BookingAction(
+            action_id="ticket_1",
+            type="ticket_order",
+            risk_level=3,
+            status="success",
+            idempotency_key=key,
+            request={"poi_id": "poi_1"},
+            result={"order_id": "mock_order"},
+        ),
     )
 
-    decision = store.resume(task["task_id"])
+    decision = store.resume(task.task_id)
 
     assert decision["ok"] is True
     assert decision["decision"] == "require_user_confirmation"

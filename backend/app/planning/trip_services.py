@@ -45,7 +45,6 @@ class TripPlanningService:
 
     def __init__(self) -> None:
         self.memory = MemoryService()
-        self.checkpoint = CheckpointStore()
 
     def plan(self, request: TripPlanRequest) -> TripPlanResponse:
         # 创建用于追踪对话的 3 种不同的 id
@@ -55,7 +54,7 @@ class TripPlanningService:
         # 设置当前请求的追踪上下文
         set_trace_context(trace_id=trace_id, run_id=run_id, session_id=session_id)
 
-        task = self.checkpoint.create(  # 在 checkpoint 中创建一个任务记录
+        task = CheckpointStore.create(  # 在 checkpoint 中创建一个任务记录
             session_id=session_id,  # 保存当前会话 ID
             user_id=request.user_id or session_id,  # 如果没有 user_id，就用 session_id 兜底
             trace_id=trace_id,  # 保存 trace_id
@@ -75,7 +74,7 @@ class TripPlanningService:
         trace_id = request.trace_id or new_id("trace")
         run_id = request.run_id or new_id("run")
         set_trace_context(trace_id=trace_id, run_id=run_id, session_id=session_id)
-        task = self.checkpoint.create(
+        task = CheckpointStore.create(
             session_id=session_id, user_id=request.user_id or session_id, trace_id=trace_id
         )
         result = run_v2_request_to_legacy(request, session_id=session_id)
@@ -85,13 +84,13 @@ class TripPlanningService:
             "run_id": run_id,
             "session_id": session_id,
         })
-        self.checkpoint.save_from_plan_state(
+        CheckpointStore.save_from_plan_state(
             result,
             status=checkpoint_status_from_state(result),
             task_id=str(task["task_id"]),
         )
 
-        self.checkpoint.save_from_plan_state(  # 将本次规划结果保存到 checkpoint
+        CheckpointStore.save_from_plan_state(  # 将本次规划结果保存到 checkpoint
             result,  # 保存规划结果
             status=checkpoint_status_from_state(result),  # 根据规划状态推断任务状态
             task_id=str(task["task_id"]),  # 指定任务 ID
@@ -118,7 +117,6 @@ class TripStreamingService:
 
     def __init__(self) -> None:
         self.memory = MemoryService()  # 初始化记忆服务
-        self.checkpoint = CheckpointStore()  # 初始化检查点存储
 
     def stream(self, request: TripPlanRequest) -> Iterator[str]:
         # 把 V2 流式规划结果逐条 yield 出去，供 SSE 返回给前端
@@ -130,7 +128,6 @@ class TripRevisionService:
 
     def __init__(self) -> None:
         self.memory = MemoryService()  # 初始化记忆服务
-        self.checkpoint = CheckpointStore()  # 初始化检查点存储
 
     def stream(self, request: RevisePlanRequest) -> Iterator[str]:
         yield from stream_v2_request(  # 修订请求也复用普通规划的流式入口
@@ -160,15 +157,15 @@ class TripExecutionService:
 
 
 class TaskRecoveryService:
-    def __init__(self, checkpoint: CheckpointStore | None = None) -> None:
-        self.checkpoint = checkpoint or CheckpointStore()  # 初始化 checkpoint，用于任务恢复
+    def __init__(self) -> None:
+        pass
 
     def task_payload(self, task_id: str) -> dict[str, Any]:
-        task = self.checkpoint.load(task_id)  # 根据 task_id 加载任务
+        task = CheckpointStore.load(task_id)  # 根据 task_id 加载任务
         return {"ok": bool(task), "task": task}  # 返回任务是否存在，以及任务内容
 
     def resume_decision(self, task_id: str) -> dict[str, Any]:
-        return self.checkpoint.resume(task_id)  # 根据 checkpoint 判断该任务能否恢复、从哪里恢复
+        return CheckpointStore.resume(task_id)  # 根据 checkpoint 判断该任务能否恢复、从哪里恢复
 
     def runtime_summary(self) -> dict[str, Any]:
         runtime = get_runtime_store()  # 获取运行时存储对象
@@ -180,7 +177,7 @@ class TaskRecoveryService:
             # 去重后的 trace 数量
             "trace_count": len({item.trace_id for item in metrics if item.trace_id}),
             "node_metric_count": len(metrics),  # 节点指标记录数量
-            "recoverable_task_count": len(self.checkpoint.recoverable_tasks()),  # 可恢复任务数量
+            "recoverable_task_count": len(CheckpointStore.recoverable_tasks()),  # 可恢复任务数量
         }
 
     def node_metrics(self, trace_id: str | None = None) -> dict[str, Any]:

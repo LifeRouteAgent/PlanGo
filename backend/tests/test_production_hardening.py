@@ -59,6 +59,8 @@ def test_memory_profile_isolated_by_user_id() -> None:
 def test_checkpoint_version_and_recovery_decisions() -> None:
     """Checkpoint 保存要有版本；已有成功交易后不能盲目重跑。"""
 
+    from app.runtime.checkpoint_store import BookingAction
+
     store = CheckpointStore()
     task = store.create(
         session_id="prod_session",
@@ -66,39 +68,39 @@ def test_checkpoint_version_and_recovery_decisions() -> None:
         trace_id="trace_prod",
         task_id="task_prod_hardening",
     )
-    first_version = int(task["version"])
-    task["status"] = TaskStatus.PLAN_VALIDATED.value
+    first_version = task.version
+    task.status = TaskStatus.PLAN_VALIDATED.value
     store.save(task)
     saved = store.load("task_prod_hardening")
 
     assert saved is not None
-    assert int(saved["version"]) > first_version
+    assert saved.version > first_version
 
     store.append_action(
         "task_prod_hardening",
-        {
-            "action_id": "restaurant_1",
-            "type": "restaurant_booking",
-            "risk_level": 3,
-            "status": "success",
-            "idempotency_key": "idem_restaurant_1",
-            "request": {},
-            "result": {"ok": True},
-        },
+        BookingAction(
+            action_id="restaurant_1",
+            type="restaurant_booking",
+            risk_level=3,
+            status="success",
+            idempotency_key="idem_restaurant_1",
+            request={},
+            result={"ok": True},
+        ),
     )
     assert store.resume("task_prod_hardening")["decision"] == "require_user_confirmation"
 
     store.append_action(
         "task_prod_hardening",
-        {
-            "action_id": "ticket_1",
-            "type": "ticket_order",
-            "risk_level": 3,
-            "status": "failed",
-            "idempotency_key": "idem_ticket_1",
-            "request": {},
-            "result": {"ok": False},
-        },
+        BookingAction(
+            action_id="ticket_1",
+            type="ticket_order",
+            risk_level=3,
+            status="failed",
+            idempotency_key="idem_ticket_1",
+            request={},
+            result={"ok": False},
+        ),
     )
     assert store.resume("task_prod_hardening")["decision"] == "compensate"
 
