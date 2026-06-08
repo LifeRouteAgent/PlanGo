@@ -41,9 +41,7 @@ def request_context_loader_node(value: PlanningState | dict[str, Any]) -> dict[s
 
 def session_state_loader_node(value: PlanningState | dict[str, Any]) -> dict[str, Any]:
     state = ensure_state(value)
-    saved = (
-        SessionStore().load(state.state_meta.session_id) if state.state_meta.session_id else None
-    )
+    saved = SessionStore.load(state.state_meta.session_id) if state.state_meta.session_id else None
     context = state.context.model_copy(deep=True)
     context = ContextManager().apply_session_payload(context, saved)
     return {

@@ -8,6 +8,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any, Protocol
 
+import loguru
 import pymysql
 from pymysql.cursors import DictCursor
 
@@ -199,6 +200,7 @@ class FileRuntimeStore(RuntimeStore):
             payload = json.loads(path.read_text(encoding="utf-8"))
             return payload if isinstance(payload, dict) else None
         except OSError, json.JSONDecodeError:
+            loguru.logger.error("读取 {} 失败", path)
             return None
 
     @staticmethod

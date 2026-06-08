@@ -11,7 +11,7 @@ def session_state_saver_node(value: PlanningState | dict[str, Any]) -> dict[str,
     state = ensure_state(value)
     safe = planning_state_to_legacy(state)
     if state.state_meta.session_id:
-        SessionStore().save_turn(
+        SessionStore.save_turn(
             session_id=state.state_meta.session_id,
             trace_id=state.state_meta.request_id,
             run_id=state.state_meta.state_id,
