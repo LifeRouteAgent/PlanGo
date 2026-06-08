@@ -64,7 +64,7 @@ class RuntimeStore(Protocol):
     def health(self) -> dict[str, Any]: ...
 
 
-class FileRuntimeStore:
+class FileRuntimeStore(RuntimeStore):
     """文件型 runtime fallback。"""
 
     def __init__(self) -> None:
@@ -149,7 +149,7 @@ class FileRuntimeStore:
         return {"store": "file", "ok": True, "fallback": False}
 
 
-class MySqlRuntimeStore:
+class MySqlRuntimeStore(RuntimeStore):
     """MySQL runtime 主存储。"""
 
     def __init__(self) -> None:
@@ -343,34 +343,65 @@ class MySqlRuntimeStore:
                 return list(cursor.fetchall())
 
 
-class ResilientRuntimeStore:
-    """MySQL 优先、文件 fallback 的运行态存储。"""
+class ResilientRuntimeStore(RuntimeStore):
+    """MySQL 优先、文件 fallback 的运行态存储。
+
+    每个方法显式声明而非依赖 __getattr__ 动态派发，保证 IDE 自动补全和静态类型检查。
+    """
 
     def __init__(
-        self, primary: RuntimeStore | None, fallback: FileRuntimeStore, primary_error: str = ""
+        self, primary: RuntimeStore | None, fallback: RuntimeStore, primary_error: str = ""
     ) -> None:
-        self.primary = primary
-        self.fallback = fallback
+        self._primary = primary
+        self._fallback = fallback
         self.primary_error = primary_error
 
-    def __getattr__(self, name: str):
-        primary_fn = getattr(self.primary, name, None) if self.primary else None
-        fallback_fn = getattr(self.fallback, name)
+    def _delegate(self, method_name: str, *args: Any) -> Any:
+        """先尝试 primary，失败则使用 fallback。"""
+        if self._primary is not None:
+            try:
+                return getattr(self._primary, method_name)(*args)
+            except Exception as exc:  # noqa: BLE001 - runtime 层必须保证 demo 可降级运行。
+                self.primary_error = str(exc)
+        return getattr(self._fallback, method_name)(*args)
 
-        def _wrapped(*args: Any, **kwargs: Any):
-            if primary_fn:
-                try:
-                    return primary_fn(*args, **kwargs)
-                except Exception as exc:  # noqa: BLE001 - runtime 层必须保证 demo 可降级运行。
-                    self.primary_error = str(exc)
-            return fallback_fn(*args, **kwargs)
+    def load_session(self, session_id: str) -> dict[str, Any] | None:
+        return self._delegate("load_session", session_id)
 
-        return _wrapped
+    def save_session(self, session_id: str, payload: dict[str, Any]) -> None:
+        return self._delegate("save_session", session_id, payload)
+
+    def load_task(self, task_id: str) -> dict[str, Any] | None:
+        return self._delegate("load_task", task_id)
+
+    def save_task(self, task_id: str, payload: dict[str, Any]) -> None:
+        return self._delegate("save_task", task_id, payload)
+
+    def list_tasks(self) -> list[dict[str, Any]]:
+        return self._delegate("list_tasks")
+
+    def get_tool_cache(self, key: str) -> dict[str, Any] | None:
+        return self._delegate("get_tool_cache", key)
+
+    def put_tool_cache(self, key: str, payload: dict[str, Any]) -> None:
+        return self._delegate("put_tool_cache", key, payload)
+
+    def append_trace_event(self, trace_id: str, event: dict[str, Any]) -> None:
+        return self._delegate("append_trace_event", trace_id, event)
+
+    def read_trace_events(self, trace_id: str) -> list[dict[str, Any]]:
+        return self._delegate("read_trace_events", trace_id)
+
+    def record_node_metric(self, metric: NodeMetricRecord) -> None:
+        return self._delegate("record_node_metric", metric)
+
+    def list_node_metrics(self, trace_id: str | None = None) -> list[NodeMetricRecord]:
+        return self._delegate("list_node_metrics", trace_id)
 
     def health(self) -> dict[str, Any]:
-        if self.primary:
+        if self._primary is not None:
             try:
-                primary_health = self.primary.health()
+                primary_health = self._primary.health()
                 return {**primary_health, "fallback_available": True}
             except Exception as exc:  # noqa: BLE001
                 self.primary_error = str(exc)
