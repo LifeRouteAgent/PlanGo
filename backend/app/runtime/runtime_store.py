@@ -12,13 +12,7 @@ import pymysql
 from pymysql.cursors import DictCursor
 
 from app.config import settings
-from app.runtime.runtime_paths import (
-    SESSIONS_DIR,
-    TASKS_DIR,
-    TOOL_CACHE_DIR,
-    TRACES_DIR,
-    ensure_runtime_dirs,
-)
+from app.runtime.runtime_paths import SESSIONS_DIR, TASKS_DIR, TOOL_CACHE_DIR, TRACES_DIR
 
 
 @dataclass
@@ -96,7 +90,7 @@ class FileRuntimeStore(RuntimeStore):
     """文件型 runtime fallback。"""
 
     def __init__(self) -> None:
-        ensure_runtime_dirs()
+        pass
 
     def load_session(self, session_id: str) -> dict[str, Any] | None:
         return FileRuntimeStore._read_json(FileRuntimeStore._session_path(session_id))

@@ -4,7 +4,7 @@ import json
 import time
 from typing import Any
 
-from app.runtime.runtime_paths import MEMORY_DIR, MEMORY_USERS_DIR, ensure_runtime_dirs
+from app.runtime.runtime_paths import MEMORY_DIR, MEMORY_USERS_DIR
 from app.agents.memory_extractor_agent import extract_memory_updates
 from app.memory.memory_store import FileMemoryStore, ToolCacheEntry
 from app.memory.policy import MemoryPolicy
@@ -19,7 +19,6 @@ class MemoryService:
     """
 
     def __init__(self, vector_store: VectorMemoryStore | None = None) -> None:
-        ensure_runtime_dirs()
         self.memory_md = MEMORY_DIR / "MEMORY.md"
         self.users_dir = MEMORY_USERS_DIR
         self.profile_json = self._profile_path("default")

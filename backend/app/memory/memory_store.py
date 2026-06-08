@@ -6,7 +6,7 @@ import time
 from pathlib import Path
 from typing import Any, Protocol, TypedDict
 
-from app.runtime.runtime_paths import MEMORY_DIR, SESSIONS_DIR, TOOL_CACHE_DIR, ensure_runtime_dirs
+from app.runtime.runtime_paths import MEMORY_DIR, SESSIONS_DIR, TOOL_CACHE_DIR
 from app.runtime.runtime_store import get_runtime_store
 
 
@@ -78,7 +78,6 @@ class FileMemoryStore:
     """
 
     def __init__(self) -> None:
-        ensure_runtime_dirs()
         self.profile_path = MEMORY_DIR / "user_profile_v2.json"
         if not self.profile_path.exists():
             self.profile_path.write_text(

@@ -1,5 +1,3 @@
-# 启用 Python 未来版本的注解行为：
-# 作用是让类型注解不会在运行时立即求值，减少循环引用问题，也提升兼容性
 from __future__ import annotations
 
 # 导入 FastAPI 主类，用来创建后端应用实例
@@ -14,6 +12,10 @@ from fastapi.middleware.cors import CORSMiddleware
 # plans：方案相关接口，例如查询、收藏、详情
 # trip：行程规划主接口
 from app.api.routes import compat, export, plans, trip
+from app.runtime.runtime_paths import ensure_runtime_dirs
+
+# 在函数启动之前, 先确认运行时所需要的目录是否存在
+ensure_runtime_dirs()
 
 # 创建 FastAPI 应用实例
 # title 会显示在接口文档页面中

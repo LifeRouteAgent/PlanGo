@@ -7,7 +7,6 @@ from enum import StrEnum
 from typing import Any, TypedDict
 
 from app.memory.memory_store import ToolCacheEntry
-from app.runtime.runtime_paths import ensure_runtime_dirs
 from app.runtime.runtime_store import get_runtime_store
 from app.observability.trace_recorder import new_id, record_trace_event
 
@@ -73,7 +72,7 @@ class CheckpointStore:
     """
 
     def __init__(self) -> None:
-        ensure_runtime_dirs()
+        pass
 
     def create(
         self,

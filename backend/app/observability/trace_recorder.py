@@ -8,7 +8,7 @@ from typing import Any, TypeVar
 
 import loguru
 
-from app.runtime.runtime_paths import TRACES_DIR, ensure_runtime_dirs
+from app.runtime.runtime_paths import TRACES_DIR
 from app.runtime.runtime_store import NodeMetricRecord, get_runtime_store
 
 T = TypeVar("T")
@@ -56,7 +56,6 @@ class TraceRecorder:
     """
 
     def __init__(self, *, trace_id: str, run_id: str, session_id: str):
-        ensure_runtime_dirs()
         self.trace_id = trace_id
         self.run_id = run_id
         self.session_id = session_id

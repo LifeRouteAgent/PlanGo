@@ -1,18 +1,16 @@
-from __future__ import annotations  # 启用延迟类型注解，避免类型注解在运行时立即求值
+from __future__ import annotations
 
-import json  # 导入 json 模块，用于 JSON 读写；当前文件里暂时没有直接使用
-import time  # 导入 time 模块，用于生成时间戳
-from typing import Any  # 导入 Any 类型，表示任意类型
+import time
+from typing import Any
 
-from app.runtime.runtime_paths import (
-    SESSIONS_DIR,
-    ensure_runtime_dirs,
-)  # 导入会话文件目录和运行时目录初始化函数
-from app.runtime.runtime_store import (
-    get_runtime_store,
-)  # 导入运行时存储获取函数，统一读写 session/task/metric 等数据
-from app.observability.trace_recorder import new_id  # 导入 ID 生成函数，用于生成 session_id
 from app.context.context_manager import ContextManager
+from app.observability.trace_recorder import new_id  # 导入 ID 生成函数，用于生成 session_id
+
+# 导入会话文件目录和运行时目录初始化函数
+from app.runtime.runtime_paths import SESSIONS_DIR
+
+# 导入运行时存储获取函数，统一读写 session/task/metric 等数据
+from app.runtime.runtime_store import get_runtime_store
 
 
 class SessionStore:
@@ -23,21 +21,18 @@ class SessionStore:
     """
 
     def __init__(self) -> None:
-        ensure_runtime_dirs()  # 初始化运行时目录，确保 sessions、checkpoints 等目录存在
+        pass
 
     def ensure_session_id(self, session_id: str | None) -> str:
         """没有 session_id 时创建一个新的。"""
 
-        return session_id or new_id(
-            "sess"
-        )  # 如果已有 session_id 就直接返回，否则生成一个新的 sess_xxx
+        return session_id or new_id("sess")
 
     def load(self, session_id: str) -> dict[str, Any] | None:
         """读取会话文件。"""
 
-        payload = get_runtime_store().load_session(
-            session_id
-        )  # 从 runtime_store 中读取指定 session_id 对应的会话数据
+        # 从 runtime_store 中读取指定 session_id 对应的会话数据
+        payload = get_runtime_store().load_session(session_id)
         if isinstance(payload, dict):  # 判断读取结果是否是 dict 类型
             return payload  # 如果是 dict，说明读取成功，直接返回
         return None  # 如果不存在或格式不对，返回 None

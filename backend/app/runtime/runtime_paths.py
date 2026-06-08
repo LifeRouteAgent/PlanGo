@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-# todo: 这个东西也不该放在 services 里面吧
+import loguru
+
 from app.config import BACKEND_DIR
 
 RUNTIME_DIR = BACKEND_DIR / "data" / "runtime"
@@ -30,4 +31,6 @@ def ensure_runtime_dirs() -> None:
         TASKS_DIR,
         TOOL_CACHE_DIR,
     ):
-        path.mkdir(parents=True, exist_ok=True)
+        if not path.exists():
+            loguru.logger.info("创建运行时目录 {}", path)
+            path.mkdir(parents=True)
