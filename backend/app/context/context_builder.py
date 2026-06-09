@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import hashlib
 import time
-from typing import Any, TypedDict
+from dataclasses import dataclass
+from typing import Any, List, Dict, Tuple
 
 
-class ContextSnapshot(TypedDict):
+@dataclass
+class ContextSnapshot:
     """每次 LLM 调用使用的结构化上下文快照。
 
     该结构是 prompt 的唯一来源，避免把完整聊天历史、完整工具返回或全部候选 POI
@@ -27,7 +29,8 @@ class ContextBuilder:
     LLM 只接收必要摘要：当前任务、压缩记忆和少量状态统计。完整 POI、Trace 和历史文件不进入 prompt。
     """
 
-    def build_user_profile_context(self, user_profile: dict[str, Any]) -> dict[str, Any]:
+    @staticmethod
+    def build_user_profile_context(user_profile: dict[str, Any]) -> dict[str, Any]:
         """构建给 Intent/Planner 使用的用户画像上下文。"""
 
         memory_context = user_profile.get("memory_context", {})
@@ -80,8 +83,8 @@ class ContextBuilder:
             ),
         }
 
+    @staticmethod
     def build_for(
-        self,
         agent_name: str,
         state: dict[str, Any],
         *,
@@ -94,23 +97,22 @@ class ContextBuilder:
         的形式进入上下文。后续所有 LLM Agent 应优先使用该方法，而不是自行拼接历史。
         """
 
-        clipped_fields: list[str] = []
         constraints = state.get("constraints", {})
-        candidate_summary = _top_k_pois_by_category(
-            state.get("candidate_pois", {}), top_k_per_category, clipped_fields, "candidate_pois"
+        candidate_summary, clipped_fields1 = _top_k_pois_by_category(
+            state.get("candidate_pois", {}), top_k_per_category, "candidate_pois"
         )
-        recommended_summary = _top_k_pois_by_category(
+        recommended_summary, clipped_fields2 = _top_k_pois_by_category(
             state.get("recommended_pois", {}),
             top_k_per_category,
-            clipped_fields,
             "recommended_pois",
         )
-        tool_evidence = _tool_evidence(state, top_k=12, clipped_fields=clipped_fields)
+
+        tool_evidence, clipped_fields3 = _tool_evidence(state, top_k=12)
         evidence_refs = [
             item.get("evidence_ref") for item in tool_evidence if item.get("evidence_ref")
         ]
-        return {
-            "current_intent": {
+        return ContextSnapshot(
+            current_intent={
                 "intent_type": state.get("intent_type"),
                 "answer_mode": state.get("answer_mode"),
                 "target_categories": state.get("target_categories", []),
@@ -119,12 +121,12 @@ class ContextBuilder:
                 "revision_id": state.get("revision_id", ""),
                 "is_revision": state.get("is_revision", False),
             },
-            "user_constraints": {
+            user_constraints={
                 "hard_constraints": _hard_constraints(constraints, state),
                 "soft_preferences": _soft_preferences(constraints, state),
                 "negative_constraints": _negative_constraints(constraints),
             },
-            "planning_state": {
+            planning_state={
                 "dag_plan": _public_dag_plan(state.get("dag_plan", {})),
                 "candidate_summary": candidate_summary,
                 "recommended_summary": recommended_summary,
@@ -133,27 +135,26 @@ class ContextBuilder:
                 "current_phase": _infer_current_phase(state),
                 "errors": _public_issues(state.get("errors", []), limit=8),
             },
-            "tool_evidence": tool_evidence,
-            "conversation_summary": _conversation_summary(state),
-            "poi_knowledge": (
+            tool_evidence=tool_evidence,
+            conversation_summary=_conversation_summary(state),
+            poi_knowledge=(
                 state.get("poi_knowledge", {})
                 if isinstance(state.get("poi_knowledge"), dict)
                 else {}
             ),
-            "prompt_meta": {
+            prompt_meta={
                 "agent_name": agent_name,
                 "token_budget": token_budget,
                 "top_k_per_category": top_k_per_category,
-                "clipped_fields": clipped_fields,
+                "clipped_fields": clipped_fields1 + clipped_fields2 + clipped_fields3,
                 "evidence_refs": evidence_refs,
                 "built_at": int(time.time()),
             },
-        }
+        )
 
     @staticmethod
     def merge_revision_into_intent(
-        previous_intent: dict[str, Any],
-        revision: dict[str, Any],
+        previous_intent: dict[str, Any], revision: dict[str, Any]
     ) -> dict[str, Any]:
         """把多轮需求变更合并到当前 intent。
 
@@ -184,10 +185,9 @@ class ContextBuilder:
                 if new_value not in (None, "", []):
                     soft[key] = new_value
             for key in ("excluded_keywords", "avoid_tags", "must_not_pois"):
-                negative[key] = _dedupe([
-                    *_safe_list(negative.get(key)),
-                    *_safe_list(revision_negative.get(key)),
-                ])
+                negative[key] = _dedupe(
+                    [*_safe_list(negative.get(key)), *_safe_list(revision_negative.get(key))]
+                )
             return {
                 **previous_intent,
                 "hard_constraints": hard,
@@ -214,10 +214,9 @@ class ContextBuilder:
             *_safe_list(merged.get("excluded_keywords")),
             *_safe_list(revision.get("excluded_keywords")),
         ])
-        merged["must_not_pois"] = _dedupe([
-            *_safe_list(merged.get("must_not_pois")),
-            *_safe_list(revision.get("must_not_pois")),
-        ])
+        merged["must_not_pois"] = _dedupe(
+            [*_safe_list(merged.get("must_not_pois")), *_safe_list(revision.get("must_not_pois"))]
+        )
         merged["conflicts"] = conflicts
         return merged
 
@@ -329,26 +328,20 @@ def _negative_constraints(constraints: dict[str, Any]) -> dict[str, Any]:
 
 
 def _top_k_pois_by_category(
-    value: Any,
-    top_k: int,
-    clipped_fields: list[str],
-    field_name: str,
-) -> dict[str, list[dict[str, Any]]]:
+    value: Dict[str, List[str]], top_k: int, field_name: str
+) -> Tuple[dict[str, list[dict[str, Any]]], List[str]]:
     """按类别裁剪候选 POI，只保留 prompt 必需字段。"""
 
-    if not isinstance(value, dict):
-        return {}
+    clipped_fields = []
     result: dict[str, list[dict[str, Any]]] = {}
     for category, items in value.items():
-        if not isinstance(items, list):
-            continue
         if len(items) > top_k:
             clipped_fields.append(f"{field_name}.{category}[{top_k}:{len(items)}]")
         sorted_items = sorted(
             items, key=lambda item: item.get("score", item.get("rating", 0)), reverse=True
         )
         result[str(category)] = [_compact_poi(item) for item in sorted_items[:top_k]]
-    return result
+    return result, clipped_fields
 
 
 def _compact_poi(item: dict[str, Any]) -> dict[str, Any]:
@@ -372,17 +365,12 @@ def _compact_poi(item: dict[str, Any]) -> dict[str, Any]:
     return {key: item.get(key) for key in allowed if item.get(key) not in (None, "", [])}
 
 
-def _tool_evidence(
-    state: dict[str, Any],
-    *,
-    top_k: int,
-    clipped_fields: list[str],
-) -> list[dict[str, Any]]:
+def _tool_evidence(state: dict[str, Any], *, top_k: int) -> Tuple[list[dict[str, Any]], List[str]]:
     """读取状态中的工具证据摘要，不把完整结果放进 prompt。"""
-
+    clipped_fields = []
     evidence = state.get("tool_evidence", []) or []
     if not isinstance(evidence, list):
-        return []
+        return [], []
     if not evidence and isinstance(state.get("candidate_pois"), dict):
         counts = _count_mapping(state.get("candidate_pois", {}))
         if counts:
@@ -412,7 +400,7 @@ def _tool_evidence(
             "fallback_used": bool(item.get("fallback_used")),
             "evidence_ref": item.get("evidence_ref") or _evidence_ref(item),
         })
-    return result
+    return result, clipped_fields
 
 
 def _conversation_summary(state: dict[str, Any]) -> dict[str, Any]:

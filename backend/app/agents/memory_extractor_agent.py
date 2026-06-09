@@ -22,7 +22,7 @@ def extract_memory_updates(
     因此 Memory 写入优先走 LLM 结构化抽取，失败时调用方再走保守规则兜底。
     """
 
-    context_snapshot = ContextBuilder().build_for(
+    context_snapshot = ContextBuilder.build_for(
         "memory_extractor",
         _state_for_context(query=query, user_profile=user_profile or {}),
     )
@@ -77,7 +77,7 @@ def extract_revision_constraints(
 ) -> dict[str, Any] | None:
     """用 LLM 把中途修改需求转成结构化约束。"""
 
-    context_snapshot = ContextBuilder().build_for(
+    context_snapshot = ContextBuilder.build_for(
         "revision_parser",
         _state_for_context(
             query=query,

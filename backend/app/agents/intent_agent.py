@@ -127,9 +127,8 @@ def _build_prompt(
     用户画像和 Memory 只能作为软偏好，不得被模型复制成“本轮明确约束”。
     """
 
-    context_builder = ContextBuilder()
-    profile_context = context_builder.build_user_profile_context(user_profile)
-    context_snapshot = context_builder.build_for(
+    profile_context = ContextBuilder.build_user_profile_context(user_profile)
+    context_snapshot = ContextBuilder.build_for(
         "intent_router",
         {
             "user_query": query,

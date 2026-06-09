@@ -6,7 +6,7 @@ from app.context.context_builder import ContextBuilder
 def test_context_builder_limits_memory_snippets() -> None:
     """LLM 上下文只注入少量记忆摘要，不塞完整历史。"""
 
-    context = ContextBuilder().build_user_profile_context({
+    context = ContextBuilder.build_user_profile_context({
         "memory_profile": {
             "preferred_city": "北京",
             "favorite_categories": {"poi_entertainment": 5, "poi_restaurant": 2},
@@ -29,7 +29,7 @@ def test_context_builder_limits_memory_snippets() -> None:
 def test_context_builder_state_context_excludes_full_tool_payloads() -> None:
     """状态上下文只输出候选统计，不输出完整 POI 列表。"""
 
-    context = ContextBuilder().build_state_context({
+    context = ContextBuilder.build_state_context({
         "user_query": "周末唱歌",
         "intent_type": "full_trip_plan",
         "constraints": {"budget": 200, "llm_understanding": {"large": "payload"}},
@@ -71,7 +71,7 @@ def test_context_snapshot_preserves_hard_constraints_and_clips_pois() -> None:
         "errors": [],
     }
 
-    snapshot = ContextBuilder().build_for("planner_agent", state, top_k_per_category=5)
+    snapshot = ContextBuilder.build_for("planner_agent", state, top_k_per_category=5)
 
     assert snapshot["user_constraints"]["hard_constraints"]["people_count"] == 2
     assert snapshot["user_constraints"]["hard_constraints"]["budget"] == 1000
