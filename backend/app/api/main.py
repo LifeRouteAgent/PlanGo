@@ -12,10 +12,14 @@ from fastapi.middleware.cors import CORSMiddleware
 # plans：方案相关接口，例如查询、收藏、详情
 # trip：行程规划主接口
 from app.api.routes import compat, export, plans, trip
+from app.bus.subscribers import install_frontend_progress_subscriber
 from app.runtime.runtime_paths import ensure_runtime_dirs
 
 # 在函数启动之前, 先确认运行时所需要的目录是否存在
 ensure_runtime_dirs()
+
+# 启动前端进度订阅器，让 bus 事件可以被前端监听到
+install_frontend_progress_subscriber()
 
 # 创建 FastAPI 应用实例
 # title 会显示在接口文档页面中
@@ -23,49 +27,39 @@ ensure_runtime_dirs()
 app = FastAPI(title="LifeRouteAgent API", version="0.1.0")
 
 
-# 给 FastAPI 应用添加 CORS 跨域中间件
-# 作用：允许前端开发服务器访问后端接口
+# 给 FastAPI 应用添加 CORS 跨域中间件, 作用：允许前端开发服务器访问后端接口
 app.add_middleware(
     CORSMiddleware,
-    # 允许访问后端的前端地址列表
-    # Vite 默认开发端口通常是 5173
-    allow_origins=[
-        "http://127.0.0.1:5173",  # 允许 127.0.0.1:5173 访问
-        "http://localhost:5173",  # 允许 localhost:5173 访问
-    ],
+    # 允许访问后端的前端地址列表, Vite 默认开发端口通常是 5173
+    allow_origins=["http://127.0.0.1:5173", "http://localhost:5173"],
     # 是否允许携带 Cookie、Authorization 等凭证信息
     allow_credentials=True,
-    # 允许所有 HTTP 方法
-    # 例如 GET、POST、PUT、DELETE、OPTIONS 等
+    # 允许所有 HTTP 方法. 例如 GET、POST、PUT、DELETE、OPTIONS 等
     allow_methods=["*"],
-    # 允许所有请求头
-    # 例如 Content-Type、Authorization 等
+    # 允许所有请求头 例如 Content-Type、Authorization 等
     allow_headers=["*"],
 )
 
 
 # 注册行程规划相关路由
-# 例如 /trip/plan 之类的接口，具体路径取决于 trip.router 内部定义
 app.include_router(trip.router)
 
-# 注册方案管理相关路由
-# 例如方案详情、方案列表、方案保存等接口
+# 注册方案管理相关路由, 例如方案详情、方案列表、方案保存等接口
 app.include_router(plans.router)
 
-# 注册导出相关路由
-# 例如导出 PDF、导出行程文件等接口
+# 注册导出相关路由, 例如导出 PDF、导出行程文件等接口
 app.include_router(export.router)
 
-# 注册兼容旧版本的接口路由
-# 用于兼容之前前端或旧 API 调用方式
+# 注册兼容旧版本的接口路由, 用于兼容之前前端或旧 API 调用方式
 app.include_router(compat.router)
 
 
-# 定义健康检查接口
-# 访问 GET /health 时，会返回 {"status": "ok"}
-# 通常用于检查后端服务是否正常启动
 @app.get("/health")
 def health() -> dict[str, str]:
+    """
+    定义健康检查接口, 访问 GET /health 时，会返回 {"status": "ok"} 通常用于检查后端服务是否正常启动
+    :return:
+    """
     # 返回服务状态
     return {"status": "ok"}
 

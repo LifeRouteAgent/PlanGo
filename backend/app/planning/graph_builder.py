@@ -4,16 +4,11 @@ from typing import Any
 
 from langgraph.graph import END, START, StateGraph
 
-from app.bus.event import Event
+from app.bus.event import Event, EventType
 from app.bus.event_bus import publish_event_sync
 from app.planning.nodes import GRAPH_NODES
-from app.planning.nodes.intent_nodes import (
-    request_route,
-)
-from app.planning.nodes.validation_nodes import (
-    failure_route,
-    post_check_route,
-)
+from app.planning.nodes.intent_nodes import request_route
+from app.planning.nodes.validation_nodes import failure_route, post_check_route
 from app.planning.state import PlanningState, create_planning_state
 
 
@@ -117,7 +112,7 @@ def _instrument_node(name: str, node):
 
 def _publish_event(
     state: PlanningState,
-    event_type: str,
+    event_type: EventType,
     *,
     node_name: str | None = None,
     status: str | None = None,
@@ -146,12 +141,12 @@ def _publish_business_event(name: str, state: PlanningState, patch: dict[str, An
 
 def _business_event_payload(
     name: str, state: PlanningState, patch: dict[str, Any]
-) -> tuple[str | None, dict[str, Any]]:
+) -> tuple[EventType | None, dict[str, Any]]:
     if name == "intent_resolver":
         understanding = patch.get("llm_understanding") or state.llm_understanding
         if understanding:
             return (
-                "intent_parsed",
+                EventType.INTENT_PARSED,
                 {
                     "request_type": understanding.intent.request_type,
                     "target_categories": list(
@@ -162,48 +157,57 @@ def _business_event_payload(
             )
     if name == "constraint_builder":
         recall = patch.get("recall_plan") or state.recall_plan
-        return ("slots_generated", {"slot_count": len(recall.target_slots) if recall else 0})
+        return (
+            EventType.SLOTS_GENERATED,
+            {"slot_count": len(recall.target_slots) if recall else 0},
+        )
     if name == "recall_plan_compiler":
         compiled = patch.get("compiled_recall_plan") or state.compiled_recall_plan
-        return ("recall_plan_created", {"query_count": len(compiled.queries) if compiled else 0})
+        return (
+            EventType.RECALL_PLAN_CREATED,
+            {"query_count": len(compiled.queries) if compiled else 0},
+        )
     if name == "collector":
         candidates = patch.get("candidates")
         stats = candidates.recall_stats if candidates else state.candidates.recall_stats
-        return ("poi_recalled", {"total_count": stats.total_raw_count})
+        return (EventType.POI_RECALLED, {"total_count": stats.total_raw_count})
     if name == "poi_scorer":
         candidates = patch.get("candidates")
         scored = candidates.scored_candidates if candidates else state.candidates.scored_candidates
-        return ("poi_scored", {"total_count": sum(len(items) for items in scored.values())})
+        return (EventType.POI_SCORED, {"total_count": sum(len(items) for items in scored.values())})
     if name == "candidate_pool_balancer":
         candidates = patch.get("candidates")
         balanced = (
             candidates.balanced_candidates if candidates else state.candidates.balanced_candidates
         )
         return (
-            "poi_filtered",
+            EventType.POI_FILTERED,
             {"balanced_counts": {slot: len(items) for slot, items in balanced.items()}},
         )
     if name == "route_planner":
         plans = patch.get("plans")
-        return ("plan_generated", {"plan_count": len(plans.candidate_plans) if plans else 0})
+        return (
+            EventType.PLAN_GENERATED,
+            {"plan_count": len(plans.candidate_plans) if plans else 0},
+        )
     if name == "availability_checker":
         plans = patch.get("plans")
         return (
-            "plan_validated",
+            EventType.PLAN_VALIDATED,
             {"available_plan_count": len(plans.candidate_plans) if plans else 0},
         )
     if name == "failure_analyzer":
         debug = patch.get("debug")
         reason = (debug.recall_debug if debug else state.debug.recall_debug).get("failure_reason")
-        return ("plan_insufficient", {"failure_reason": reason or "unknown"})
+        return (EventType.PLAN_INSUFFICIENT, {"failure_reason": reason or "unknown"})
     if name == "fallback_relaxation":
         return (
-            "constraint_relaxed",
+            EventType.CONSTRAINT_RELAXED,
             {"failure_reason": state.debug.recall_debug.get("failure_reason") or "unknown"},
         )
     if name == "final_ranker":
         plans = patch.get("plans")
-        return ("plan_ranked", {"plan_count": len(plans.ranked_plans) if plans else 0})
+        return (EventType.PLAN_RANKED, {"plan_count": len(plans.ranked_plans) if plans else 0})
     if name == "response_generator":
         return ("final_response_finished", {})
     return (None, {})

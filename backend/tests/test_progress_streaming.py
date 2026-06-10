@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import time
 
-from app.bus.event import Event
+from app.bus.event import Event, EventType
 from app.bus.event_bus import InMemoryEventBus, publish_event_sync
 from app.bus.subscribers.frontend_subscriber import FrontendSubscriber
 from app.bus.subscribers.progress_projector import ProgressProjector
@@ -19,9 +19,9 @@ def test_event_bus_subscribe_and_publish() -> None:
         seen: list[str] = []
         bus.subscribe("run_started", lambda event: seen.append(event.event_type))
 
-        await bus.publish(Event(event_type="run_started", request_id="req_1"))
+        await bus.publish(Event(event_type=EventType.RUN_STARTED, request_id="req_1"))
 
-        assert seen == ["run_started"]
+        assert seen == [EventType.RUN_STARTED]
 
     asyncio.run(run())
 
@@ -32,17 +32,17 @@ def test_event_bus_wildcard_subscription() -> None:
         seen: list[str] = []
         bus.subscribe("*", lambda event: seen.append(event.event_type))
 
-        await bus.publish(Event(event_type="node_started", request_id="req_1"))
-        await bus.publish(Event(event_type="poi_recalled", request_id="req_1"))
+        await bus.publish(Event(event_type=EventType.NODE_STARTED, request_id="req_1"))
+        await bus.publish(Event(event_type=EventType.POI_RECALLED, request_id="req_1"))
 
-        assert seen == ["node_started", "poi_recalled"]
+        assert seen == [EventType.NODE_STARTED, EventType.POI_RECALLED]
 
     asyncio.run(run())
 
 
 def test_progress_projector_maps_and_sanitizes_events() -> None:
     event = Event(
-        event_type="tool_failed",
+        event_type=EventType.TOOL_FAILED,
         request_id="req_1",
         payload={
             "traceback": "Traceback: secret stack",
@@ -68,7 +68,7 @@ def test_frontend_subscriber_pushes_projected_event_not_raw_event() -> None:
 
         await subscriber.handle(
             Event(
-                event_type="node_started",
+                event_type=EventType.NODE_STARTED,
                 request_id="req_1",
                 node_name="collector",
                 payload={"sql": "SELECT * FROM poi_restaurant"},
@@ -113,7 +113,7 @@ def test_sse_encode_format() -> None:
 
 def test_large_payload_does_not_enter_frontend_event() -> None:
     event = Event(
-        event_type="poi_recalled",
+        event_type=EventType.POI_RECALLED,
         request_id="req_1",
         payload={"items": [{"name": str(index)} for index in range(300)], "total_count": 300},
     )
@@ -129,11 +129,11 @@ def test_background_plan_progress_stream_receives_key_events(monkeypatch) -> Non
 
     def fake_run(initial):
         for event_type, node_name, payload in [
-            ("run_started", None, {}),
-            ("node_started", "collector", {}),
-            ("poi_recalled", "collector", {"total_count": 42}),
-            ("plan_generated", "route_planner", {"plan_count": 5}),
-            ("run_finished", None, {"plan_count": 3}),
+            (EventType.RUN_STARTED, None, {}),
+            (EventType.NODE_STARTED, "collector", {}),
+            (EventType.POI_RECALLED, "collector", {"total_count": 42}),
+            (EventType.PLAN_GENERATED, "route_planner", {"plan_count": 5}),
+            (EventType.RUN_FINISHED, None, {"plan_count": 3}),
         ]:
             publish_event_sync(
                 Event(

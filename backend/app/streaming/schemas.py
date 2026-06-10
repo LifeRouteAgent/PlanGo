@@ -1,11 +1,18 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Any, Literal
+from enum import Enum
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-ProgressStatus = Literal["pending", "running", "success", "warning", "failed"]
+
+class ProgressStatus(str, Enum):
+    PENDING = "pending"
+    RUNNING = "running"
+    SUCCESS = "success"
+    WARNING = "warning"
+    FAILED = "failed"
 
 
 class FrontendProgressEvent(BaseModel):

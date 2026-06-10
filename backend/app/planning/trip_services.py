@@ -5,11 +5,8 @@ import threading
 from collections.abc import Iterator
 from typing import Any
 
-from app.bus.event import Event  # 导入事件对象，用于封装运行过程中的事件
+from app.bus.event import Event, EventType  # 导入事件对象，用于封装运行过程中的事件
 from app.bus.event_bus import publish_event_sync  # 导入同步发布事件的方法
-
-# 安装前端进度订阅器
-from app.bus.subscribers.frontend_subscriber import install_frontend_progress_subscriber
 
 # 导入 V2 版本的规划图，也就是核心 LangGraph 工作流
 from app.planning.graph_builder import planning_graph_v2
@@ -36,8 +33,6 @@ from app.observability.trace_recorder import new_id, set_trace_context
 # 构造前端展示用的 agent 思考过程 payload
 from app.observability.trip_progress import build_agent_thinking_payload
 from app.streaming.stream_manager import stream_manager  # 导入流式管理器，用于主动推送规划进度
-
-install_frontend_progress_subscriber()  # 启动前端进度订阅器，让 bus 事件可以被前端监听到
 
 
 class TripPlanningService:
@@ -213,7 +208,7 @@ def create_v2_initial_state(request: TripPlanRequest, *, session_id: str) -> Pla
 
 
 def run_v2_state_to_legacy(initial: PlanningState) -> dict[str, Any]:
-    _publish_run_event(initial, "run_started", status="running")  # 发布运行开始事件
+    _publish_run_event(initial, EventType.RUN_STARTED, status="running")  # 发布运行开始事件
 
     try:
         result = planning_graph_v2.invoke(initial)  # 同步执行 Planning Graph V2
@@ -226,7 +221,7 @@ def run_v2_state_to_legacy(initial: PlanningState) -> dict[str, Any]:
 
         _publish_run_event(  # 发布运行完成事件
             state,  # 当前最终状态
-            "run_finished",  # 事件类型：运行完成
+            EventType.RUN_FINISHED,  # 事件类型：运行完成
             status="success",  # 状态：成功
             payload={
                 "plan_count": len(legacy.get("ranked_plans") or []),  # 输出方案数量
@@ -239,7 +234,7 @@ def run_v2_state_to_legacy(initial: PlanningState) -> dict[str, Any]:
     except Exception as exc:
         _publish_run_event(  # 如果运行异常，发布失败事件
             initial,  # 使用初始状态作为事件上下文
-            "run_failed",  # 事件类型：运行失败
+            EventType.RUN_FAILED,  # 事件类型：运行失败
             status="failed",  # 状态：失败
             payload={
                 "error_summary": exc.__class__.__name__

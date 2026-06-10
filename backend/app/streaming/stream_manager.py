@@ -40,7 +40,7 @@ class StreamManager:
         if target is not None:
             target.put_nowait(CLOSE_SENTINEL)
 
-    async def listen(self, request_id: str, *, heartbeat_seconds: float = 15) -> AsyncIterator[Any]:
+    async def listen(self, request_id: str, heartbeat_seconds: float = 15) -> AsyncIterator[Any]:
         self.register(request_id)
         target = self._queues[request_id]
         try:

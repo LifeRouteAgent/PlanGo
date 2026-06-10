@@ -6,33 +6,24 @@ from typing import Any
 
 from fastapi.responses import StreamingResponse
 
-from app.streaming.stream_manager import StreamManager, stream_manager
+from app.streaming.stream_manager import stream_manager
 
 
 def sse_encode(event: str, data: dict[str, Any]) -> str:
     return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False, default=str)}\n\n"
 
 
-async def progress_event_stream(
-    request_id: str,
-    *,
-    manager: StreamManager | None = None,
-) -> AsyncIterator[str]:
-    target = manager or stream_manager
+async def progress_event_stream(request_id: str) -> AsyncIterator[str]:
+    target = stream_manager
     async for item in target.listen(request_id):
         if isinstance(item, dict) and item.get("type") == "heartbeat":
             yield sse_encode("heartbeat", item)
             continue
         event_type = "progress"
         if isinstance(item, dict):
-            if item.get("type") == "final":
-                event_type = "final"
-            elif item.get("type") == "final_result":
-                event_type = "final_result"
-            elif item.get("type") == "error":
-                event_type = "error"
-            elif item.get("type") == "warning":
-                event_type = "progress"
+            item_type = item.get("type", "")
+            if item_type in {"final", "final_result", "error"}:
+                event_type = item_type
         yield sse_encode(event_type, item if isinstance(item, dict) else {"message": str(item)})
 
 

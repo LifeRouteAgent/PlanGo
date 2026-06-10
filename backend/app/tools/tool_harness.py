@@ -18,6 +18,7 @@ from app.memory.memory_store import (
 )
 from app.observability.trace_recorder import record_trace_event
 from app.tools.tool_policy import ToolCallRequest, ToolCallResult, ToolPolicy
+from app.bus.event import EventType
 
 # todo: 这个类放在 services 文件夹下面是否合适呢?
 logger = logging.getLogger("liferoute.tool_harness")
@@ -181,7 +182,7 @@ class ToolHarness:
         record_trace_event("tool_started", _redact_request(request))
         result = self.run(fn, *args, **kwargs)
         error_code = None if result.success else policy.classify_error(result.error)
-        event_type = "tool_succeeded" if result.success else "tool_failed"
+        event_type = EventType.TOOL_SUCCEEDED if result.success else EventType.TOOL_FAILED
         record_trace_event(
             event_type,
             {
