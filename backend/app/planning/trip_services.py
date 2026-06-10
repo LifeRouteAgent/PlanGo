@@ -299,7 +299,7 @@ def _run_v2_progress_job(initial: PlanningState) -> None:
 
 def _publish_run_event(
     state: PlanningState,  # 当前规划状态
-    event_type: str,  # 事件类型，比如 run_started、run_finished、run_failed
+    event_type: EventType,  # 事件类型，比如 run_started、run_finished、run_failed
     *,
     status: str,  # 事件状态，比如 running、success、failed
     payload: dict[str, Any] | None = None,  # 事件附加数据

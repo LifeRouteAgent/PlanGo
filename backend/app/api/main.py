@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 # 导入 FastAPI 主类，用来创建后端应用实例
 from fastapi import FastAPI
 
@@ -13,6 +15,8 @@ from fastapi.middleware.cors import CORSMiddleware
 # trip：行程规划主接口
 from app.api.routes import compat, export, plans, trip
 from app.bus.subscribers import install_frontend_progress_subscriber
+from app.planning.graph_builder import planning_graph_v2
+from app.planning.state import PlanningState, create_planning_state
 from app.runtime.runtime_paths import ensure_runtime_dirs
 
 # 在函数启动之前, 先确认运行时所需要的目录是否存在
@@ -64,12 +68,16 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
-# 定义一个本地调试函数
-# 作用：不通过 HTTP 接口，直接在 Python 代码里运行一次规划流程
+def run_planning_request(user_message: str, **kwargs: Any) -> PlanningState:
+    state = create_planning_state(user_message, **kwargs)
+    result = planning_graph_v2.invoke(state)
+    return result
+
+
 def run_once(user_query: str) -> dict:
-    # 导入规划图执行函数
-    # 放在函数内部导入，可以避免应用启动时就加载完整规划模块
-    from app.planning.graph_builder import run_planning_request
+    """
+    定义一个本地调试函数. 不通过 HTTP 接口, 直接在 Python 代码里运行一次规划流程
+    """
 
     # 导入状态转换函数
     # 作用：把新的 PlanningState 转换成旧版接口兼容的 dict 格式

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from app.planning.graph_builder import run_planning_request
+from app.api.main import run_planning_request
 from app.planning.state import planning_state_to_legacy
 
 

@@ -9,7 +9,7 @@ from app.bus.event_bus import publish_event_sync
 from app.planning.nodes import GRAPH_NODES
 from app.planning.nodes.intent_nodes import request_route
 from app.planning.nodes.validation_nodes import failure_route, post_check_route
-from app.planning.state import PlanningState, create_planning_state
+from app.planning.state import PlanningState
 
 
 def build_planning_graph_v2():
@@ -89,21 +89,23 @@ def build_planning_graph_v2():
 def _instrument_node(name: str, node):
     def wrapped(value: PlanningState | dict[str, Any]) -> dict[str, Any]:
         state = value if isinstance(value, PlanningState) else PlanningState.model_validate(value)
-        _publish_event(state, "node_started", node_name=name, status="running")
+        _publish_event(state, EventType.NODE_STARTED, node_name=name, status="running")
         if name == "response_generator":
-            _publish_event(state, "final_response_started", node_name=name, status="running")
+            _publish_event(
+                state, EventType.FINAL_RESPONSE_STARTED, node_name=name, status="running"
+            )
         try:
             patch = node(value)
         except Exception as exc:
             _publish_event(
                 state,
-                "node_failed",
+                EventType.NODE_FAILED,
                 node_name=name,
                 status="failed",
                 payload={"error_summary": exc.__class__.__name__},
             )
             raise
-        _publish_event(state, "node_finished", node_name=name, status="success")
+        _publish_event(state, EventType.NODE_FINISHED, node_name=name, status="success")
         _publish_business_event(name, state, patch if isinstance(patch, dict) else {})
         return patch
 
@@ -142,89 +144,85 @@ def _publish_business_event(name: str, state: PlanningState, patch: dict[str, An
 def _business_event_payload(
     name: str, state: PlanningState, patch: dict[str, Any]
 ) -> tuple[EventType | None, dict[str, Any]]:
-    if name == "intent_resolver":
-        understanding = patch.get("llm_understanding") or state.llm_understanding
-        if understanding:
+    match name:
+        case "intent_resolver":
+            understanding = patch.get("llm_understanding") or state.llm_understanding
+            if understanding:
+                return (
+                    EventType.INTENT_PARSED,
+                    {
+                        "request_type": understanding.intent.request_type,
+                        "target_categories": list(
+                            understanding.poi_recall_intent.target_logical_categories
+                        ),
+                        "slot_count": len(understanding.slots.required_slots),
+                    },
+                )
+        case "constraint_builder":
+            recall = patch.get("recall_plan") or state.recall_plan
             return (
-                EventType.INTENT_PARSED,
-                {
-                    "request_type": understanding.intent.request_type,
-                    "target_categories": list(
-                        understanding.poi_recall_intent.target_logical_categories
-                    ),
-                    "slot_count": len(understanding.slots.required_slots),
-                },
+                EventType.SLOTS_GENERATED,
+                {"slot_count": len(recall.target_slots) if recall else 0},
             )
-    if name == "constraint_builder":
-        recall = patch.get("recall_plan") or state.recall_plan
-        return (
-            EventType.SLOTS_GENERATED,
-            {"slot_count": len(recall.target_slots) if recall else 0},
-        )
-    if name == "recall_plan_compiler":
-        compiled = patch.get("compiled_recall_plan") or state.compiled_recall_plan
-        return (
-            EventType.RECALL_PLAN_CREATED,
-            {"query_count": len(compiled.queries) if compiled else 0},
-        )
-    if name == "collector":
-        candidates = patch.get("candidates")
-        stats = candidates.recall_stats if candidates else state.candidates.recall_stats
-        return (EventType.POI_RECALLED, {"total_count": stats.total_raw_count})
-    if name == "poi_scorer":
-        candidates = patch.get("candidates")
-        scored = candidates.scored_candidates if candidates else state.candidates.scored_candidates
-        return (EventType.POI_SCORED, {"total_count": sum(len(items) for items in scored.values())})
-    if name == "candidate_pool_balancer":
-        candidates = patch.get("candidates")
-        balanced = (
-            candidates.balanced_candidates if candidates else state.candidates.balanced_candidates
-        )
-        return (
-            EventType.POI_FILTERED,
-            {"balanced_counts": {slot: len(items) for slot, items in balanced.items()}},
-        )
-    if name == "route_planner":
-        plans = patch.get("plans")
-        return (
-            EventType.PLAN_GENERATED,
-            {"plan_count": len(plans.candidate_plans) if plans else 0},
-        )
-    if name == "availability_checker":
-        plans = patch.get("plans")
-        return (
-            EventType.PLAN_VALIDATED,
-            {"available_plan_count": len(plans.candidate_plans) if plans else 0},
-        )
-    if name == "failure_analyzer":
-        debug = patch.get("debug")
-        reason = (debug.recall_debug if debug else state.debug.recall_debug).get("failure_reason")
-        return (EventType.PLAN_INSUFFICIENT, {"failure_reason": reason or "unknown"})
-    if name == "fallback_relaxation":
-        return (
-            EventType.CONSTRAINT_RELAXED,
-            {"failure_reason": state.debug.recall_debug.get("failure_reason") or "unknown"},
-        )
-    if name == "final_ranker":
-        plans = patch.get("plans")
-        return (EventType.PLAN_RANKED, {"plan_count": len(plans.ranked_plans) if plans else 0})
-    if name == "response_generator":
-        return ("final_response_finished", {})
-    return (None, {})
+        case "recall_plan_compiler":
+            compiled = patch.get("compiled_recall_plan") or state.compiled_recall_plan
+            return (
+                EventType.RECALL_PLAN_CREATED,
+                {"query_count": len(compiled.queries) if compiled else 0},
+            )
+        case "collector":
+            candidates = patch.get("candidates")
+            stats = candidates.recall_stats if candidates else state.candidates.recall_stats
+            return EventType.POI_RECALLED, {"total_count": stats.total_raw_count}
+        case "poi_scorer":
+            candidates = patch.get("candidates")
+            scored = (
+                candidates.scored_candidates if candidates else state.candidates.scored_candidates
+            )
+            return EventType.POI_SCORED, {
+                "total_count": sum(len(items) for items in scored.values())
+            }
+        case "candidate_pool_balancer":
+            candidates = patch.get("candidates")
+            balanced = (
+                candidates.balanced_candidates
+                if candidates
+                else state.candidates.balanced_candidates
+            )
+            return (
+                EventType.POI_FILTERED,
+                {"balanced_counts": {slot: len(items) for slot, items in balanced.items()}},
+            )
+        case "route_planner":
+            plans = patch.get("plans")
+            return (
+                EventType.PLAN_GENERATED,
+                {"plan_count": len(plans.candidate_plans) if plans else 0},
+            )
+        case "availability_checker":
+            plans = patch.get("plans")
+            return (
+                EventType.PLAN_VALIDATED,
+                {"available_plan_count": len(plans.candidate_plans) if plans else 0},
+            )
+        case "failure_analyzer":
+            debug = patch.get("debug")
+            reason = (debug.recall_debug if debug else state.debug.recall_debug).get(
+                "failure_reason"
+            )
+            return EventType.PLAN_INSUFFICIENT, {"failure_reason": reason or "unknown"}
+        case "fallback_relaxation":
+            return (
+                EventType.CONSTRAINT_RELAXED,
+                {"failure_reason": state.debug.recall_debug.get("failure_reason") or "unknown"},
+            )
+        case "final_ranker":
+            plans = patch.get("plans")
+            return EventType.PLAN_RANKED, {"plan_count": len(plans.ranked_plans) if plans else 0}
+        case "response_generator":
+            return EventType.FINAL_RESPONSE_FINISHED, {}
+
+    return None, {}
 
 
 planning_graph_v2 = build_planning_graph_v2()
-
-
-def run_planning_graph(input_data: PlanningState | dict[str, Any]) -> PlanningState:
-    state = (
-        input_data
-        if isinstance(input_data, PlanningState)
-        else PlanningState.model_validate(input_data)
-    )
-    result = planning_graph_v2.invoke(state)
-    return result if isinstance(result, PlanningState) else PlanningState.model_validate(result)
-
-
-def run_planning_request(user_message: str, **kwargs: Any) -> PlanningState:
-    return run_planning_graph(create_planning_state(user_message, **kwargs))

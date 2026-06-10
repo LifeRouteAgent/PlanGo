@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from app.planning.graph_builder import run_planning_request
+from app.api.main import run_planning_request
 from app.planning.payloads import normalize_response_payload
 from app.planning.services import (
     _route_segments_for_items,

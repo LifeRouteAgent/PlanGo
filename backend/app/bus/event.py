@@ -14,6 +14,7 @@ class EventType(str, Enum):
     RUN_FAILED = "run_failed"
     NODE_STARTED = "node_started"
     NODE_FAILED = "node_failed"
+    NODE_FINISHED = "node_finished"
     INTENT_PARSED = "intent_parsed"
     SLOTS_GENERATED = "slots_generated"
     RECALL_PLAN_CREATED = "recall_plan_created"
@@ -28,6 +29,8 @@ class EventType(str, Enum):
     PARTIAL_RESULT_USED = "partial_result_used"
     TOOL_SUCCEEDED = "tool_succeeded"
     TOOL_FAILED = "tool_failed"
+    FINAL_RESPONSE_STARTED = "final_response_started"
+    FINAL_RESPONSE_FINISHED = "final_response_finished"
 
 
 FORBIDDEN_PAYLOAD_KEYS = {
