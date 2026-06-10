@@ -13,6 +13,28 @@ from app.observability.trace_recorder import record_trace_event
 from app.tools.tool_harness import ToolHarness
 from app.tools.tool_policy import ToolCallRequest
 
+# 模块级复用连接池，避免每次 LLM 调用都新建 TCP+TLS 连接
+_llm_http_client: httpx.Client | None = None
+
+
+def _get_llm_client(timeout_seconds: int) -> httpx.Client:
+    """延迟初始化并返回带连接池的 httpx.Client。
+
+    超时拆分为 connect/read/write：
+    - connect 固定 5s，避免 DNS/TLS 无限等待
+    - read 使用调用方传入的 timeout_seconds
+    - ToolHarness._run_with_timeout 作为硬安全网（timeout_seconds+2）
+    """
+    global _llm_http_client
+    if _llm_http_client is None or _llm_http_client.timeout.read != timeout_seconds:
+        _llm_http_client = httpx.Client(
+            timeout=httpx.Timeout(connect=5.0, read=float(timeout_seconds), write=10.0, pool=5.0),
+            # 设置: 活跃的最大空闲连接数, 最大并发连接数
+            limits=httpx.Limits(max_keepalive_connections=5, max_connections=10),
+            http2=True,
+        )
+    return _llm_http_client
+
 
 def call_chat_completion(
     messages: list[dict[str, str]],
@@ -37,7 +59,9 @@ def call_chat_completion(
     base_url = settings.deepseek_base_url
 
     prompt_spec = get_prompt_spec(prompt_name)
-    prompt_meta = {
+    trace_base = {
+        "provider": provider,
+        "model": model,
         "prompt_name": prompt_spec.prompt_name,
         "prompt_version": prompt_spec.prompt_version,
         "schema_name": schema_name or prompt_spec.schema_name,
@@ -45,37 +69,27 @@ def call_chat_completion(
     }
 
     if os.environ.get("PYTEST_CURRENT_TEST"):
-        record_trace_event(
-            "llm_result",
-            {
-                "provider": provider,
-                "model": model,
-                **prompt_meta,
-                "success": False,
-                "source": "pytest_disabled",
-                "latency_ms": 0,
-                "attempts": 0,
-                "error": "LLM calls are disabled during pytest; using deterministic fallback.",
-                "content_preview": "",
-            },
-        )
+        record_trace_event("llm_result", {
+            **trace_base,
+            "success": False,
+            "source": "pytest_disabled",
+            "latency_ms": 0,
+            "attempts": 0,
+            "error": "LLM calls are disabled during pytest; using deterministic fallback.",
+            "content_preview": "",
+        })
         return None
 
     if not api_key:
-        record_trace_event(
-            "llm_result",
-            {
-                "provider": provider,
-                "model": model,
-                **prompt_meta,
-                "success": False,
-                "source": "disabled",
-                "latency_ms": 0,
-                "attempts": 0,
-                "error": f"{provider.upper()} API key is empty",
-                "content_preview": "",
-            },
-        )
+        record_trace_event("llm_result", {
+            **trace_base,
+            "success": False,
+            "source": "disabled",
+            "latency_ms": 0,
+            "attempts": 0,
+            "error": f"{provider.upper()} API key is empty",
+            "content_preview": "",
+        })
         return None
 
     url = _chat_completions_url(base_url)
@@ -93,33 +107,32 @@ def call_chat_completion(
     if settings.deepseek_thinking_enabled:
         payload["thinking"] = {"type": "enabled"}
 
-    headers = {
-        "Authorization": f"Bearer {api_key}", "Content-Type": "application/json"
-    }
+    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
 
     def _request() -> str | None:
-        """实际 HTTP 调用交给 ToolHarness 处理 timeout/retry/fallback。"""
+        """实际 HTTP 调用交给 ToolHarness 处理 retry/fallback。
 
-        response = httpx.post(url, json=payload, headers=headers, timeout=timeout_seconds)
-        if response.status_code >= 400:
+        timeout 由 httpx.Client 在连接层控制（connect/read/write 分离），
+        ToolHarness._run_with_timeout 作为硬安全网兜底。
+        """
+        client = _get_llm_client(timeout_seconds)
+        try:
+            response = client.post(url, json=payload, headers=headers)
+            response.raise_for_status()
+            data = response.json()
+            return str(data["choices"][0]["message"]["content"])
+        except (httpx.HTTPStatusError, json.JSONDecodeError) as exc:
             content_type = response.headers.get("content-type", "")
             body_preview = response.text[:800].replace("\n", " ")
-            raise ValueError(
-                "LLM HTTP error "
-                f"status={response.status_code} content_type={content_type} "
-                f"url={url} body_preview={body_preview!r}"
+            error_log = (
+                "{} "
+                f"status={response.status_code} content_type={content_type} url={url} "
+                f"body_preview={body_preview!r}"
             )
-        try:
-            data = response.json()
-        except json.JSONDecodeError as exc:
-            content_type = response.headers.get("content-type", "")
-            body_preview = response.text[:500].replace("\n", " ")
-            raise ValueError(
-                "LLM response is not JSON "
-                f"status={response.status_code} content_type={content_type} "
-                f"url={url} body_preview={body_preview!r}"
-            ) from exc
-        return str(data["choices"][0]["message"]["content"])
+            if isinstance(exc, httpx.HTTPStatusError):
+                raise ValueError(error_log.format("LLM HTTP error"))
+            else:
+                raise ValueError(error_log.format("LLM response is not JSON"))
 
     harness = ToolHarness(
         name=f"llm.{provider}.chat_completion",
@@ -132,30 +145,21 @@ def call_chat_completion(
             tool_name=f"llm.{provider}.chat_completion",
             risk_level=1,
             user_id="system",
-            params={
-                "provider": provider,
-                "model": model,
-                **prompt_meta,
-            },
+            params={**trace_base},
         ),
         _request,
     )
     data = result.data if isinstance(result.data, dict) else {}
     content = data.get("value") if isinstance(data, dict) else None
-    record_trace_event(
-        "llm_result",
-        {
-            "provider": provider,
-            "model": model,
-            **prompt_meta,
-            "success": bool(result.success and content),
-            "source": result.source,
-            "latency_ms": result.latency_ms,
-            "attempts": result.attempts,
-            "error": result.error_code,
-            "content_preview": str(content)[:600] if content else "",
-        },
-    )
+    record_trace_event("llm_result", {
+        **trace_base,
+        "success": bool(result.success and content),
+        "source": result.source,
+        "latency_ms": result.latency_ms,
+        "attempts": result.attempts,
+        "error": result.error_code,
+        "content_preview": str(content)[:600] if content else "",
+    })
     return str(content) if result.success and content else None
 
 
