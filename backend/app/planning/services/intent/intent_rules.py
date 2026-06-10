@@ -22,20 +22,10 @@ CATEGORY_KEYWORDS: tuple[tuple[str, tuple[str, ...]], ...] = (
     (
         POI_ENTERTAINMENT,
         (
-            "电影",
-            "影院",
-            "KTV",
-            "ktv",
-            "娱乐",
-            "桌游",
-            "棋牌",
-            "麻将",
-            "打牌",
-            "唱歌",
-            "K歌",
-            "k歌",
-            "密室",
-            "剧本杀",
+            # fmt: off
+            "电影", "影院", "KTV", "ktv", "娱乐", "桌游", "棋牌",
+            "麻将", "打牌", "唱歌", "K歌", "k歌", "密室", "剧本杀"
+            # fmt: on
         ),
     ),
     (POI_FITNESS, ("健身", "运动", "瑜伽", "普拉提", "羽毛球", "爬山", "攀岩", "游泳")),
@@ -44,6 +34,7 @@ CATEGORY_KEYWORDS: tuple[tuple[str, tuple[str, ...]], ...] = (
     (
         POI_ATTRACTION,
         (
+            # fmt off
             "环球影城",
             "景点",
             "乐园",
@@ -54,28 +45,20 @@ CATEGORY_KEYWORDS: tuple[tuple[str, tuple[str, ...]], ...] = (
             "观光",
             "散步",
             "露营",
+            # fmt: on
         ),
     ),
 )
-
+# fmt: off
 CAPABILITY_KEYWORDS = (
-    "你能做什么",
-    "支持什么",
-    "有什么功能",
-    "怎么用",
-    "如何使用",
-    "使用说明",
-    "项目能力",
+    "你能做什么", "支持什么", "有什么功能", "怎么用",
+    "如何使用", "使用说明", "项目能力"
 )
 MODEL_QA_KEYWORDS = (
-    "你是什么模型",
-    "你用的什么模型",
-    "当前模型",
-    "什么大模型",
-    "模型是谁",
-    "你是谁开发",
-    "你是谁",
+    "你是什么模型", "你用的什么模型", "当前模型", "什么大模型",
+    "模型是谁", "你是谁开发", "你是谁"
 )
+# fmt: on
 SIMPLE_QA_KEYWORDS = ("你好", "hello", "谢谢", "hi", "早上好", "晚上好")
 
 
@@ -98,19 +81,10 @@ def detect_intent_type(query: str) -> str:
 
     categories = detect_target_categories(query)
     planning_keywords = (
-        "规划",
-        "行程",
-        "路线",
-        "安排",
-        "周末",
-        "一天",
-        "半天",
-        "上午",
-        "下午",
-        "晚上",
-        "小时",
-        "然后",
-        "再去",
+        # fmt: off
+        "规划", "行程", "路线", "安排", "周末", "一天", "半天",
+        "上午", "下午", "晚上", "小时", "然后", "再去"
+        # fmt: on
     )
     recommend_keywords = ("推荐", "找", "查", "附近", "有哪些", "来几个")
     action_keywords = ("吃", "玩", "逛", "唱", "打牌", "麻将", "棋牌", "看电影", "按摩", "运动")
@@ -133,6 +107,7 @@ def detect_target_categories(query: str) -> list[str]:
     for category, keywords in CATEGORY_KEYWORDS:
         if any(keyword in query for keyword in keywords):
             categories.append(category)
+    # gpt: `fromkeys` 在这里的作用是去重, 不用 set 的原因是为了保持插入顺序
     return list(dict.fromkeys(categories))
 
 

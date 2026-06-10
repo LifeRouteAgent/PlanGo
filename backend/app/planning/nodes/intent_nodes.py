@@ -4,7 +4,7 @@ from typing import Any
 from uuid import uuid4
 
 from app.planning.nodes.common import append_trace
-from app.planning.services.intent_service import resolve_intent
+from app.planning.services.intent.intent_service import resolve_intent
 from app.planning.state import AsyncEventInfo, PlanningState
 from app.memory.memory_event_queue import MemoryEventQueue
 from app.planning.poi_catalog_service import PoiCatalogService

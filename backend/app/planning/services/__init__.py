@@ -1,4 +1,4 @@
-from app.planning.services.intent_service import resolve_intent
+from app.planning.services.intent.intent_service import resolve_intent
 from app.planning.services.constraint_service import build_constraints
 from app.planning.services.recall_service import compile_recall_plan, collect_candidates
 from app.planning.services.candidate_service import score_candidates, balance_candidates

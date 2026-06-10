@@ -4,7 +4,8 @@ from datetime import datetime, timedelta
 
 from app.planning.policy_config import policy_config
 from app.planning.services.common import *
-from app.planning.services.intent_service import (
+from app.planning.services.common import _dedupe
+from app.planning.services.intent.intent_service import (
     _normalize_restaurant_categories,
     _normalize_restaurant_slots,
     _resolve_route_origin,

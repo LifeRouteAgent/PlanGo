@@ -181,7 +181,7 @@ def test_single_category_graph_skips_route_planner() -> None:
 
 
 def test_plan_adjustment_uses_editor_branch(monkeypatch) -> None:
-    import app.planning.services.intent_service as intent_services
+    import app.planning.services.intent.intent_service as intent_services
     from app.context.session_store import SessionStore
 
     monkeypatch.setattr(intent_services, "build_llm_understanding", lambda *args, **kwargs: None)
@@ -294,7 +294,7 @@ def test_database_catalog_exposes_real_filter_fields_and_tags() -> None:
 
 
 def test_intent_tag_mapping_only_accepts_database_catalog_tags(monkeypatch) -> None:
-    import app.planning.services.intent_service as intent_services
+    import app.planning.services.intent.intent_service as intent_services
 
     catalog = PoiCatalogService().load_catalog(query="想唱歌")
     knowledge = PoiCatalogService().background_knowledge(catalog)
@@ -346,7 +346,7 @@ def test_recall_compiler_carries_category_tag_filters() -> None:
 
 
 def test_catalog_rule_fallback_recognizes_tag_recommendation(monkeypatch) -> None:
-    import app.planning.services.intent_service as intent_services
+    import app.planning.services.intent.intent_service as intent_services
 
     catalog = PoiCatalogService().load_catalog(query="推荐唱歌的地方，不要电影院")
     knowledge = PoiCatalogService().background_knowledge(catalog)
@@ -542,7 +542,7 @@ def test_quick_start_hotspots_and_budget_templates() -> None:
 
 
 def test_message_origin_overrides_current_geo_location(monkeypatch) -> None:
-    import app.planning.services.intent_service as intent_services
+    import app.planning.services.intent.intent_service as intent_services
 
     monkeypatch.setattr(
         intent_services.PoiRepository,
@@ -570,7 +570,7 @@ def test_message_origin_overrides_current_geo_location(monkeypatch) -> None:
 
 
 def test_current_geo_location_used_when_message_origin_unresolved(monkeypatch) -> None:
-    import app.planning.services.intent_service as intent_services
+    import app.planning.services.intent.intent_service as intent_services
 
     monkeypatch.setattr(
         intent_services.PoiRepository,

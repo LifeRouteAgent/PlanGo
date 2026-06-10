@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from app.core.exceptions import AppException, NoCandidatePOIException
-from app.planning.intent_rules import detect_intent_type, detect_target_categories
+from app.planning.services.intent.intent_rules import detect_intent_type, detect_target_categories
 
 
 def test_app_exception_has_standard_error_response() -> None:
