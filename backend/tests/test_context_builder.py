@@ -26,25 +26,6 @@ def test_context_builder_limits_memory_snippets() -> None:
     assert len(context["similar_user_preferences"]) == 3
 
 
-def test_context_builder_state_context_excludes_full_tool_payloads() -> None:
-    """状态上下文只输出候选统计，不输出完整 POI 列表。"""
-
-    context = ContextBuilder.build_state_context({
-        "user_query": "周末唱歌",
-        "intent_type": "full_trip_plan",
-        "constraints": {"budget": 200, "llm_understanding": {"large": "payload"}},
-        "candidate_pois": {"poi_entertainment": [{"id": "1"}, {"id": "2"}]},
-        "recommended_pois": {"lifestyle": [{"id": "3"}]},
-        "ranked_plans": [{"id": "p1"}],
-        "errors": [],
-    })
-
-    assert context["candidate_counts"] == {"poi_entertainment": 2}
-    assert context["recommended_counts"] == {"lifestyle": 1}
-    assert "llm_understanding" not in context["constraints"]
-    assert "candidate_pois" not in context
-
-
 def test_context_snapshot_preserves_hard_constraints_and_clips_pois() -> None:
     """ContextSnapshot 应保留硬约束，同时只给 LLM top-k 工具证据。"""
 

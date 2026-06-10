@@ -75,18 +75,6 @@ class RevisionConstraintOutput(BaseModel):
     reason: str = ""
 
 
-class FollowupContextOutput(BaseModel):
-    current_turn_type: Literal[
-        "direct_answer",
-        "new_request",
-        "clarification_answer",
-        "planning_revision",
-    ] = "new_request"
-    should_merge_previous_planning: bool = False
-    use_pending_clarification: bool = False
-    reason: str = ""
-
-
 class SessionSummaryOutput(BaseModel):
     summary: str = ""
     active_constraints: dict[str, Any] = Field(default_factory=dict)
@@ -136,26 +124,6 @@ class IntentUnderstandingOutput(BaseModel):
     clarify_question: str = ""
 
 
-class CriticIssueOutput(BaseModel):
-    code: str
-    severity: Literal["info", "warning", "error"] = "warning"
-    message: str
-    suggestion: str = ""
-    target_plan_id: str | None = None
-    target_item_id: str | None = None
-    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
-
-
-class CriticOutput(BaseModel):
-    issues: list[CriticIssueOutput] = Field(default_factory=list)
-
-
-class ResponseEnrichmentOutput(BaseModel):
-    response_text: str = ""
-    plan_reasons: dict[str, str] = Field(default_factory=dict)
-    option_prompts: dict[str, list[str]] = Field(default_factory=dict)
-
-
 class ResponseItemEnrichmentOutput(BaseModel):
     id: str
     recommendation_reason: str = ""
@@ -178,10 +146,6 @@ class ResponsePlanEnrichmentOutput(BaseModel):
     cons: list[str] = Field(default_factory=list)
     plan_actions: list[ResponsePlanActionOutput] = Field(default_factory=list)
     items: list[ResponseItemEnrichmentOutput] = Field(default_factory=list)
-
-
-class ResponsePlansEnrichmentOutput(BaseModel):
-    plans: list[ResponsePlanEnrichmentOutput] = Field(default_factory=list)
 
 
 class ResponseGenerationOutput(BaseModel):

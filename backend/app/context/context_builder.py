@@ -63,26 +63,6 @@ class ContextBuilder:
             "profile_cluster": user_profile.get("profile_cluster", {}),
         }
 
-    def build_state_context(self, state: dict[str, Any]) -> dict[str, Any]:
-        """构建给 Response/Planner 使用的当前状态摘要。"""
-
-        return {
-            "user_query": state.get("user_query", ""),
-            "intent_type": state.get("intent_type", ""),
-            "answer_mode": state.get("answer_mode", ""),
-            "constraints": _public_constraints(state.get("constraints", {})),
-            "dag_plan": _public_dag_plan(state.get("dag_plan", {})),
-            "candidate_counts": _count_mapping(state.get("candidate_pois", {})),
-            "recommended_counts": _count_mapping(state.get("recommended_pois", {})),
-            "plan_count": len(state.get("ranked_plans", []) or []),
-            "error_count": len(state.get("errors", []) or []),
-            "memory_context": (
-                self.build_user_profile_context(state.get("user_profile", {})).get(
-                    "memory_context", {}
-                )
-            ),
-        }
-
     @staticmethod
     def build_for(
         agent_name: str,

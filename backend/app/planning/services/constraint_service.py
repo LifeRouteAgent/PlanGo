@@ -84,9 +84,6 @@ def build_constraints(
         hour=rules.default_start_hour, minute=0, second=0, microsecond=0
     )
     restaurant_allowed = _restaurant_allowed_for_understanding(understanding)
-    required_slots = (
-        understanding.slots.required_slots or SCENE_SLOTS.get(scene, SCENE_SLOTS["unknown"])[0]
-    )
     required_slots = [slot.slot_id for slot in slot_details] or understanding.slots.required_slots
     required_slots = _normalize_restaurant_slots(required_slots, restaurant_allowed)
     preferred_categories = understanding.poi_recall_intent.target_logical_categories
