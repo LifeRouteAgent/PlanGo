@@ -7,7 +7,7 @@ from typing import Any
 
 from app.config import settings
 from app.integrations.embedding_service import EmbeddingService
-from app.observability.trace_recorder import new_id, record_trace_event
+from app.observability.trace_recorder import new_id, TraceRecorder
 
 
 @dataclass
@@ -68,7 +68,7 @@ class VectorMemoryStore:
                 collection_name=self.memory_collection,
                 data=[self._record_to_row(record, vector)],
             )
-            record_trace_event(
+            TraceRecorder.record(
                 "tool_call",
                 {
                     "tool": "milvus.memory.upsert",
@@ -279,7 +279,7 @@ class VectorMemoryStore:
 
     def _record_failure(self, tool: str, exc: Exception) -> None:
         self._last_error = str(exc)
-        record_trace_event(
+        TraceRecorder.record(
             "tool_call",
             {
                 "tool": tool,

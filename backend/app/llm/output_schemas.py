@@ -4,7 +4,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, ValidationError
 
-from app.observability.trace_recorder import record_trace_event
+from app.observability.trace_recorder import TraceRecorder
 
 
 class LLMSchemaValidationResult(BaseModel):
@@ -166,13 +166,13 @@ def validate_llm_output(
     try:
         model = schema.model_validate(payload)
         data = model.model_dump()
-        record_trace_event(
+        TraceRecorder.record(
             "llm_schema_validated",
             {"source": source, "schema": schema.__name__, "ok": True},
         )
         return LLMSchemaValidationResult(ok=True, data=data, schema_name=schema.__name__)
     except ValidationError as exc:
-        record_trace_event(
+        TraceRecorder.record(
             "schema_validation_failed",
             {
                 "source": source,

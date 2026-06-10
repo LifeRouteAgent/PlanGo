@@ -4,7 +4,7 @@ import time
 from typing import Any
 
 from app.memory.write_service import MemoryWriteService
-from app.observability.trace_recorder import record_trace_event, set_trace_context
+from app.observability.trace_recorder import TraceRecorder, set_trace_context
 
 
 class MemoryEventProcessor:
@@ -37,7 +37,7 @@ class MemoryEventProcessor:
                     str(event.get("query") or ""),
                     user_id=user_id,
                 )
-            record_trace_event(
+            TraceRecorder.record(
                 "memory_event_processed",
                 {
                     "success": True,
@@ -46,7 +46,7 @@ class MemoryEventProcessor:
                 },
             )
         except Exception as exc:  # noqa: BLE001
-            record_trace_event(
+            TraceRecorder.record(
                 "memory_event_process_failed",
                 {
                     "success": False,

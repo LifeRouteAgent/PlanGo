@@ -9,7 +9,7 @@ from app.planning.state import AsyncEventInfo, PlanningState
 from app.memory.memory_event_queue import MemoryEventQueue
 from app.planning.poi_catalog_service import PoiCatalogService
 from app.memory.session_preference_extractor import extract_session_preference_profile
-from app.observability.trace_recorder import record_trace_event
+from app.observability.trace_recorder import TraceRecorder
 
 
 def intent_resolver_node(state: PlanningState) -> dict[str, Any]:
@@ -58,7 +58,7 @@ def async_event_emitter_node(state: PlanningState) -> dict[str, Any]:
         run_id=state.state_meta.state_id,
         session_id=state.state_meta.session_id,
     )
-    record_trace_event("planning_v2_started", {"state_id": state.state_meta.state_id})
+    TraceRecorder.record("planning_v2_started", {"state_id": state.state_meta.state_id})
     events.memory_extraction_event = AsyncEventInfo(
         enabled=True, event_id=f"mem_{uuid4().hex}", payload_summary="当前用户消息"
     )

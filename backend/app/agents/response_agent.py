@@ -6,7 +6,7 @@ from typing import Any
 from app.llm.output_schemas import ResponseGenerationOutput, validate_llm_output
 from app.llm.llm_client import call_chat_completion, extract_json_object
 from app.llm.prompt_registry import load_prompt_template
-from app.observability.trace_recorder import record_trace_event
+from app.observability.trace_recorder import TraceRecorder
 
 
 def generate_response_package(payload: dict[str, Any]) -> dict[str, Any] | None:
@@ -47,7 +47,7 @@ def generate_response_package(payload: dict[str, Any]) -> dict[str, Any] | None:
         else None
     )
     if not validation or not validation.ok:
-        record_trace_event(
+        TraceRecorder.record(
             "response_generation_skipped",
             {"reason": "schema_invalid_or_llm_unavailable", "raw_preview": str(raw or "")[:600]},
         )

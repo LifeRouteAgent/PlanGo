@@ -13,7 +13,7 @@ from app.memory.memory_event_queue import MemoryEventQueue
 from app.export.product_pdf_service import build_product_plan_pdf
 from app.tools.tool_harness import ToolHarness
 from app.tools.tool_policy import ToolCallRequest
-from app.observability.trace_recorder import record_trace_event, set_trace_context
+from app.observability.trace_recorder import TraceRecorder, set_trace_context
 
 router = APIRouter(prefix="/export", tags=["export"])
 _PDF_CACHE: dict[str, dict[str, object]] = {}
@@ -77,7 +77,7 @@ def export_plan_pdf(request: ExportPlanRequest) -> Response:
             run_id="export_pdf",
             session_id=request.session_id or "export_session",
         )
-    record_trace_event(
+    TraceRecorder.record(
         "user_action",
         {
             "action": "plan_exported_pdf",

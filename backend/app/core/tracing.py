@@ -3,7 +3,7 @@ from __future__ import annotations
 from time import perf_counter
 from typing import Any
 
-from app.observability.trace_recorder import new_id, record_trace_event
+from app.observability.trace_recorder import new_id, TraceRecorder
 
 
 def new_trace_id() -> str:
@@ -32,7 +32,7 @@ def record_node_event(
     只写摘要，不写用户原文、精确经纬度、SQL 或 LLM 完整输出。
     """
 
-    record_trace_event(
+    TraceRecorder.record(
         "graph_node_event",
         {
             "trace_id": trace_id,

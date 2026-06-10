@@ -10,7 +10,7 @@ from app.llm.output_schemas import (
     validate_llm_output,
 )
 from app.llm.prompt_registry import load_prompt_template
-from app.observability.trace_recorder import record_trace_event
+from app.observability.trace_recorder import TraceRecorder
 
 
 def extract_memory_updates(
@@ -182,7 +182,7 @@ def _call_json_extractor(
         schema_name=schema.__name__ if schema else None,
     )
     parsed = extract_json_object(raw)
-    record_trace_event(
+    TraceRecorder.record(
         "llm_semantic_extractor",
         {
             "tool": tool_name,

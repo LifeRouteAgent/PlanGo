@@ -16,7 +16,7 @@ from app.memory.memory_store import (
     make_request_hash,
     ttl_seconds_for_tool,
 )
-from app.observability.trace_recorder import record_trace_event
+from app.observability.trace_recorder import TraceRecorder
 from app.tools.tool_policy import ToolCallRequest, ToolCallResult, ToolPolicy
 from app.bus.event import EventType
 
@@ -167,10 +167,10 @@ class ToolHarness:
         request.requires_confirmation = policy.requires_confirmation(request.risk_level)
         if request.risk_level >= 3:
             request.idempotency_key = policy.ensure_idempotency_key(request)
-        record_trace_event("tool_requested", _redact_request(request))
+        TraceRecorder.record("tool_requested", _redact_request(request))
         issues = policy.validate(request)
         if issues:
-            record_trace_event("tool_failed", {**_redact_request(request), "issues": issues})
+            TraceRecorder.record("tool_failed", {**_redact_request(request), "issues": issues})
             return ToolCallResult(
                 success=False,
                 error_code=issues[0]["code"],
@@ -178,12 +178,12 @@ class ToolHarness:
                 fetched_at=_now_iso(),
             )
         if request.requires_confirmation:
-            record_trace_event("tool_confirm_required", _redact_request(request))
-        record_trace_event("tool_started", _redact_request(request))
+            TraceRecorder.record("tool_confirm_required", _redact_request(request))
+        TraceRecorder.record("tool_started", _redact_request(request))
         result = self.run(fn, *args, **kwargs)
         error_code = None if result.success else policy.classify_error(result.error)
         event_type = EventType.TOOL_SUCCEEDED if result.success else EventType.TOOL_FAILED
-        record_trace_event(
+        TraceRecorder.record(
             event_type,
             {
                 **_redact_request(request),
@@ -194,7 +194,7 @@ class ToolHarness:
             },
         )
         if result.source == "fallback":
-            record_trace_event("tool_fallback_used", _redact_request(request))
+            TraceRecorder.record("tool_fallback_used", _redact_request(request))
         return ToolCallResult(
             success=result.success,
             data=result.data if isinstance(result.data, dict) else {"value": result.data},
@@ -238,7 +238,7 @@ class ToolHarness:
         }
         self.call_log.append(entry)
         # 底层还是调用的 `TraceRecorder`
-        record_trace_event("tool_call", entry)
+        TraceRecorder.record("tool_call", entry)
         if success:
             logger.info("%s success source=%s latency=%sms", self.name, source, latency_ms)
         else:
@@ -278,7 +278,7 @@ class ToolHarness:
                 "confidence": 1.0 if source == "live" else 0.55,
                 "fallback_used": source == "fallback",
             })
-            record_trace_event(
+            TraceRecorder.record(
                 "tool_cache_put",
                 {
                     "tool_name": self.name,
@@ -288,7 +288,7 @@ class ToolHarness:
                 },
             )
         except Exception as exc:  # noqa: BLE001 - 缓存失败不能影响主工具调用。
-            record_trace_event("tool_cache_failed", {"tool_name": self.name, "error": str(exc)})
+            TraceRecorder.record("tool_cache_failed", {"tool_name": self.name, "error": str(exc)})
 
 
 def _redact_request(request: ToolCallRequest) -> dict[str, Any]:

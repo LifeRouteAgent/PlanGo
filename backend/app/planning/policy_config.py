@@ -8,7 +8,7 @@ from typing import Any
 from pydantic import BaseModel, Field, ValidationError
 
 from app.runtime.runtime_paths import POLICY_CONFIG_DIR
-from app.observability.trace_recorder import record_trace_event
+from app.observability.trace_recorder import TraceRecorder
 
 
 class PlanningRulesConfig(BaseModel):
@@ -63,7 +63,7 @@ class PolicyConfigService:
 def _load_config(file_name: str, model: type[BaseModel]) -> Any:
     path = POLICY_CONFIG_DIR / file_name
     if not path.exists():
-        record_trace_event(
+        TraceRecorder.record(
             "policy_config_fallback",
             {"file": str(path), "reason": "missing"},
         )
@@ -73,7 +73,7 @@ def _load_config(file_name: str, model: type[BaseModel]) -> Any:
         payload, _ = json.JSONDecoder().raw_decode(text)
         return model.model_validate(payload)
     except (OSError, json.JSONDecodeError, ValidationError) as exc:
-        record_trace_event(
+        TraceRecorder.record(
             "policy_config_fallback",
             {"file": str(path), "reason": str(exc)[:500]},
         )

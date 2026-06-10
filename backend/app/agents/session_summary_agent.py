@@ -6,7 +6,7 @@ from typing import Any
 from app.llm.llm_client import call_chat_completion, extract_json_object
 from app.llm.output_schemas import SessionSummaryOutput, validate_llm_output
 from app.llm.prompt_registry import load_prompt_template
-from app.observability.trace_recorder import record_trace_event
+from app.observability.trace_recorder import TraceRecorder
 
 
 def compress_session_summary(payload: dict[str, Any]) -> dict[str, Any] | None:
@@ -38,7 +38,7 @@ def compress_session_summary(payload: dict[str, Any]) -> dict[str, Any] | None:
         if isinstance(parsed, dict)
         else None
     )
-    record_trace_event(
+    TraceRecorder.record(
         "session_summary_compressed",
         {
             "success": bool(validation and validation.ok),

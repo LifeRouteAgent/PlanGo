@@ -3,12 +3,10 @@ from __future__ import annotations
 import contextvars
 import time
 import uuid
-from collections.abc import Callable
 from typing import Any, TypeVar
 
 import loguru
 
-from app.runtime.runtime_paths import TRACES_DIR
 from app.runtime.runtime_store import NodeMetricRecord, get_runtime_store
 
 T = TypeVar("T")
@@ -38,97 +36,51 @@ def set_trace_context(*, trace_id: str | None, run_id: str | None, session_id: s
     _current_session_id.set(session_id)
 
 
-def current_trace_context() -> dict[str, str | None]:
-    """读取当前线程/上下文中的 trace 标识。"""
-
-    return {
-        "trace_id": _current_trace_id.get(),
-        "run_id": _current_run_id.get(),
-        "session_id": _current_session_id.get(),
-    }
-
-
 class TraceRecorder:
     """文件型 trace 记录器。
 
     每个 trace 对应一个 JSONL 文件，事件 append-only 写入，便于 demo 时直接查看，
     也方便后续迁移到 OpenTelemetry、数据库或日志系统。
+
+    静态方法 record 是主要入口——从 contextvars 读取 trace 上下文，无需创建实例。
     """
 
-    def __init__(self, *, trace_id: str, run_id: str, session_id: str):
-        self.trace_id = trace_id
-        self.run_id = run_id
-        self.session_id = session_id
-        self.path = TRACES_DIR / f"{trace_id}.jsonl"
+    @staticmethod
+    def record(trace_type: str, trace_info: dict[str, Any]):
+        """写入一条 trace 事件，trace 上下文从 contextvars 读取。"""
+        trace_id = _current_trace_id.get()
+        run_id = _current_run_id.get()
+        session_id = _current_session_id.get()
+        if not trace_id or not run_id or not session_id:
+            return
 
-    def record(self, event_type: str, payload: dict[str, Any]):
-        """写入一条 trace 事件。"""
-
-        event = {
-            "event_type": event_type,
-            "trace_id": self.trace_id,
-            "run_id": self.run_id,
-            "session_id": self.session_id,
+        trace = {
+            "event_type": trace_type,
+            "trace_id": trace_id,
+            "run_id": run_id,
+            "session_id": session_id,
             "timestamp": time.time(),
-            **payload,
+            **trace_info,
         }
-        get_runtime_store().append_trace_event(self.trace_id, event)
-        if event_type == "node_run":
-            get_runtime_store().record_node_metric(
+        runtime_store = get_runtime_store()
+        runtime_store.append_trace_event(trace_id, trace)
+        if trace_type == "node_run":
+            runtime_store.record_node_metric(
                 NodeMetricRecord(
-                    trace_id=self.trace_id,
-                    run_id=self.run_id,
-                    session_id=self.session_id,
-                    node_name=str(payload.get("node_name") or ""),
-                    started_at=float(payload.get("started_at") or event["timestamp"]),
-                    ended_at=float(payload.get("ended_at") or event["timestamp"]),
-                    duration_ms=int(payload.get("duration_ms", 0) or 0),
-                    status="failed" if payload.get("error") else "success",
-                    error=payload.get("error"),
-                    output_summary=payload.get("output_summary", {}),
+                    trace_id=trace_id,
+                    run_id=run_id,
+                    session_id=session_id,
+                    node_name=str(trace_info.get("node_name") or ""),
+                    started_at=float(trace_info.get("started_at") or trace["timestamp"]),
+                    ended_at=float(trace_info.get("ended_at") or trace["timestamp"]),
+                    duration_ms=int(trace_info.get("duration_ms", 0) or 0),
+                    status="failed" if trace_info.get("error") else "success",
+                    error=trace_info.get("error"),
+                    output_summary=trace_info.get("output_summary", {}),
                 )
             )
         else:
-            loguru.logger.info("event_type={!r} 非 node_run 类型, 不予记录", event_type)
-
-    def time_node(
-        self, node_name: str, fn: Callable[[], T], *, input_summary: dict[str, Any] | None = None
-    ) -> T:
-        """记录 LangGraph 节点耗时，并把异常也写入 trace。"""
-
-        started = time.time()
-        try:
-            result = fn()
-            ended = time.time()
-            # todo: 这个函数调用参数和 expect 里面的基本一致, 能否优化一下呢?
-            self.record(
-                "node_run",
-                {
-                    "node_name": node_name,
-                    "started_at": started,
-                    "ended_at": ended,
-                    "duration_ms": int((ended - started) * 1000),
-                    "input_summary": input_summary or {},
-                    "output_summary": summarize_state_patch(result),
-                    "error": None,
-                },
-            )
-            return result
-        except Exception as exc:
-            ended = time.time()
-            self.record(
-                "node_run",
-                {
-                    "node_name": node_name,
-                    "started_at": started,
-                    "ended_at": ended,
-                    "duration_ms": int((ended - started) * 1000),
-                    "input_summary": input_summary or {},
-                    "output_summary": {},
-                    "error": str(exc),
-                },
-            )
-            raise
+            loguru.logger.info("trace_type={!r} 非 node_run 类型, 不予记录", trace_type)
 
     @staticmethod
     def read(trace_id: str) -> dict[str, Any]:
@@ -149,53 +101,3 @@ class TraceRecorder:
                 "duration_ms": sum(int(event.get("duration_ms", 0) or 0) for event in node_events),
             },
         }
-
-
-# todo: 如果把这个函数作为 `TraceRecorder` 的静态方法是不是更好一些?
-# todo: 为什么自己去维护日志记录等功能呢? 有没有第三方库可以用?
-def record_trace_event(event_type: str, payload: dict[str, Any]):
-    """供 ToolHarness 等底层服务在不知道 recorder 实例时写 trace。"""
-
-    context = current_trace_context()
-    trace_id = context.get("trace_id")
-    run_id = context.get("run_id")
-    session_id = context.get("session_id")
-    if not trace_id or not run_id or not session_id:
-        return
-    TraceRecorder(trace_id=trace_id, run_id=run_id, session_id=session_id).record(
-        event_type, payload
-    )
-
-
-def summarize_state_patch(value: Any) -> dict[str, Any]:
-    """把节点输出压缩成可观测摘要，避免 trace 文件写入完整 POI 列表。"""
-
-    if not isinstance(value, dict):
-        return {"type": type(value).__name__}
-    return {
-        "keys": sorted(value.keys()),
-        "candidate_categories": (
-            list(value.get("candidate_pois", {}).keys())
-            if isinstance(value.get("candidate_pois"), dict)
-            else []
-        ),
-        "recommended_categories": (
-            list(value.get("recommended_pois", {}).keys())
-            if isinstance(value.get("recommended_pois"), dict)
-            else []
-        ),
-        "candidate_plan_count": (
-            len(value.get("candidate_plans", []))
-            if isinstance(value.get("candidate_plans"), list)
-            else 0
-        ),
-        "verified_plan_count": (
-            len(value.get("verified_plans", []))
-            if isinstance(value.get("verified_plans"), list)
-            else 0
-        ),
-        "ranked_plan_count": (
-            len(value.get("ranked_plans", [])) if isinstance(value.get("ranked_plans"), list) else 0
-        ),
-        "error_count": len(value.get("errors", [])) if isinstance(value.get("errors"), list) else 0,
-    }

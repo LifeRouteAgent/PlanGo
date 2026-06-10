@@ -4,7 +4,7 @@ import hashlib
 from typing import Any
 
 from app.config import settings
-from app.observability.trace_recorder import record_trace_event
+from app.observability.trace_recorder import TraceRecorder
 
 
 class EmbeddingService:
@@ -48,7 +48,7 @@ class EmbeddingService:
             ]
         except Exception as exc:  # noqa: BLE001 - embedding 是增强能力，失败必须可降级。
             self._load_error = str(exc)
-            record_trace_event(
+            TraceRecorder.record(
                 "tool_call",
                 {
                     "tool": "embedding.local_bge",

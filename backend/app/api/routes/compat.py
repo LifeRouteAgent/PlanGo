@@ -13,7 +13,7 @@ from app.integrations.amap_weather_service import get_amp_weather_service
 from app.memory.memory_event_queue import MemoryEventQueue
 from app.memory.memory_service import MemoryService
 from app.repositories.poi_repository import PoiRepository
-from app.observability.trace_recorder import record_trace_event
+from app.observability.trace_recorder import TraceRecorder
 from app.repositories.constants import (
     POI_ATTRACTION,
     POI_SHOPPING,
@@ -188,7 +188,7 @@ def _mock_action_response(
         "created_at": int(time.time()),
         "mock": True,
     }
-    record_trace_event(
+    TraceRecorder.record(
         "mock_api_called",
         {
             "action_type": action_type,
@@ -269,7 +269,7 @@ def compat_plan_action(plan_id: str, action: str) -> dict[str, Any]:
     if action not in allowed:
         raise HTTPException(status_code=404, detail=f"不支持的方案操作：{action}")
 
-    record_trace_event(
+    TraceRecorder.record(
         "compat_plan_action",
         {
             "plan_id": plan_id,

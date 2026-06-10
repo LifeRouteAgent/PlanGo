@@ -9,7 +9,7 @@ import httpx
 
 from app.config import settings
 from app.llm.prompt_registry import get_prompt_spec
-from app.observability.trace_recorder import record_trace_event
+from app.observability.trace_recorder import TraceRecorder
 from app.tools.tool_harness import ToolHarness
 from app.tools.tool_policy import ToolCallRequest
 
@@ -69,27 +69,33 @@ def call_chat_completion(
     }
 
     if os.environ.get("PYTEST_CURRENT_TEST"):
-        record_trace_event("llm_result", {
-            **trace_base,
-            "success": False,
-            "source": "pytest_disabled",
-            "latency_ms": 0,
-            "attempts": 0,
-            "error": "LLM calls are disabled during pytest; using deterministic fallback.",
-            "content_preview": "",
-        })
+        TraceRecorder.record(
+            "llm_result",
+            {
+                **trace_base,
+                "success": False,
+                "source": "pytest_disabled",
+                "latency_ms": 0,
+                "attempts": 0,
+                "error": "LLM calls are disabled during pytest; using deterministic fallback.",
+                "content_preview": "",
+            },
+        )
         return None
 
     if not api_key:
-        record_trace_event("llm_result", {
-            **trace_base,
-            "success": False,
-            "source": "disabled",
-            "latency_ms": 0,
-            "attempts": 0,
-            "error": f"{provider.upper()} API key is empty",
-            "content_preview": "",
-        })
+        TraceRecorder.record(
+            "llm_result",
+            {
+                **trace_base,
+                "success": False,
+                "source": "disabled",
+                "latency_ms": 0,
+                "attempts": 0,
+                "error": f"{provider.upper()} API key is empty",
+                "content_preview": "",
+            },
+        )
         return None
 
     url = _chat_completions_url(base_url)
@@ -151,15 +157,18 @@ def call_chat_completion(
     )
     data = result.data if isinstance(result.data, dict) else {}
     content = data.get("value") if isinstance(data, dict) else None
-    record_trace_event("llm_result", {
-        **trace_base,
-        "success": bool(result.success and content),
-        "source": result.source,
-        "latency_ms": result.latency_ms,
-        "attempts": result.attempts,
-        "error": result.error_code,
-        "content_preview": str(content)[:600] if content else "",
-    })
+    TraceRecorder.record(
+        "llm_result",
+        {
+            **trace_base,
+            "success": bool(result.success and content),
+            "source": result.source,
+            "latency_ms": result.latency_ms,
+            "attempts": result.attempts,
+            "error": result.error_code,
+            "content_preview": str(content)[:600] if content else "",
+        },
+    )
     return str(content) if result.success and content else None
 
 

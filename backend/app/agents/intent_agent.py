@@ -7,7 +7,7 @@ from app.context.context_builder import ContextBuilder
 from app.llm.output_schemas import IntentUnderstandingOutput, validate_llm_output
 from app.llm.llm_client import call_chat_completion, extract_json_object
 from app.llm.prompt_registry import load_prompt_template
-from app.observability.trace_recorder import record_trace_event
+from app.observability.trace_recorder import TraceRecorder
 from app.repositories.constants import (
     POI_ATTRACTION,
     POI_SHOPPING,
@@ -103,7 +103,7 @@ def build_llm_understanding(
         else None
     )
     normalized = _normalize_understanding(validation.data) if validation and validation.ok else None
-    record_trace_event(
+    TraceRecorder.record(
         "llm_understanding",
         {
             "success": bool(normalized),

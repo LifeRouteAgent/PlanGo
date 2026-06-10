@@ -9,7 +9,7 @@ from typing import Any
 
 from app.memory.memory_store import ToolCacheEntry
 from app.runtime.runtime_store import get_runtime_store
-from app.observability.trace_recorder import new_id, record_trace_event
+from app.observability.trace_recorder import new_id, TraceRecorder
 
 
 class TaskStatus(StrEnum):
@@ -118,7 +118,7 @@ class CheckpointStore:
                 task.state_revision = previous.state_revision
         task.updated_at = _now_iso()
         get_runtime_store().save_task(task.task_id, asdict(task))
-        record_trace_event(
+        TraceRecorder.record(
             "checkpoint_saved",
             {
                 "task_id": task.task_id,

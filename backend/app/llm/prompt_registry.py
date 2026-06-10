@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from app.observability.trace_recorder import record_trace_event
+from app.observability.trace_recorder import TraceRecorder
 
 PROMPT_DIR = Path(__file__).resolve().parents[1] / "prompts"
 
@@ -41,7 +41,7 @@ def get_prompt_spec(prompt_name: str | None) -> PromptSpec:
     name = (prompt_name or "").strip()
     if name in PROMPT_SPECS:
         return PROMPT_SPECS[name]
-    record_trace_event("prompt_version_missing", {"prompt_name": prompt_name or ""})
+    TraceRecorder.record("prompt_version_missing", {"prompt_name": prompt_name or ""})
     return PromptSpec(name or "ad_hoc", "unversioned", "unknown", "0")
 
 
@@ -54,7 +54,7 @@ def load_prompt_template(prompt_name: str, fallback: str = "") -> str:
 
     path = PROMPT_DIR / f"{prompt_name}.md"
     if not path.exists():
-        record_trace_event(
+        TraceRecorder.record(
             "prompt_template_missing", {"prompt_name": prompt_name, "path": str(path)}
         )
         return fallback

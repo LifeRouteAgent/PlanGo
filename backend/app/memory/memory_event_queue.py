@@ -9,7 +9,7 @@ from app.config import settings
 from app.memory.event_processor import MemoryEventProcessor
 from app.memory.memory_service import MemoryService
 from app.memory.write_service import MemoryWriteService
-from app.observability.trace_recorder import record_trace_event
+from app.observability.trace_recorder import TraceRecorder
 
 
 class MemoryEventQueue:
@@ -40,7 +40,7 @@ class MemoryEventQueue:
             "session_id": session_id or user_id,
             "created_at": time.time(),
         }
-        record_trace_event(
+        TraceRecorder.record(
             "memory_event_enqueued",
             {
                 "user_id": user_id,
@@ -73,7 +73,7 @@ class MemoryEventQueue:
             "session_id": session_id or user_id,
             "created_at": time.time(),
         }
-        record_trace_event(
+        TraceRecorder.record(
             "memory_plan_feedback_enqueued",
             {
                 "user_id": user_id,
@@ -114,12 +114,12 @@ class MemoryEventQueue:
             producer.send(settings.kafka_memory_topic, event)
             producer.flush(timeout=3)
             producer.close(timeout=1)
-            record_trace_event(
+            TraceRecorder.record(
                 "memory_event_kafka_published",
                 {"topic": settings.kafka_memory_topic, "success": True},
             )
         except Exception as exc:  # noqa: BLE001
-            record_trace_event(
+            TraceRecorder.record(
                 "memory_event_kafka_failed",
                 {
                     "topic": settings.kafka_memory_topic,
